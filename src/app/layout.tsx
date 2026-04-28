@@ -1,17 +1,47 @@
 import type { Metadata } from "next";
-import { Poppins } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
-
-const poppins = Poppins({
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
-  variable: "--font-poppins",
-});
+import { ThemeProvider } from "@/context/ThemeContext";
+import { OfflineSyncManager } from "@/components/OfflineSyncManager";
 
 export const metadata: Metadata = {
-  title: "Hostel Management System",
-  description: "Advanced face-recognition based hostel outing management",
+  title: "NITPY Hostel System",
+  description: "Advanced biometric hostel management system",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "NITPY Hostel",
+    startupImage: [
+      {
+        url: "/logo.png",
+        media: "(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)",
+      },
+    ],
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  icons: {
+    icon: [
+      { url: "/logo.png" },
+      { url: "/logo.png", sizes: "32x32", type: "image/png" },
+    ],
+    apple: [
+      { url: "/logo.png" },
+      { url: "/logo.png", sizes: "152x152", type: "image/png" },
+      { url: "/logo.png", sizes: "180x180", type: "image/png" },
+      { url: "/logo.png", sizes: "167x167", type: "image/png" },
+    ],
+  },
+};
+
+export const viewport = {
+  themeColor: "#003366",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -20,11 +50,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${poppins.variable} h-full antialiased`}>
-      <body className="font-poppins bg-background text-foreground min-h-full flex flex-col">
+    <html lang="en" className="h-full antialiased">
+      <body className="bg-background text-foreground min-h-full flex flex-col">
+        <ThemeProvider>
           <AuthProvider>
             {children}
+            <OfflineSyncManager />
           </AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

@@ -28,7 +28,21 @@ import { LoadingIndicator } from "@/components/LoadingIndicator";
 import { useRouter, useSearchParams } from "next/navigation";
 import { databases, ID } from "@/lib/appwrite";
 import { Query } from "appwrite";
+import { DB_ID, COLLECTIONS } from "@/lib/constants";
 import Link from "next/link";
+import {
+  loadFaceApiModels,
+  loadFaceCache,
+  getBestMatch,
+  isAIReady,
+} from "@/lib/faceCache";
+import {
+  getLandmarker,
+  isLandmarkerLoaded,
+  getLandmarkerSync,
+} from "@/lib/aiEngine";
+import * as faceapi from "face-api.js";
+import { addToOfflineQueue, isSystemOnline } from "@/lib/offlineQueue";
 
 function CaptureContent() {
   const {
@@ -41,6 +55,14 @@ function CaptureContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const actionType = searchParams.get("type") || "Capture";
+
+  const serverLog = (action: string, message: string) => {
+    fetch("/api/log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, message }),
+    }).catch(() => {});
+  };
 
   const [imgSrc, setImgSrc] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -62,7 +84,9 @@ function CaptureContent() {
   const [isFaceValid, setIsFaceValid] = useState(false);
   const [detectionFeedback, setDetectionFeedback] =
     useState("Initializing AI...");
-  const [captureCountdown, setCaptureCountdown] = useState<number | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const [aiLoaded, setAiLoaded] = useState(false);
+  const [showNotRecognized, setShowNotRecognized] = useState(false);
 
   // Liveness & Blur states
   const [livenessScore, setLivenessScore] = useState(0);
@@ -71,25 +95,31 @@ function CaptureContent() {
 
   const webcamRef = useRef<ReactWebcam>(null);
 
-  // Initialize MediaPipe
+  // Initialize face-api cache + MediaPipe — singletons, only runs once per session
   useEffect(() => {
-    const initLandmarker = async () => {
+    // If already loaded in background (e.g. from Home page), skip the await chain for instant UI
+    if (isAIReady() && isLandmarkerLoaded()) {
+      setFaceLandmarker(getLandmarkerSync());
+      setAiLoaded(true);
+      return;
+    }
+
+    const init = async () => {
       try {
-        const vision = await FilesetResolver.forVisionTasks("/mediapipe/wasm");
-        const landmarker = await FaceLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath: `/mediapipe/face_landmarker.task`,
-            delegate: "GPU",
-          },
-          runningMode: "VIDEO",
-          outputFaceBlendshapes: true,
-        });
-        setFaceLandmarker(landmarker);
-      } catch (err) {
-        console.error("Failed to init FaceLandmarker:", err);
+        // These return existing promises if already loading
+        await Promise.all([
+          loadFaceApiModels(),
+          loadFaceCache(),
+          getLandmarker(),
+        ]);
+
+        setFaceLandmarker(getLandmarkerSync());
+        setAiLoaded(true);
+      } catch (e) {
+        console.error("Failed to initialize AI engine", e);
       }
     };
-    initLandmarker();
+    init();
   }, []);
 
   // Detection Loop
@@ -173,45 +203,44 @@ function CaptureContent() {
     }
   };
 
-  const capture = useCallback(() => {
-    const imageSrc = webcamRef.current?.getScreenshot();
-    if (imageSrc) {
-      setImgSrc(imageSrc);
-      // Auto-submit after capture for outing
-      setTimeout(() => {
-        submitImageFromSrc(imageSrc);
-      }, 500);
+  const triggerLiveScan = useCallback(() => {
+    const video = webcamRef.current?.video;
+    if (video && video.readyState === 4) {
+      setIsScanning(true);
+      setDetectionFeedback("Scanning Database...");
+      processLiveFrame(video);
     }
   }, [webcamRef]);
 
   // Auto-capture logic
   useEffect(() => {
     let timerId: NodeJS.Timeout;
-    let countdownId: NodeJS.Timeout;
 
-    if (isFaceValid && !imgSrc && !isProcessing) {
-      setCaptureCountdown(2); // Reduced to 2 seconds
-
-      countdownId = setInterval(() => {
-        setCaptureCountdown((prev) =>
-          prev !== null && prev > 1 ? prev - 1 : prev,
-        );
-      }, 1000);
-
+    if (
+      isFaceValid &&
+      !imgSrc &&
+      !isProcessing &&
+      !isScanning &&
+      !confirmationData
+    ) {
+      // Silent throttle loop: trigger scan every 600ms of stabilized holding
       timerId = setTimeout(() => {
-        capture();
-        setCaptureCountdown(null);
+        triggerLiveScan();
         setLivenessScore(0);
-      }, 2000);
-    } else {
-      setCaptureCountdown(null);
+      }, 600);
     }
 
     return () => {
       if (timerId) clearTimeout(timerId);
-      if (countdownId) clearInterval(countdownId);
     };
-  }, [isFaceValid, imgSrc, isProcessing, capture]);
+  }, [
+    isFaceValid,
+    imgSrc,
+    isProcessing,
+    isScanning,
+    confirmationData,
+    triggerLiveScan,
+  ]);
 
   const retake = () => {
     setImgSrc(null);
@@ -234,33 +263,58 @@ function CaptureContent() {
     return new Blob([u8arr], { type: mime });
   };
 
-  const submitImageFromSrc = async (source: string) => {
-    setIsProcessing(true);
-    setStatusText("Analyzing Face...");
+  const processLiveFrame = async (videoElement: HTMLVideoElement) => {
+    setStatusText("Locating & Matching Face...");
     setError(null);
 
     try {
-      const blob = dataURLtoBlob(source);
-      const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
-      const formData = new FormData();
-      formData.append("image", file);
-
-      const recognizeRes = await fetch("/api/recognize", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!recognizeRes.ok) {
-        const errorData = await recognizeRes.text();
-        throw new Error(`AI Engine error: ${errorData}`);
+      if ((faceapi as any).tf && (faceapi as any).tf.engine) {
+        (faceapi as any).tf.engine().startScope();
       }
 
-      const result = await recognizeRes.json();
-      const recognitionResult = result.roll_no || result.result || "Unknown";
-      handleRecognitionComplete(recognitionResult);
+      // Force WebKit Event Loop to yield
+      await new Promise((r) => setTimeout(r, 100));
+
+      const detectConfig = new faceapi.SsdMobilenetv1Options({
+        minConfidence: 0.1,
+      });
+      const detection = await faceapi
+        .detectSingleFace(videoElement, detectConfig) // Passes live hardware video buffer directly!
+        .withFaceLandmarks()
+        .withFaceDescriptor();
+
+      // Force another WebKit GC sweep
+      await new Promise((r) => setTimeout(r, 100));
+
+      if (!detection) {
+        setIsScanning(false);
+        setDetectionFeedback("Searching for matches...");
+        return;
+      }
+
+      const match = getBestMatch(detection.descriptor);
+      serverLog(
+        "RECOGNITION",
+        `Match found: ${match.rollNo} (score: ${match.score})`,
+      );
+
+      if (match.rollNo === "Unknown") {
+        setIsScanning(false);
+        setDetectionFeedback("Scanning for Face...");
+        setShowNotRecognized(true);
+        setTimeout(() => setShowNotRecognized(false), 2500);
+        return;
+      }
+
+      // We have a verified match, Lock the UI!
+      const screenshot = webcamRef.current?.getScreenshot();
+      if (screenshot) setImgSrc(screenshot); // Freeze screen ONLY on success
+
+      setIsProcessing(true); // Initiate database lock UI
+      handleRecognitionComplete(match.rollNo);
     } catch (err: any) {
-      setError(err.message || "An unexpected error occurred");
-      setIsProcessing(false);
+      serverLog("ERROR", err.message || "An unexpected error occurred");
+      setIsScanning(false);
     }
   };
 
@@ -295,8 +349,8 @@ function CaptureContent() {
     }
 
     try {
-      const DB_ID = "69cb970a000853f23489";
-      const COLL_STUDENTS = "student_details";
+      const COLL_STUDENTS = COLLECTIONS.STUDENTS;
+
       try {
         const student = await databases.getDocument(
           DB_ID,
@@ -327,49 +381,181 @@ function CaptureContent() {
     setStatusText(`Syncing Data for ${rollNumber}...`);
 
     try {
-      const DB_ID = "69cb970a000853f23489";
-      const COLL_OUTING = "outing";
-      const COLL_STUDENTS = "student_details";
+      const COLL_OUTING = COLLECTIONS.OUTING;
+      const COLL_STUDENTS = COLLECTIONS.STUDENTS;
+      const COLL_ARCHIVE = COLLECTIONS.OUTING_ARCHIVE;
 
-      const searchResult = await databases.listDocuments(DB_ID, COLL_OUTING, [
-        Query.equal("roll_no", rollNumber),
-      ]);
+      // Check if we are offline BEFORE attempting network request
+      if (!isSystemOnline()) {
+        addToOfflineQueue(rollNumber);
+        setResultDialog({
+          title: "Offline Capture",
+          message: `${rollNumber}\n\nSAVED LOCALLY (OFFLINE)\nWILL SYNC WHEN ONLINE`,
+          type: "success",
+        });
+        return;
+      }
 
       const currentTime = new Date().toISOString();
       let dbMessage = "";
 
-      const openOuting = searchResult.documents.find((doc) => !doc.in_time);
+      if (actionType === "Leave") {
+        const COLL_LEAVE = COLLECTIONS.LEAVE;
+        const searchResult = await databases.listDocuments(DB_ID, COLL_LEAVE, [
+          Query.equal("roll_no", rollNumber),
+          Query.orderDesc("$createdAt"),
+          Query.limit(1),
+        ]);
 
-      if (openOuting) {
-        await databases.updateDocument(DB_ID, COLL_OUTING, openOuting.$id, {
-          in_time: currentTime,
-        });
+        const latestLeave = searchResult.documents[0];
 
-        try {
-          await databases.updateDocument(DB_ID, COLL_STUDENTS, rollNumber, {
-            is_out: false,
+        if (!latestLeave) {
+          setResultDialog({
+            title: "Leave Denied",
+            message: `${rollNumber}\n\nNO LEAVE REQUEST FOUND`,
+            type: "error",
           });
-        } catch (e) {
-          console.warn("Student info sync failed", e);
+          setIsProcessing(false);
+          return;
         }
 
-        dbMessage = "CHECK-IN SUCCESSFUL";
+        // If the latest leave is already completed, they need to apply for a new one
+        if (latestLeave.exit_date_time && latestLeave.in_date_time) {
+          setResultDialog({
+            title: "Leave Denied",
+            message: `${rollNumber}\n\nLATEST LEAVE ALREADY COMPLETED.\nPLEASE APPLY FOR NEW LEAVE.`,
+            type: "error",
+          });
+          setIsProcessing(false);
+          return;
+        }
+
+        const isCaretakerApproved = latestLeave.caretaker_approval === true;
+        const isFacultyApproved = latestLeave.faculty_approval === true;
+        const requiresFaculty = latestLeave.requires_faculty === true;
+
+        const isFullyApproved = requiresFaculty
+          ? isCaretakerApproved && isFacultyApproved
+          : isCaretakerApproved;
+
+        if (!isFullyApproved) {
+          let msg = `${rollNumber}\n\nLEAVE NOT FULLY APPROVED.`;
+          if (!isCaretakerApproved) msg += "\nPending Caretaker Approval.";
+          else if (requiresFaculty && !isFacultyApproved)
+            msg += "\nPending Faculty Approval.";
+
+          setResultDialog({
+            title: "Leave Denied",
+            message: msg,
+            type: "error",
+          });
+          setIsProcessing(false);
+          return;
+        }
+
+        if (latestLeave.exit_date_time && !latestLeave.in_date_time) {
+          // Returning
+          const {
+            $id,
+            $collectionId,
+            $databaseId,
+            $createdAt,
+            $updatedAt,
+            $permissions,
+            ...archiveData
+          } = latestLeave as any;
+
+          archiveData.in_date_time = currentTime;
+
+          await databases.createDocument(
+            DB_ID,
+            COLLECTIONS.LEAVE_ARCHIVE,
+            ID.unique(),
+            archiveData,
+          );
+          await databases.deleteDocument(DB_ID, COLL_LEAVE, latestLeave.$id);
+
+          try {
+            await databases.updateDocument(DB_ID, COLL_STUDENTS, rollNumber, {
+              is_on_leave: false,
+            });
+          } catch (e) {
+            console.warn("Student info sync failed", e);
+          }
+          dbMessage = "LEAVE RETURN SUCCESSFUL & ARCHIVED";
+        } else if (!latestLeave.exit_date_time) {
+          // Departing
+          await databases.updateDocument(DB_ID, COLL_LEAVE, latestLeave.$id, {
+            exit_date_time: currentTime,
+          });
+          try {
+            await databases.updateDocument(DB_ID, COLL_STUDENTS, rollNumber, {
+              is_on_leave: true,
+            });
+          } catch (e) {
+            console.warn("Student info sync failed", e);
+          }
+          dbMessage = "LEAVE DEPARTURE SUCCESSFUL";
+        } else {
+          setResultDialog({
+            title: "Leave Denied",
+            message: `${rollNumber}\n\nLATEST LEAVE ALREADY COMPLETED.\nPLEASE APPLY FOR NEW LEAVE.`,
+            type: "error",
+          });
+          setIsProcessing(false);
+          return;
+        }
       } else {
-        await databases.createDocument(DB_ID, COLL_OUTING, ID.unique(), {
-          roll_no: rollNumber,
-          out_time: currentTime,
-        });
+        const searchResult = await databases.listDocuments(DB_ID, COLL_OUTING, [
+          Query.equal("roll_no", rollNumber),
+          Query.orderDesc("out_time"),
+          Query.limit(1),
+        ]);
 
-        try {
-          await databases.updateDocument(DB_ID, COLL_STUDENTS, rollNumber, {
-            is_out: true,
+        const openOuting = searchResult.documents.find((doc) => !doc.in_time);
+
+        if (openOuting) {
+          // 1. Move to Archive
+          await databases.createDocument(DB_ID, COLL_ARCHIVE, ID.unique(), {
+            roll_no: rollNumber,
+            out_time: openOuting.out_time,
+            in_time: currentTime,
           });
-        } catch (e) {
-          console.warn("Student info sync failed", e);
-        }
 
-        dbMessage = "CHECK-OUT SUCCESSFUL";
+          // 2. Delete from active Outings
+          await databases.deleteDocument(DB_ID, COLL_OUTING, openOuting.$id);
+
+          try {
+            await databases.updateDocument(DB_ID, COLL_STUDENTS, rollNumber, {
+              is_out: false,
+            });
+          } catch (e) {
+            console.warn("Student info sync failed", e);
+          }
+
+          dbMessage = "CHECK-IN SUCCESSFUL & ARCHIVED";
+        } else {
+          await databases.createDocument(DB_ID, COLL_OUTING, ID.unique(), {
+            roll_no: rollNumber,
+            out_time: currentTime,
+          });
+
+          try {
+            await databases.updateDocument(DB_ID, COLL_STUDENTS, rollNumber, {
+              is_out: true,
+            });
+          } catch (e) {
+            console.warn("Student info sync failed", e);
+          }
+
+          dbMessage = "CHECK-OUT SUCCESSFUL";
+        }
       }
+
+      serverLog(
+        "SYNC",
+        `Database synched: Check-in/Check-out completed for ${rollNumber}`,
+      );
 
       setResultDialog({
         title: "Database Synced",
@@ -377,9 +563,31 @@ function CaptureContent() {
         type: "success",
       });
     } catch (err: any) {
-      setError(`Database sync failed: ${err.message}`);
+      console.error("Sync failed", err);
+      // Only treat as offline if it's a genuine network failure
+      const isNetworkError =
+        err instanceof TypeError && err.message.toLowerCase().includes("fetch");
+      if (isNetworkError) {
+        addToOfflineQueue(rollNumber);
+        setResultDialog({
+          title: "Offline Capture",
+          message: `${rollNumber}\n\nNETWORK ERROR\nSAVED LOCALLY FOR SYNC`,
+          type: "success",
+        });
+      } else {
+        // Application/database error — show real error message
+        setResultDialog({
+          title: "Sync Error",
+          message: `${rollNumber}\n\n${err?.message || "An unexpected error occurred"}`,
+          type: "error",
+        });
+      }
     } finally {
       setIsProcessing(false);
+      // Aggressively obliterate orphaned Tensors
+      if ((faceapi as any).tf && (faceapi as any).tf.engine) {
+        (faceapi as any).tf.engine().endScope();
+      }
     }
   };
 
@@ -407,22 +615,38 @@ function CaptureContent() {
     return null;
   }
 
+  if (!aiLoaded || !faceLandmarker) {
+    return (
+      <GradientBackground>
+        <div className="flex-1 flex flex-col items-center justify-center space-y-6">
+          <LoadingIndicator />
+          <div className="text-secondary font-bold uppercase tracking-widest text-xs animate-pulse text-center">
+            <p>Warming Up Neural Engine</p>
+            <p className="text-[10px] text-primary/40 mt-1 font-bold">
+              Loading Biometric Weights
+            </p>
+          </div>
+        </div>
+      </GradientBackground>
+    );
+  }
+
   return (
     <GradientBackground>
       <Navigation />
 
-      <main className="flex-1 max-w-2xl mx-auto w-full px-6 pt-32 pb-12 flex flex-col italic">
+      <main className="flex-1 max-w-2xl mx-auto w-full px-6 pt-32 pb-12 flex flex-col">
         <header className="mb-8 flex items-center justify-between">
           <Link
             href="/"
-            className="p-2 hover:bg-white/5 rounded-full transition-all text-white/40 hover:text-white"
+            className="p-2 hover:bg-primary/5 rounded-full transition-all text-primary/40 hover:text-primary shrink-0"
           >
             <ArrowLeft size={24} />
           </Link>
-          <h1 className="text-xl font-bold text-white tracking-widest uppercase italic">
-            {actionType} System
+          <h1 className="text-base sm:text-xl font-bold text-primary tracking-[0.2em] uppercase text-center flex-1 mx-4">
+            {actionType}
           </h1>
-          <div className="w-10 h-10 bg-primary/20 rounded-full flex items-center justify-center text-primary border border-primary/20">
+          <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary border border-primary/10 shrink-0">
             <ScanFace size={20} />
           </div>
         </header>
@@ -464,20 +688,20 @@ function CaptureContent() {
 
                 <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center space-y-4">
                   <AnimatePresence>
-                    {captureCountdown !== null && (
+                    {isScanning && (
                       <motion.div
                         initial={{ scale: 0.5, opacity: 0 }}
-                        animate={{ scale: 1.2, opacity: 1 }}
-                        exit={{ scale: 2, opacity: 0 }}
-                        className="w-16 h-16 bg-primary text-white rounded-full flex items-center justify-center text-2xl font-black italic shadow-2xl"
+                        animate={{ scale: 1, opacity: 1 }}
+                        exit={{ scale: 0.5, opacity: 0 }}
+                        className="w-12 h-12 bg-black/50 border border-white/10 rounded-full flex items-center justify-center shadow-2xl backdrop-blur-md"
                       >
-                        {captureCountdown}
+                        <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
                       </motion.div>
                     )}
                   </AnimatePresence>
 
                   <div
-                    className={`px-4 py-2 rounded-full backdrop-blur-md border text-[10px] font-black uppercase tracking-widest transition-all ${isFaceValid ? "bg-primary/20 border-primary text-primary" : "bg-black/50 border-white/10 text-white/40"}`}
+                    className={`px-4 py-2 rounded-full backdrop-blur-md border text-[10px] font-black uppercase tracking-widest transition-all ${isScanning ? "bg-primary/20 border-primary text-primary" : isFaceValid ? "bg-primary/10 border-primary/50 text-white" : "bg-black/50 border-white/10 text-white/40"}`}
                   >
                     {detectionFeedback}
                   </div>
@@ -485,21 +709,40 @@ function CaptureContent() {
               </div>
             )}
 
+            {/* Processing Overlay */}
             <AnimatePresence>
               {isProcessing && (
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  className="absolute inset-0 bg-background/80 backdrop-blur-md flex flex-col items-center justify-center p-8 text-center"
+                  className="absolute inset-0 bg-surface/80 backdrop-blur-md flex flex-col items-center justify-center p-8 text-center"
                 >
                   <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mb-6" />
-                  <h2 className="text-xl font-bold text-white mb-2 uppercase tracking-tight">
+                  <h2 className="text-xl font-bold text-primary mb-2 uppercase tracking-tight">
                     {statusText}
                   </h2>
-                  <p className="text-white/40 text-sm tracking-widest uppercase italic">
-                    Processing secure verification
+                  <p className="text-primary/40 text-sm tracking-widest uppercase">
+                    Verifying Identity
                   </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Non-blocking "Face Not Recognized" toast */}
+            <AnimatePresence>
+              {showNotRecognized && (
+                <motion.div
+                  initial={{ opacity: 0, y: -12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -12 }}
+                  transition={{ duration: 0.25 }}
+                  className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center space-x-2 bg-secondary text-white px-5 py-2.5 rounded-2xl shadow-2xl pointer-events-none"
+                >
+                  <AlertCircle size={15} className="shrink-0" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">
+                    Face Not Recognized
+                  </span>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -508,17 +751,17 @@ function CaptureContent() {
           <div className="mt-12 space-y-4">
             {!imgSrc && (
               <div className="flex flex-col items-center space-y-4">
-                <p className="text-white/20 text-[10px] font-black uppercase tracking-[0.3em] animate-pulse italic">
-                  Hands-Free AI Guard Active
+                <p className="text-primary/30 text-[10px] font-bold uppercase tracking-[0.3em] animate-pulse">
+                  Biometric Security Active
                 </p>
                 {!isStable && (
-                  <p className="text-error font-black uppercase text-[8px] animate-bounce italic">
-                    Stability Warning: Excessive Motion Blur
+                  <p className="text-secondary font-bold uppercase text-[8px] animate-bounce">
+                    Stability Warning: Excessive Motion
                   </p>
                 )}
                 {isFaceValid && (
-                  <p className="text-primary font-black uppercase text-[8px] italic">
-                    AI Alignment Secured
+                  <p className="text-primary font-bold uppercase text-[8px]">
+                    Identity Alignment Secured
                   </p>
                 )}
               </div>
@@ -543,12 +786,12 @@ function CaptureContent() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-background/90 backdrop-blur-xl"
+            className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-primary/20 backdrop-blur-md"
           >
             <motion.div
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
-              className="w-full max-w-sm bg-surface p-8 rounded-3xl border border-white/10 text-center shadow-2xl"
+              className="w-full max-w-sm bg-surface p-8 rounded-3xl border border-primary/10 text-center shadow-2xl"
             >
               <div
                 className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6 ${
@@ -563,10 +806,10 @@ function CaptureContent() {
                   <AlertCircle size={32} />
                 )}
               </div>
-              <h2 className="text-2xl font-bold text-white mb-4 uppercase italic">
+              <h2 className="text-2xl font-bold text-primary mb-4 uppercase">
                 {resultDialog.title}
               </h2>
-              <p className="text-white/60 mb-8 whitespace-pre-wrap font-medium">
+              <p className="text-primary/60 mb-8 whitespace-pre-wrap font-medium">
                 {resultDialog.message}
               </p>
               <button
@@ -579,7 +822,7 @@ function CaptureContent() {
                     retake();
                   }
                 }}
-                className="w-full h-12 bg-white text-black rounded-xl font-bold uppercase tracking-widest transition-all hover:bg-gray-100 italic"
+                className="w-full h-12 bg-primary text-white rounded-xl font-bold uppercase tracking-widest transition-all hover:bg-primary/90"
               >
                 {resultDialog.type === "success" ? "Done" : "Try Again"}
               </button>
@@ -593,24 +836,24 @@ function CaptureContent() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-background/90 backdrop-blur-xl"
+            className="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-primary/30 backdrop-blur-md"
           >
             <motion.div
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
-              className="w-full max-w-sm bg-surface p-8 rounded-3xl border border-white/10 text-center shadow-2xl italic"
+              className="w-full max-w-sm bg-surface p-8 rounded-3xl border border-primary/10 text-center shadow-2xl"
             >
-              <div className="w-16 h-16 bg-secondary/20 rounded-full flex items-center justify-center text-secondary mx-auto mb-6">
+              <div className="w-16 h-16 bg-secondary/10 rounded-full flex items-center justify-center text-secondary mx-auto mb-6">
                 <ScanFace size={32} />
               </div>
-              <h2 className="text-xl font-bold text-white mb-2 uppercase tracking-tight">
+              <h2 className="text-xl font-bold text-primary mb-2 uppercase tracking-tight">
                 Identity Confirmation
               </h2>
-              <p className="text-white/40 text-xs font-bold uppercase tracking-widest mb-6 border-b border-white/5 pb-4">
-                Are you identified as:
+              <p className="text-primary/40 text-[10px] font-bold uppercase tracking-widest mb-6 border-b border-primary/5 pb-4">
+                Verify Identification
               </p>
               <div className="mb-8">
-                <p className="text-2xl font-bold text-white uppercase italic">
+                <p className="text-2xl font-bold text-primary uppercase">
                   {confirmationData.rollNo}
                 </p>
                 {confirmationData.name && (
@@ -626,13 +869,13 @@ function CaptureContent() {
                     setConfirmationData(null);
                     retake();
                   }}
-                  className="h-12 border border-white/10 text-white/60 rounded-xl font-bold uppercase tracking-widest text-xs hover:bg-white/5"
+                  className="h-12 border border-primary/10 text-primary/60 rounded-xl font-bold uppercase tracking-widest text-[10px] hover:bg-primary/5"
                 >
                   No, Retry
                 </button>
                 <button
                   onClick={confirmAndSync}
-                  className="h-12 bg-white text-black rounded-xl font-bold uppercase tracking-widest text-xs hover:bg-gray-100"
+                  className="h-12 bg-secondary text-white rounded-xl font-bold uppercase tracking-widest text-[10px] hover:brightness-110 shadow-lg shadow-secondary/20"
                 >
                   Yes, Correct
                 </button>

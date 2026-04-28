@@ -1,12 +1,21 @@
 @import "tailwindcss";
 
 :root {
-  --background: #1A1A2E;
-  --foreground: #ffffff;
-  --primary: #6C63FF;
-  --secondary: #00E5FF;
-  --surface: #16213E;
-  --error: #FF5252;
+  --background: #F8FAFC;
+  --foreground: #0F172A;
+  --primary: #003366;
+  --secondary: #8B0000;
+  --surface: #FFFFFF;
+  --error: #EF4444;
+}
+
+.dark {
+  --background: #0F172A;
+  --foreground: #F8FAFC;
+  --primary: #60A5FA; /* Brighter blue for dark mode contrast */
+  --secondary: #F87171; /* Lighter maroon/red for dark mode */
+  --surface: #1E293B;
+  --error: #F87171;
 }
 
 @theme inline {
@@ -18,8 +27,35 @@
   --color-error: var(--error);
 }
 
-body {
+html, body {
   background: var(--background);
   color: var(--foreground);
   min-height: 100vh;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  
+  /* PWA iOS Polish */
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Allow text selection only in inputs and specific areas */
+input, textarea, [contenteditable="true"], .selectable {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Handle safe areas for devices with notches */
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.safe-p {
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }

@@ -24,16 +24,16 @@ export default function LoginPage() {
                         transition={{ delay: 0.2, duration: 0.5 }}
                         className="mb-6 flex justify-center"
                     >
-                        <Building2 size={80} className="text-white" />
+                        <img src="/logo.png" alt="Logo" className="w-32 h-32 object-contain" />
                     </motion.div>
 
                     <motion.h1 
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={{ delay: 0.3, duration: 0.5 }}
-                        className="text-2xl font-bold tracking-[0.2em] text-white mb-12 uppercase"
+                        className="text-2xl font-bold tracking-[0.2em] text-primary mb-12 uppercase"
                     >
-                        Hostel System
+                        NITPY HOSTELS
                     </motion.h1>
 
                     <motion.div
@@ -44,14 +44,14 @@ export default function LoginPage() {
                         <button
                             onClick={loginWithGoogle}
                             disabled={isLoading}
-                            className="group relative w-full h-14 bg-white rounded-xl flex items-center justify-center transition-all hover:bg-gray-100 active:scale-95 disabled:opacity-50 disabled:pointer-events-none overflow-hidden"
+                            className="group relative w-full h-14 bg-primary text-white rounded-xl flex items-center justify-center transition-all hover:bg-primary/95 active:scale-95 disabled:opacity-50 disabled:pointer-events-none overflow-hidden shadow-lg shadow-primary/20"
                         >
                             {isLoading ? (
-                                <div className="w-6 h-6 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                                <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
                             ) : (
                                 <div className="flex items-center space-x-3">
-                                    <LogIn size={20} className="text-black" />
-                                    <span className="text-black font-semibold tracking-wider text-sm uppercase">
+                                    <LogIn size={20} className="text-foreground" />
+                                    <span className="text-white font-bold tracking-wider text-sm uppercase">
                                         Continue with Google
                                     </span>
                                 </div>
@@ -59,11 +59,12 @@ export default function LoginPage() {
                         </button>
                     </motion.div>
 
-                    <p className="mt-8 text-white/40 text-xs tracking-widest uppercase">
-                        Secure Access for Administrators
+                    <p className="mt-8 text-primary/40 text-xs font-bold tracking-[0.3em] uppercase">
+                        Administrative Console Access
                     </p>
                 </motion.div>
             </div>
         </GradientBackground>
     );
 }
+
