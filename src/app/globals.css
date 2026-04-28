@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+:root {
+  --background: #1A1A2E;
+  --foreground: #ffffff;
+  --primary: #6C63FF;
+  --secondary: #00E5FF;
+  --surface: #16213E;
+  --error: #FF5252;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-secondary: var(--secondary);
+  --color-surface: var(--surface);
+  --color-error: var(--error);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  min-height: 100vh;
+}
