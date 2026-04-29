@@ -13,6 +13,7 @@ import { databases } from "@/lib/appwrite";
 import { useRouter } from "next/navigation";
 import { GradientBackground } from "@/components/GradientBackground";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
+import { Navigation } from "@/components/Navigation";
 import { DB_ID, COLLECTIONS } from "@/lib/constants";
 
 export default function CompleteProfilePage() {
@@ -159,6 +160,7 @@ export default function CompleteProfilePage() {
   if (authLoading)
     return (
       <GradientBackground>
+        <Navigation />
         <div className="flex-1 flex items-center justify-center">
           <LoadingIndicator />
         </div>
@@ -167,7 +169,8 @@ export default function CompleteProfilePage() {
 
   return (
     <GradientBackground>
-      <div className="flex-1 flex items-center justify-center p-4 sm:p-6">
+      <Navigation />
+      <div className="flex-1 flex items-center justify-center p-6 pt-36 sm:pt-40">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -185,14 +188,14 @@ export default function CompleteProfilePage() {
                   <h1 className="text-2xl font-bold text-primary mb-2 uppercase tracking-widest">
                     Complete Profile
                   </h1>
-                  <p className="text-primary/40 text-sm tracking-wide uppercase font-bold">
+                  <p className="text-primary/70 text-sm tracking-wide uppercase font-bold">
                     Academic details detected automatically
                   </p>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-6">
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-primary/40 uppercase tracking-widest ml-1">
+                    <label className="text-xs font-bold text-primary/60 uppercase tracking-widest ml-1">
                       Full Name
                     </label>
                     <div className="relative">
@@ -206,13 +209,13 @@ export default function CompleteProfilePage() {
                         onChange={(e) => setName(e.target.value)}
                         required
                         placeholder="Enter full name"
-                        className="w-full h-14 bg-primary/5 border border-primary/10 rounded-xl pl-12 pr-4 text-primary placeholder:text-primary/10 focus:outline-none focus:border-secondary transition-all font-bold uppercase"
+                        className="w-full h-14 bg-primary/5 border border-primary/10 rounded-xl pl-12 pr-4 text-primary placeholder:text-primary/60 focus:outline-none focus:border-secondary transition-all font-bold uppercase"
                       />
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-primary/40 uppercase tracking-widest ml-1">
+                    <label className="text-xs font-bold text-primary/60 uppercase tracking-widest ml-1">
                       Phone Number
                     </label>
                     <div className="relative">
@@ -231,13 +234,13 @@ export default function CompleteProfilePage() {
                         required
                         maxLength={10}
                         placeholder="Enter 10-digit number"
-                        className="w-full h-14 bg-primary/5 border border-primary/10 rounded-xl pl-12 pr-4 text-primary placeholder:text-primary/10 focus:outline-none focus:border-secondary transition-all font-bold"
+                        className="w-full h-14 bg-primary/5 border border-primary/10 rounded-xl pl-12 pr-4 text-primary placeholder:text-primary/60 focus:outline-none focus:border-secondary transition-all font-bold"
                       />
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-primary/40 uppercase tracking-widest ml-1">
+                    <label className="text-xs font-bold text-primary/60 uppercase tracking-widest ml-1">
                       Gender
                     </label>
                     <div className="grid grid-cols-2 gap-2 sm:gap-4">
@@ -247,7 +250,7 @@ export default function CompleteProfilePage() {
                         className={`h-14 rounded-xl font-bold uppercase tracking-widest transition-all ${
                           gender === "MALE"
                             ? "bg-secondary text-white shadow-lg shadow-secondary/20"
-                            : "bg-primary/5 text-primary/40 border border-primary/5 hover:bg-primary/10"
+                            : "bg-primary/5 text-primary/60 border border-primary/5 hover:bg-primary/10"
                         }`}
                       >
                         Male
@@ -258,7 +261,7 @@ export default function CompleteProfilePage() {
                         className={`h-14 rounded-xl font-bold uppercase tracking-widest transition-all ${
                           gender === "FEMALE"
                             ? "bg-secondary text-white shadow-lg shadow-secondary/20"
-                            : "bg-primary/5 text-primary/40 border border-primary/5 hover:bg-primary/10"
+                            : "bg-primary/5 text-primary/60 border border-primary/5 hover:bg-primary/10"
                         }`}
                       >
                         Female
@@ -269,7 +272,7 @@ export default function CompleteProfilePage() {
                   {/* Calculated Academic Info Display */}
                   <div className="bg-primary/5 border border-primary/10 rounded-2xl p-6 space-y-4">
                     <div className="flex justify-between items-center border-b border-primary/5 pb-4">
-                      <p className="text-[10px] font-bold text-primary/20 uppercase tracking-widest">
+                      <p className="text-[10px] font-bold text-primary/70 uppercase tracking-widest">
                         Department
                       </p>
                       <p className="text-sm font-black text-secondary uppercase tracking-tight">
@@ -277,7 +280,7 @@ export default function CompleteProfilePage() {
                       </p>
                     </div>
                     <div className="flex justify-between items-center border-b border-primary/5 pb-4">
-                      <p className="text-[10px] font-bold text-primary/20 uppercase tracking-widest">
+                      <p className="text-[10px] font-bold text-primary/70 uppercase tracking-widest">
                         Academic Year
                       </p>
                       <p className="text-sm font-black text-secondary uppercase tracking-tight">
@@ -285,7 +288,7 @@ export default function CompleteProfilePage() {
                       </p>
                     </div>
                     <div className="flex justify-between items-center">
-                      <p className="text-[10px] font-bold text-primary/20 uppercase tracking-widest">
+                      <p className="text-[10px] font-bold text-primary/70 uppercase tracking-widest">
                         Course
                       </p>
                       <p className="text-sm font-black text-secondary uppercase tracking-tight">
@@ -329,7 +332,7 @@ export default function CompleteProfilePage() {
                 <h1 className="text-2xl font-bold text-primary mb-2 uppercase tracking-widest">
                   Profile Saved
                 </h1>
-                <p className="text-primary/40 text-sm font-bold tracking-wide uppercase">
+                <p className="text-primary/60 text-sm font-bold tracking-wide uppercase">
                   Welcome to the system, {name}
                 </p>
               </motion.div>

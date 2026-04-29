@@ -248,6 +248,7 @@ function CaptureContent() {
     setStatusText("");
     setIsFaceValid(false);
     setLivenessScore(0);
+    setIsScanning(false);
   };
 
   // Helper to convert base64 to Blob without fetch
@@ -345,6 +346,7 @@ function CaptureContent() {
         type: "error",
       });
       setIsProcessing(false);
+      setIsScanning(false);
       return;
     }
 
@@ -369,6 +371,7 @@ function CaptureContent() {
       setConfirmationData({ rollNo: rollNumber });
     } finally {
       setIsProcessing(false);
+      setIsScanning(false);
     }
   };
 
@@ -485,6 +488,21 @@ function CaptureContent() {
           dbMessage = "LEAVE RETURN SUCCESSFUL & ARCHIVED";
         } else if (!latestLeave.exit_date_time) {
           // Departing
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const proposed = new Date(latestLeave.proposed_exit_date);
+          proposed.setHours(0, 0, 0, 0);
+
+          if (today < proposed) {
+            setResultDialog({
+              title: "Departure Denied",
+              message: `${rollNumber}\n\nTOO EARLY FOR DEPARTURE.\nPROPOSED DATE: ${new Date(latestLeave.proposed_exit_date).toLocaleDateString()}\nCURRENT DATE: ${new Date().toLocaleDateString()}`,
+              type: "error",
+            });
+            setIsProcessing(false);
+            return;
+          }
+
           await databases.updateDocument(DB_ID, COLL_LEAVE, latestLeave.$id, {
             exit_date_time: currentTime,
           });
@@ -635,7 +653,7 @@ function CaptureContent() {
     <GradientBackground>
       <Navigation />
 
-      <main className="flex-1 max-w-2xl mx-auto w-full px-6 pt-32 pb-12 flex flex-col">
+      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 pt-36 sm:pt-40 pb-12 flex flex-col">
         <header className="mb-8 flex items-center justify-between">
           <Link
             href="/"
@@ -651,8 +669,8 @@ function CaptureContent() {
           </div>
         </header>
 
-        <div className="flex-1 flex flex-col">
-          <div className="relative w-full rounded-3xl overflow-hidden bg-black border border-white/5 shadow-2xl">
+        <div className="flex-1 flex flex-col items-center">
+          <div className="relative w-full max-w-2xl rounded-3xl overflow-hidden bg-black border border-white/5 shadow-2xl aspect-video flex items-center justify-center">
             {!imgSrc ? (
               <ReactWebcam
                 audio={false}
@@ -661,7 +679,7 @@ function CaptureContent() {
                 screenshotFormat="image/jpeg"
                 screenshotQuality={1}
                 forceScreenshotSourceSize={true}
-                className="w-full h-auto block"
+                className="w-full h-full object-cover block"
                 videoConstraints={{
                   width: 1280,
                   height: 720,
@@ -671,7 +689,7 @@ function CaptureContent() {
             ) : (
               <img
                 src={imgSrc}
-                className="w-full h-auto block"
+                className="w-full h-full object-cover block"
                 alt="Captured"
               />
             )}
@@ -679,29 +697,29 @@ function CaptureContent() {
             {!imgSrc && (
               <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
                 <div
-                  className={`w-56 h-72 border-4 border-dashed rounded-[6rem] flex items-center justify-center transition-all duration-300 ${isFaceValid ? "border-primary scale-105" : "border-white/20"}`}
+                  className={`w-40 h-52 sm:w-56 sm:h-72 border-4 border-dashed rounded-[6rem] flex items-center justify-center transition-all duration-300 ${isFaceValid ? "border-primary scale-105" : "border-white/20"}`}
                 >
                   <div
-                    className={`w-48 h-64 border-2 rounded-[5rem] transition-all ${isFaceValid ? "border-primary/40" : "border-white/5"}`}
+                    className={`w-32 h-44 sm:w-48 sm:h-64 border-2 rounded-[5rem] transition-all ${isFaceValid ? "border-primary/40" : "border-white/5"}`}
                   />
                 </div>
 
-                <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center space-y-4">
+                <div className="absolute bottom-6 sm:bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center space-y-4">
                   <AnimatePresence>
                     {isScanning && (
                       <motion.div
                         initial={{ scale: 0.5, opacity: 0 }}
                         animate={{ scale: 1, opacity: 1 }}
                         exit={{ scale: 0.5, opacity: 0 }}
-                        className="w-12 h-12 bg-black/50 border border-white/10 rounded-full flex items-center justify-center shadow-2xl backdrop-blur-md"
+                        className="w-10 h-10 sm:w-12 sm:h-12 bg-black/50 border border-white/10 rounded-full flex items-center justify-center shadow-2xl backdrop-blur-md"
                       >
-                        <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                        <div className="w-4 h-4 sm:w-5 sm:h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
                       </motion.div>
                     )}
                   </AnimatePresence>
 
                   <div
-                    className={`px-4 py-2 rounded-full backdrop-blur-md border text-[10px] font-black uppercase tracking-widest transition-all ${isScanning ? "bg-primary/20 border-primary text-primary" : isFaceValid ? "bg-primary/10 border-primary/50 text-white" : "bg-black/50 border-white/10 text-white/40"}`}
+                    className={`px-4 py-2 rounded-full backdrop-blur-md border text-[8px] sm:text-[10px] font-black uppercase tracking-widest transition-all ${isScanning ? "bg-primary/20 border-primary text-primary" : isFaceValid ? "bg-black/60 border-white/20 text-white" : "bg-black/40 border-white/10 text-white/60"}`}
                   >
                     {detectionFeedback}
                   </div>
@@ -718,11 +736,11 @@ function CaptureContent() {
                   exit={{ opacity: 0 }}
                   className="absolute inset-0 bg-surface/80 backdrop-blur-md flex flex-col items-center justify-center p-8 text-center"
                 >
-                  <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mb-6" />
-                  <h2 className="text-xl font-bold text-primary mb-2 uppercase tracking-tight">
+                  <div className="w-12 h-12 sm:w-16 sm:h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mb-6" />
+                  <h2 className="text-lg sm:text-xl font-bold text-primary mb-2 uppercase tracking-tight">
                     {statusText}
                   </h2>
-                  <p className="text-primary/40 text-sm tracking-widest uppercase">
+                  <p className="text-primary/40 text-[10px] sm:text-sm tracking-widest uppercase">
                     Verifying Identity
                   </p>
                 </motion.div>
@@ -748,7 +766,7 @@ function CaptureContent() {
             </AnimatePresence>
           </div>
 
-          <div className="mt-12 space-y-4">
+          <div className="mt-8 sm:mt-12 space-y-4 w-full">
             {!imgSrc && (
               <div className="flex flex-col items-center space-y-4">
                 <p className="text-primary/30 text-[10px] font-bold uppercase tracking-[0.3em] animate-pulse">
@@ -771,7 +789,7 @@ function CaptureContent() {
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="bg-error/10 border border-error/20 p-4 rounded-xl flex items-center space-x-3 text-error italic"
+                className="bg-error/10 border border-error/20 p-4 rounded-xl flex items-center justify-center space-x-3 text-error italic mx-auto max-w-sm"
               >
                 <AlertCircle size={20} />
                 <span className="text-sm font-medium">{error}</span>
@@ -796,7 +814,7 @@ function CaptureContent() {
               <div
                 className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6 ${
                   resultDialog.type === "success"
-                    ? "bg-primary/20 text-primary"
+                    ? "bg-success/20 text-success"
                     : "bg-error/20 text-error"
                 }`}
               >
@@ -806,10 +824,10 @@ function CaptureContent() {
                   <AlertCircle size={32} />
                 )}
               </div>
-              <h2 className="text-2xl font-bold text-primary mb-4 uppercase">
+              <h2 className="text-xl font-bold text-foreground mb-4 uppercase">
                 {resultDialog.title}
               </h2>
-              <p className="text-primary/60 mb-8 whitespace-pre-wrap font-medium">
+              <p className="text-foreground/60 mb-8 whitespace-pre-wrap font-medium">
                 {resultDialog.message}
               </p>
               <button
@@ -822,7 +840,7 @@ function CaptureContent() {
                     retake();
                   }
                 }}
-                className="w-full h-12 bg-primary text-white rounded-xl font-bold uppercase tracking-widest transition-all hover:bg-primary/90"
+                className="w-full h-12 bg-primary text-background rounded-xl font-bold uppercase tracking-widest transition-all hover:bg-primary/90"
               >
                 {resultDialog.type === "success" ? "Done" : "Try Again"}
               </button>

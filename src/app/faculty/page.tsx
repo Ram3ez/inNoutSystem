@@ -18,6 +18,7 @@ import { databases, Query, ID } from "@/lib/appwrite";
 import { DB_ID, COLLECTIONS } from "@/lib/constants";
 import { GradientBackground } from "@/components/GradientBackground";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
+import { Navigation } from "@/components/Navigation";
 import { useRouter } from "next/navigation";
 
 interface LeaveRequest {
@@ -31,6 +32,8 @@ interface LeaveRequest {
   caretaker_id: string;
   faculty_id: string;
   requires_faculty: boolean;
+  caretaker_approval: boolean;
+  faculty_approval: boolean;
   student_name?: string;
   student_phone?: number;
   exit_date_time?: string;
@@ -188,7 +191,16 @@ export default function FacultyDashboard() {
     }));
   };
 
-  if (authLoading || isLoading) return <LoadingIndicator />;
+  if (authLoading || isLoading) {
+    return (
+      <GradientBackground>
+        <Navigation />
+        <div className="flex-1 flex items-center justify-center">
+          <LoadingIndicator size="lg" />
+        </div>
+      </GradientBackground>
+    );
+  }
 
   const currentList = viewMode === "pending" ? requests : activeLeaves;
 
@@ -200,7 +212,8 @@ export default function FacultyDashboard() {
 
   return (
     <GradientBackground>
-      <div className="w-full max-w-4xl mx-auto px-6 pt-8 sm:pt-12 pb-24 flex-1 flex flex-col">
+      <Navigation />
+      <div className="w-full max-w-7xl mx-auto px-6 pt-36 sm:pt-40 pb-24 flex-1 flex flex-col">
         {/* Navigation */}
         <motion.div
           initial={{ opacity: 0, x: -20 }}
@@ -223,7 +236,6 @@ export default function FacultyDashboard() {
 
         {/* Header */}
         <header className="mb-12 relative">
-          <div className="absolute -top-20 -left-20 w-64 h-64 bg-primary/10 rounded-full blur-[100px] pointer-events-none" />
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -262,7 +274,7 @@ export default function FacultyDashboard() {
               <ClipboardCheck size={48} className="text-primary" />
             </div>
             <div className="relative z-10">
-              <p className="text-primary/40 text-[10px] font-black uppercase tracking-widest mb-1 flex items-center gap-2">
+              <p className="text-primary/60 text-[10px] font-black uppercase tracking-widest mb-1 flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
                 Action Required
               </p>
@@ -284,7 +296,7 @@ export default function FacultyDashboard() {
               <div className="p-4 rounded-2xl bg-primary/10 text-primary group-hover:rotate-180 transition-transform duration-500">
                 <RefreshCw size={20} />
               </div>
-              <span className="text-xs font-black uppercase tracking-widest text-primary/60 group-hover:text-primary transition-colors">
+              <span className="text-xs font-black uppercase tracking-widest text-primary/70 group-hover:text-primary transition-colors">
                 Sync Data
               </span>
             </div>
@@ -339,7 +351,7 @@ export default function FacultyDashboard() {
             placeholder="Search by student name or roll number..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-surface/40 backdrop-blur-xl border border-primary/10 rounded-full pl-16 pr-6 py-5 sm:py-6 text-sm text-foreground focus:outline-none focus:border-primary/40 focus:ring-4 focus:ring-primary/5 transition-all placeholder:text-primary/30 font-bold shadow-lg shadow-black/5"
+            className="w-full bg-surface/40 backdrop-blur-xl border border-primary/10 rounded-full pl-16 pr-6 py-5 sm:py-6 text-sm text-foreground focus:outline-none focus:border-primary/40 focus:ring-4 focus:ring-primary/5 transition-all placeholder:text-primary/50 font-bold shadow-lg shadow-black/5"
           />
         </motion.div>
 
@@ -392,12 +404,13 @@ export default function FacultyDashboard() {
                               : "bg-green-500/10 border-green-500/20 text-green-500"
                           }`}
                         >
-                          <Clock size={12} />{" "}
                           {viewMode === "pending"
                             ? "Pending Faculty Review"
-                            : "Approved & Currently Out"}
+                            : req.faculty_approval
+                              ? "Approved by You & Out"
+                              : "Approved (Not Required) & Out"}
                         </div>
-                        <p className="text-[9px] text-primary/40 font-black tracking-widest uppercase">
+                        <p className="text-[9px] text-primary/60 font-black tracking-widest uppercase">
                           {expandedRequests[req.$id]
                             ? "Click to collapse"
                             : "Click to view details"}
@@ -420,7 +433,7 @@ export default function FacultyDashboard() {
                               <div className="absolute top-0 right-0 p-4 opacity-5">
                                 <ClipboardCheck size={40} />
                               </div>
-                              <p className="text-[10px] text-primary/50 uppercase font-black tracking-widest mb-2 flex items-center gap-2">
+                              <p className="text-[10px] text-primary/60 uppercase font-black tracking-widest mb-2 flex items-center gap-2">
                                 Reason for Leave
                               </p>
                               <p className="text-sm sm:text-base text-foreground/80 leading-relaxed font-medium italic relative z-10">
@@ -447,7 +460,7 @@ export default function FacultyDashboard() {
                                   </svg>
                                 </div>
                                 <div>
-                                  <p className="text-[10px] text-primary/50 uppercase font-black tracking-widest mb-1">
+                                  <p className="text-[10px] text-primary/60 uppercase font-black tracking-widest mb-1">
                                     Place of Visit
                                   </p>
                                   <p className="text-sm text-foreground font-bold">
@@ -466,7 +479,7 @@ export default function FacultyDashboard() {
                                       <Calendar size={16} />
                                     </div>
                                     <div>
-                                      <p className="text-[8px] sm:text-[9px] font-black text-primary/40 uppercase tracking-widest">
+                                      <p className="text-[8px] sm:text-[9px] font-black text-primary/60 uppercase tracking-widest">
                                         Departure
                                       </p>
                                       <p className="text-xs sm:text-sm text-foreground font-bold">
@@ -479,7 +492,7 @@ export default function FacultyDashboard() {
                                   </div>
                                   <div className="flex items-center gap-3">
                                     <div className="text-right sm:text-left">
-                                      <p className="text-[8px] sm:text-[9px] font-black text-primary/40 uppercase tracking-widest">
+                                      <p className="text-[8px] sm:text-[9px] font-black text-primary/60 uppercase tracking-widest">
                                         Return
                                       </p>
                                       <p className="text-xs sm:text-sm text-foreground font-bold">
@@ -522,13 +535,13 @@ export default function FacultyDashboard() {
                                 ))}
                               {viewMode === "pending" ? (
                                 <>
-                                  <button
-                                    disabled={isActioning === req.$id}
-                                    onClick={() =>
-                                      handleAction(req.$id, "reject")
-                                    }
-                                    className="flex-1 py-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-500 text-[10px] font-black uppercase tracking-[0.2em] hover:bg-red-500 hover:text-white hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:scale-100"
-                                  >
+                                    <button
+                                      disabled={isActioning === req.$id}
+                                      onClick={() =>
+                                        handleAction(req.$id, "reject")
+                                      }
+                                      className="flex-1 py-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-600 text-[10px] font-black uppercase tracking-[0.2em] hover:bg-red-500 hover:text-white hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:scale-100"
+                                    >
                                     {isActioning === req.$id ? (
                                       <RefreshCw
                                         size={14}
@@ -545,7 +558,7 @@ export default function FacultyDashboard() {
                                     onClick={() =>
                                       handleAction(req.$id, "approve")
                                     }
-                                    className="flex-[2] py-4 rounded-2xl bg-primary border border-primary text-background text-[10px] font-black uppercase tracking-[0.2em] hover:opacity-90 hover:shadow-lg hover:shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 grow disabled:opacity-50 disabled:hover:scale-100"
+                                    className="flex-[2] py-4 rounded-2xl bg-success border border-success text-background text-[10px] font-black uppercase tracking-[0.2em] hover:opacity-90 hover:shadow-lg hover:shadow-success/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 grow disabled:opacity-50 disabled:hover:scale-100"
                                   >
                                     {isActioning === req.$id ? (
                                       <RefreshCw
@@ -574,7 +587,7 @@ export default function FacultyDashboard() {
                 );
               })
             ) : (
-              <div className="h-64 flex flex-col items-center justify-center text-primary/20 space-y-4">
+              <div className="h-64 flex flex-col items-center justify-center text-primary/40 space-y-4">
                 <ClipboardCheck size={48} strokeWidth={1} />
                 <p className="text-xs font-black uppercase tracking-widest">
                   Your queue is empty

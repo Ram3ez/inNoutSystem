@@ -44,14 +44,14 @@ export default function LoginPage() {
                         <button
                             onClick={loginWithGoogle}
                             disabled={isLoading}
-                            className="group relative w-full h-14 bg-primary text-white rounded-xl flex items-center justify-center transition-all hover:bg-primary/95 active:scale-95 disabled:opacity-50 disabled:pointer-events-none overflow-hidden shadow-lg shadow-primary/20"
+                            className="group relative w-full h-14 bg-primary text-background rounded-xl flex items-center justify-center transition-all hover:bg-primary/95 active:scale-95 disabled:opacity-50 disabled:pointer-events-none overflow-hidden shadow-lg shadow-primary/20"
                         >
                             {isLoading ? (
                                 <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
                             ) : (
                                 <div className="flex items-center space-x-3">
-                                    <LogIn size={20} className="text-foreground" />
-                                    <span className="text-white font-bold tracking-wider text-sm uppercase">
+                                    <LogIn size={20} className="text-background" />
+                                    <span className="text-background font-bold tracking-wider text-sm uppercase">
                                         Continue with Google
                                     </span>
                                 </div>

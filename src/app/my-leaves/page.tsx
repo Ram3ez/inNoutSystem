@@ -143,7 +143,7 @@ export default function MyLeavesPage() {
             <h1 className="text-xl sm:text-2xl font-bold text-primary tracking-[0.2em] uppercase">
               My Leaves
             </h1>
-            <p className="text-primary/40 text-[10px] font-bold uppercase tracking-widest mt-1">
+            <p className="text-primary/60 text-[10px] font-bold uppercase tracking-widest mt-1">
               Application History & Approvals
             </p>
           </div>
@@ -204,9 +204,9 @@ export default function MyLeavesPage() {
                       <div
                         className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border shadow-inner ${
                           isApproved
-                            ? "bg-green-500/10 text-green-500 border-green-500/20"
+                            ? "bg-success/10 text-success border-success/20"
                             : isRejected
-                              ? "bg-red-500/10 text-red-500 border-red-500/20"
+                              ? "bg-red-500/10 text-red-600 border-red-500/20"
                               : "bg-secondary/10 text-secondary border-secondary/20"
                         }`}
                       >
@@ -226,7 +226,7 @@ export default function MyLeavesPage() {
                               ? "Rejected"
                               : "Pending Review"}
                         </p>
-                        <p className="text-primary/40 text-[9px] sm:text-[10px] font-black tracking-widest uppercase mt-1">
+                        <p className="text-primary/60 text-[9px] sm:text-[10px] font-black tracking-widest uppercase mt-1">
                           Applied:{" "}
                           {new Date(leave.$createdAt).toLocaleDateString(
                             "en-IN",
@@ -255,7 +255,7 @@ export default function MyLeavesPage() {
                       </div>
                       <ChevronDown
                         size={20}
-                        className={`text-primary/40 transition-transform duration-300 ${
+                        className={`text-primary/60 transition-transform duration-300 ${
                           expandedRequests[leave.$id] ? "rotate-180" : ""
                         }`}
                       />
@@ -276,7 +276,7 @@ export default function MyLeavesPage() {
 
                           {/* Reason */}
                           <div className="bg-primary/5 border border-primary/10 p-5 rounded-3xl">
-                            <p className="text-[10px] text-primary/50 uppercase font-black tracking-widest mb-2">
+                            <p className="text-[10px] text-primary/60 uppercase font-black tracking-widest mb-2">
                               Reason for Leave
                             </p>
                             <p className="text-sm text-foreground/80 leading-relaxed font-medium italic">
@@ -303,7 +303,7 @@ export default function MyLeavesPage() {
                                 </svg>
                               </div>
                               <div>
-                                <p className="text-[10px] text-primary/50 uppercase font-black tracking-widest mb-1">
+                                <p className="text-[10px] text-primary/60 uppercase font-black tracking-widest mb-1">
                                   Place of Visit
                                 </p>
                                 <p className="text-sm text-foreground font-bold">
@@ -321,7 +321,7 @@ export default function MyLeavesPage() {
                                   <Calendar size={16} />
                                 </div>
                                 <div>
-                                  <p className="text-[9px] font-black text-primary/40 uppercase tracking-widest">
+                                  <p className="text-[9px] font-black text-primary/60 uppercase tracking-widest">
                                     Departure
                                   </p>
                                   <p className="text-sm text-foreground font-bold">
@@ -334,7 +334,7 @@ export default function MyLeavesPage() {
                               </div>
                               <div className="flex items-center gap-3 text-right">
                                 <div>
-                                  <p className="text-[9px] font-black text-primary/40 uppercase tracking-widest">
+                                  <p className="text-[9px] font-black text-primary/60 uppercase tracking-widest">
                                     Return
                                   </p>
                                   <p className="text-sm text-foreground font-bold">
@@ -353,7 +353,7 @@ export default function MyLeavesPage() {
                             <div
                               className={`p-4 rounded-2xl border flex items-center justify-between ${
                                 caretakerStatusStr === "Approved"
-                                  ? "bg-green-500/5 border-green-500/20"
+                                  ? "bg-success/5 border-success/20"
                                   : caretakerStatusStr === "Rejected"
                                     ? "bg-red-500/5 border-red-500/20"
                                     : "bg-surface border-primary/10"
@@ -364,22 +364,22 @@ export default function MyLeavesPage() {
                                   size={18}
                                   className={
                                     caretakerStatusStr === "Approved"
-                                      ? "text-green-500"
+                                      ? "text-success"
                                       : caretakerStatusStr === "Rejected"
-                                        ? "text-red-500"
-                                        : "text-primary/40"
+                                        ? "text-red-600"
+                                        : "text-primary/60"
                                   }
                                 />
                                 <div>
-                                  <p className="text-[10px] font-black uppercase tracking-widest text-primary/40">
+                                  <p className="text-[10px] font-black uppercase tracking-widest text-primary/60">
                                     Caretaker
                                   </p>
                                   <p
                                     className={`text-xs font-bold uppercase ${
                                       caretakerStatusStr === "Approved"
-                                        ? "text-green-500"
+                                        ? "text-success"
                                         : caretakerStatusStr === "Rejected"
-                                          ? "text-red-500"
+                                          ? "text-red-600"
                                           : "text-foreground"
                                     }`}
                                   >
@@ -393,7 +393,7 @@ export default function MyLeavesPage() {
                               <div
                                 className={`p-4 rounded-2xl border flex items-center justify-between ${
                                   facultyStatusStr === "Approved"
-                                    ? "bg-green-500/5 border-green-500/20"
+                                    ? "bg-success/5 border-success/20"
                                     : facultyStatusStr === "Rejected"
                                       ? "bg-red-500/5 border-red-500/20"
                                       : "bg-surface border-primary/10"
@@ -404,22 +404,22 @@ export default function MyLeavesPage() {
                                     size={18}
                                     className={
                                       facultyStatusStr === "Approved"
-                                        ? "text-green-500"
+                                        ? "text-success"
                                         : facultyStatusStr === "Rejected"
-                                          ? "text-red-500"
-                                          : "text-primary/40"
+                                          ? "text-red-600"
+                                          : "text-primary/60"
                                     }
                                   />
                                   <div>
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-primary/40">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-primary/60">
                                       Faculty Advisor
                                     </p>
                                     <p
                                       className={`text-xs font-bold uppercase ${
                                         facultyStatusStr === "Approved"
-                                          ? "text-green-500"
+                                          ? "text-success"
                                           : facultyStatusStr === "Rejected"
-                                            ? "text-red-500"
+                                            ? "text-red-600"
                                             : "text-foreground"
                                       }`}
                                     >

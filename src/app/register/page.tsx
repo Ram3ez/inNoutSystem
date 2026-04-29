@@ -433,7 +433,7 @@ export default function RegisterFacePage() {
           <LoadingIndicator />
           <div className="text-secondary font-black uppercase tracking-widest text-xs animate-pulse text-center">
             <p>Warming Up Neural Engine</p>
-            <p className="text-[10px] text-white/40 mt-1">
+            <p className="text-[10px] text-primary/40 mt-1">
               Loading Biometric Weights (Enrollment)
             </p>
           </div>
@@ -445,8 +445,7 @@ export default function RegisterFacePage() {
   return (
     <GradientBackground>
       <Navigation />
-
-      <main className="flex-1 max-w-4xl mx-auto w-full px-4 sm:px-6 pt-24 sm:pt-32 pb-12">
+      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 pt-36 sm:pt-40 pb-12 relative z-10">
         <header className="mb-12 flex items-center justify-between">
           <div className="flex items-center space-x-2 sm:space-x-4">
             <Link
@@ -486,7 +485,7 @@ export default function RegisterFacePage() {
               <div className="relative">
                 <input
                   type="text"
-                  className="w-full bg-primary/5 border border-primary/10 text-primary rounded-2xl h-14 px-6 text-sm font-bold placeholder:text-primary/20 focus:border-secondary transition-all uppercase tracking-widest"
+                  className="w-full bg-primary/5 border border-primary/10 text-primary rounded-2xl h-14 px-6 text-sm font-bold placeholder:text-primary/40 focus:border-secondary transition-all uppercase tracking-widest"
                   value={searchTerm}
                   onChange={(e) => {
                     setSearchTerm(e.target.value);
@@ -529,7 +528,7 @@ export default function RegisterFacePage() {
                               <span className="font-bold tracking-widest uppercase">
                                 {student.$id}
                               </span>
-                              <span className="text-[10px] text-primary/40 font-bold">
+                              <span className="text-[10px] text-primary/60 font-bold">
                                 {student.name}
                               </span>
                             </button>
@@ -587,7 +586,7 @@ export default function RegisterFacePage() {
                   type="button"
                   onClick={startEnrollment}
                   disabled={!selectedRollNo}
-                  className="group relative w-full h-24 bg-white hover:bg-slate-50 border border-primary/10 rounded-[2.5rem] flex items-center justify-between px-8 transition-all hover:border-secondary/30 disabled:opacity-30 active:scale-[0.98] shadow-md"
+                  className="group relative w-full h-24 bg-surface hover:bg-primary/5 border border-primary/10 rounded-[2.5rem] flex items-center justify-between px-8 transition-all hover:border-secondary/30 disabled:opacity-30 active:scale-[0.98] shadow-md"
                 >
                   <div className="flex items-center space-x-6 text-left">
                     <div className="w-12 h-12 bg-secondary/5 rounded-full flex items-center justify-center text-secondary group-hover:scale-110 transition-transform">
@@ -597,7 +596,7 @@ export default function RegisterFacePage() {
                       <h3 className="text-primary font-bold uppercase text-lg tracking-tight">
                         Start Scan
                       </h3>
-                      <p className="text-primary/30 text-[10px] uppercase tracking-widest font-bold">
+                      <p className="text-primary/60 text-[10px] uppercase tracking-widest font-bold">
                         Automatic Face Detection
                       </p>
                     </div>
@@ -618,10 +617,10 @@ export default function RegisterFacePage() {
                   <div className="absolute inset-0 border-4 border-secondary border-t-transparent rounded-full animate-spin" />
                 </div>
                 <div className="text-center space-y-2">
-                  <h3 className="text-white font-black uppercase text-xl italic tracking-tight">
+                  <h3 className="text-foreground font-black uppercase text-xl italic tracking-tight">
                     {statusText}
                   </h3>
-                  <p className="text-white/30 text-[10px] uppercase tracking-widest font-bold">
+                  <p className="text-primary/60 text-[10px] uppercase tracking-widest font-bold">
                     Do not close the application
                   </p>
                 </div>
@@ -722,7 +721,7 @@ export default function RegisterFacePage() {
                             className="h-full bg-secondary"
                           />
                         </div>
-                        <p className="text-white/60 font-bold uppercase text-[8px] sm:text-[9px] tracking-[0.3em] font-mono">
+                        <p className="text-foreground/60 font-bold uppercase text-[8px] sm:text-[9px] tracking-[0.3em] font-mono">
                           Yield: {collectedEmbeddings.length} /{" "}
                           {TARGET_EMBEDDINGS}
                         </p>
@@ -732,7 +731,7 @@ export default function RegisterFacePage() {
                 </div>
 
                 <div className="bg-secondary/5 border border-secondary/10 p-4 rounded-2xl text-center">
-                  <p className="text-primary/40 text-[9px] font-bold uppercase tracking-widest leading-relaxed">
+                  <p className="text-primary/60 text-[9px] font-bold uppercase tracking-widest leading-relaxed">
                     Move your head slowly to allow the neural engine <br /> to
                     capture various organic identity angles
                   </p>
@@ -759,12 +758,12 @@ export default function RegisterFacePage() {
               <div className="w-20 h-20 bg-secondary/20 rounded-full flex items-center justify-center text-secondary mx-auto mb-8 shadow-xl shadow-secondary/5">
                 <CheckCircle size={40} />
               </div>
-              <h2 className="text-2xl font-bold text-white mb-4 uppercase italic">
+              <h2 className="text-2xl font-bold text-foreground mb-4 uppercase italic">
                 Enrollment Complete
               </h2>
-              <p className="text-white/40 mb-10 text-sm font-medium leading-relaxed italic">
+              <p className="text-primary/60 mb-10 text-sm font-medium leading-relaxed italic">
                 A high-accuracy profile for{" "}
-                <span className="text-white font-bold">{selectedRollNo}</span>{" "}
+                <span className="text-primary font-bold">{selectedRollNo}</span>{" "}
                 has been successfully committed to the cloud.
               </p>
               <button

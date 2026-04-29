@@ -7,15 +7,17 @@
   --secondary: #8B0000;
   --surface: #FFFFFF;
   --error: #EF4444;
+  --success: #10B981;
 }
 
 .dark {
-  --background: #0F172A;
-  --foreground: #F8FAFC;
-  --primary: #60A5FA; /* Brighter blue for dark mode contrast */
-  --secondary: #F87171; /* Lighter maroon/red for dark mode */
-  --surface: #1E293B;
-  --error: #F87171;
+  --background: #000000;
+  --foreground: #FFFFFF;
+  --primary: #FFFFFF; /* Pure white text and accents */
+  --secondary: #FF3B30; /* Bright iOS-style red for secondary/reject */
+  --surface: #0A0A0A; /* Even deeper black for cards */
+  --error: #FF453A;
+  --success: #32D74B; /* Vibrant iOS-style green for approve */
 }
 
 @theme inline {
@@ -25,6 +27,7 @@
   --color-secondary: var(--secondary);
   --color-surface: var(--surface);
   --color-error: var(--error);
+  --color-success: var(--success);
 }
 
 html, body {
@@ -58,4 +61,14 @@ input, textarea, [contenteditable="true"], .selectable {
 
 .safe-p {
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+/* Prevent Autofill from breaking dark mode visibility */
+input:-webkit-autofill,
+input:-webkit-autofill:hover, 
+input:-webkit-autofill:focus, 
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 30px var(--surface) inset !important;
+  -webkit-text-fill-color: var(--primary) !important;
+  transition: background-color 5000s ease-in-out 0s;
 }

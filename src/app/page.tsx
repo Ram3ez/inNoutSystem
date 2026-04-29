@@ -44,6 +44,15 @@ export default function Dashboard() {
   const COLL_OUTING = "outing";
 
   React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      const searchParams = new URLSearchParams(window.location.search);
+      if (searchParams.has('membershipId') && searchParams.has('userId') && searchParams.has('secret')) {
+        router.push(`/accept-invite?${searchParams.toString()}`);
+      }
+    }
+  }, []);
+
+  React.useEffect(() => {
     if (user) {
       fetchOutings();
     }
@@ -103,6 +112,7 @@ export default function Dashboard() {
   if (isLoading) {
     return (
       <GradientBackground>
+        <Navigation />
         <div className="flex-1 flex items-center justify-center">
           <LoadingIndicator />
         </div>
@@ -124,7 +134,7 @@ export default function Dashboard() {
     <GradientBackground>
       <Navigation />
 
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 pt-24 sm:pt-32 pb-12">
+      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 pt-36 sm:pt-40 pb-12">
         <header className="mb-8 sm:mb-12">
           <motion.div
             initial={{ opacity: 0, x: -20 }}
@@ -148,7 +158,7 @@ export default function Dashboard() {
                    studentData.course === 'msc' ? 'M.Sc' : 
                    studentData.course}
                 </span>
-                <span className="text-primary/40 font-bold text-[10px] uppercase tracking-widest bg-primary/5 px-3 py-1 rounded-full border border-primary/10">
+                <span className="text-primary/60 font-bold text-[10px] uppercase tracking-widest bg-primary/5 px-3 py-1 rounded-full border border-primary/10">
                   {studentData.year}YR • {studentData.department}
                 </span>
               </div>
@@ -292,7 +302,7 @@ export default function Dashboard() {
                               ? "Completed Outing"
                               : "Currently Out"}
                           </p>
-                          <p className="text-primary/40 text-[9px] font-bold uppercase tracking-widest leading-none mt-1">
+                          <p className="text-primary/60 text-[9px] font-bold uppercase tracking-widest leading-none mt-1">
                             ID: {outing.$id.slice(-8)}
                           </p>
                         </div>
@@ -300,7 +310,7 @@ export default function Dashboard() {
 
                       <div className="flex flex-col sm:flex-row gap-4 sm:gap-12">
                         <div className="space-y-1">
-                          <p className="text-[10px] text-primary/20 font-bold uppercase tracking-widest">
+                          <p className="text-[10px] text-primary/60 font-bold uppercase tracking-widest">
                             Exit
                           </p>
                           <p className="text-primary/80 font-bold text-sm">
@@ -308,7 +318,7 @@ export default function Dashboard() {
                           </p>
                         </div>
                         <div className="space-y-1">
-                          <p className="text-[10px] text-primary/20 font-bold uppercase tracking-widest">
+                          <p className="text-[10px] text-primary/60 font-bold uppercase tracking-widest">
                             Entry
                           </p>
                           {outing.in_time ? (
@@ -334,7 +344,7 @@ export default function Dashboard() {
               ) : (
                 <div className="bg-surface border border-primary/5 rounded-3xl p-12 text-center shadow-sm">
                   <Footprints className="mx-auto text-primary/10 mb-4" size={48} />
-                  <p className="text-primary/40 font-bold uppercase tracking-widest text-sm">
+                  <p className="text-primary/60 font-bold uppercase tracking-widest text-sm">
                     No Outing History Found
                   </p>
                 </div>
@@ -383,7 +393,7 @@ function ActionCard({
           <h2 className="text-xl sm:text-2xl font-bold text-primary mb-1 uppercase leading-none">
             {title}
           </h2>
-          <p className="text-primary/40 text-[10px] sm:text-sm font-bold uppercase tracking-wide">{subtitle}</p>
+          <p className="text-primary/60 text-[10px] sm:text-sm font-bold uppercase tracking-wide">{subtitle}</p>
         </div>
       </div>
 

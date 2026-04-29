@@ -8,6 +8,7 @@ import { databases } from '@/lib/appwrite';
 import { Query } from 'appwrite';
 import { GradientBackground } from '@/components/GradientBackground';
 import { LoadingIndicator } from '@/components/LoadingIndicator';
+import { Navigation } from "@/components/Navigation";
 import { useRouter } from 'next/navigation';
 import { format } from 'date-fns';
 import { Student } from '@/types/models';
@@ -118,6 +119,7 @@ export default function LiveStatusPage() {
     if (authLoading || (isLoading && liveOutings.length === 0)) {
         return (
             <GradientBackground>
+                <Navigation />
                 <div className="flex-1 flex items-center justify-center">
                     <LoadingIndicator />
                 </div>
@@ -127,7 +129,8 @@ export default function LiveStatusPage() {
 
     return (
         <GradientBackground>
-            <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 pt-24 sm:pt-32 pb-12">
+            <Navigation />
+            <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 pt-36 sm:pt-40 pb-12">
                 <header className="mb-12 flex flex-col md:flex-row md:items-center justify-between gap-6">
                     <div className="flex items-center space-x-4">
                         <Link href="/" className="p-2 hover:bg-primary/5 rounded-full transition-all text-primary/40 hover:text-primary">
@@ -146,7 +149,7 @@ export default function LiveStatusPage() {
 
                     <div className="flex flex-col sm:flex-row items-center gap-4 w-full md:w-auto">
                         <div className="relative group max-w-sm w-full">
-                            <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-primary/20 group-focus-within:text-secondary transition-colors">
+                            <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-primary/60 group-focus-within:text-secondary transition-colors">
                                 <Search size={18} />
                             </div>
                             <input 
@@ -154,12 +157,12 @@ export default function LiveStatusPage() {
                                 placeholder="SEARCH BY ROLL NO..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full bg-surface border border-primary/10 rounded-2xl h-12 pl-12 pr-4 text-primary text-sm focus:outline-none focus:border-secondary/50 transition-all uppercase placeholder:text-primary/10"
+                                className="w-full bg-surface border border-primary/10 rounded-2xl h-12 pl-12 pr-4 text-primary text-sm focus:outline-none focus:border-secondary/50 transition-all uppercase placeholder:text-primary/60"
                             />
                         </div>
                         <button 
                             onClick={fetchLiveOutings}
-                            className="p-3 bg-primary/5 text-primary/40 hover:text-secondary hover:bg-secondary/10 rounded-2xl transition-all border border-primary/5 hover:border-secondary/20 shrink-0"
+                            className="p-3 bg-primary/5 text-primary/60 hover:text-secondary hover:bg-secondary/10 rounded-2xl transition-all border border-primary/5 hover:border-secondary/20 shrink-0"
                             title="Refresh Data"
                         >
                             <RefreshCw size={20} className={isLoading ? "animate-spin" : ""} />
@@ -167,7 +170,7 @@ export default function LiveStatusPage() {
                     </div>
                 </header>
 
-                <div className="mb-8 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.2em] text-primary/20 px-2">
+                <div className="mb-8 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.2em] text-primary/70 px-2">
                     <p>{filteredOutings.length} Students Currently Away</p>
                     <p>Last Sync: {format(lastUpdated, "hh:mm:ss a")}</p>
                 </div>
@@ -223,7 +226,7 @@ export default function LiveStatusPage() {
                                             </h3>
                                             <div className="flex items-center space-x-2 mt-2">
                                                 <AlertCircle size={14} className={isLate ? "text-error/60" : "text-secondary/60"} />
-                                                <p className="text-[10px] font-bold text-primary/40 uppercase tracking-widest">
+                                                <p className="text-[10px] font-bold text-primary/60 uppercase tracking-widest">
                                                     Since {format(new Date(outing.out_time), "MMM dd, hh:mm a")}
                                                 </p>
                                             </div>
@@ -231,7 +234,7 @@ export default function LiveStatusPage() {
                                     </div>
                                     
                                     <div className="pt-4 border-t border-primary/5">
-                                        <p className="text-[8px] font-bold text-primary/20 uppercase tracking-[0.3em]">Session ID: {outing.$id.slice(-8)}</p>
+                                        <p className="text-[8px] font-bold text-primary/60 uppercase tracking-[0.3em]">Session ID: {outing.$id.slice(-8)}</p>
                                     </div>
                                 </motion.div>
                             );
@@ -249,8 +252,8 @@ export default function LiveStatusPage() {
                             <CheckCircle2 size={40} />
                         </div>
                         <div className="space-y-2">
-                            <p className="text-primary/40 text-sm font-bold uppercase tracking-[0.2em]">All students accounted for</p>
-                            <p className="text-primary/20 text-[10px] font-bold uppercase tracking-widest">No active outings found at this time</p>
+                            <p className="text-primary/60 text-sm font-bold uppercase tracking-[0.2em]">All students accounted for</p>
+                            <p className="text-primary/40 text-[10px] font-bold uppercase tracking-widest">No active outings found at this time</p>
                         </div>
                     </motion.div>
                 )}
@@ -275,7 +278,7 @@ export default function LiveStatusPage() {
                                 {isLoadingDetails ? (
                                     <div className="h-64 flex flex-col items-center justify-center space-y-4">
                                         <RefreshCw size={32} className="text-secondary animate-spin" />
-                                        <p className="text-[10px] font-bold text-primary/40 uppercase tracking-[0.2em]">Fetching Details...</p>
+                                        <p className="text-[10px] font-bold text-primary/60 uppercase tracking-[0.2em]">Fetching Details...</p>
                                     </div>
                                 ) : selectedStudent && (
                                     <>
@@ -297,7 +300,7 @@ export default function LiveStatusPage() {
                                                 <h2 className="text-2xl font-black text-primary uppercase tracking-tight leading-none">
                                                     {selectedStudent.name}
                                                 </h2>
-                                                <p className="text-primary/40 text-xs font-bold uppercase tracking-widest mt-2">
+                                                <p className="text-primary/60 text-xs font-bold uppercase tracking-widest mt-2">
                                                     {selectedStudent.$id} • {selectedStudent.course} {selectedStudent.year}YR
                                                 </p>
                                             </div>
@@ -308,7 +311,7 @@ export default function LiveStatusPage() {
                                                         <Phone size={18} />
                                                     </div>
                                                     <div>
-                                                        <p className="text-[10px] font-bold text-primary/20 uppercase tracking-widest">Phone Number</p>
+                                                        <p className="text-[10px] font-bold text-primary/50 uppercase tracking-widest">Phone Number</p>
                                                         <p className="text-lg font-black text-primary tracking-tighter">
                                                             +91 {selectedStudent.phone_no}
                                                         </p>
@@ -324,7 +327,7 @@ export default function LiveStatusPage() {
                                                 </a>
                                             </div>
                                             
-                                            <p className="text-center text-[8px] font-bold text-primary/10 uppercase tracking-[0.3em]">
+                                            <p className="text-center text-[8px] font-bold text-primary/60 uppercase tracking-[0.3em]">
                                                 Academic: {selectedStudent.department}
                                             </p>
                                         </div>

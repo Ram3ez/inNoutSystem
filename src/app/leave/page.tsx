@@ -139,8 +139,8 @@ export default function LeavePage() {
         caretaker_id: finalCaretakerId,
         faculty_id: finalFacultyId,
         requires_faculty: requiresFaculty,
-        caretaker_approval: null,
-        faculty_approval: null,
+        caretaker_approval: false,
+        faculty_approval: false,
       });
 
       setIsSuccess(true);
@@ -177,7 +177,7 @@ export default function LeavePage() {
           <h1 className="text-3xl font-black text-primary uppercase tracking-tight mb-2">
             Request Submitted
           </h1>
-          <p className="text-primary/40 font-bold uppercase tracking-widest text-xs">
+          <p className="text-primary/60 font-bold uppercase tracking-widest text-xs">
             Your leave application has been sent for approval.
           </p>
         </div>
@@ -216,18 +216,18 @@ export default function LeavePage() {
           {/* Student Info - Responsive Stacking */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
             <div className="space-y-2">
-              <label className="text-[10px] font-bold text-primary/20 uppercase tracking-widest ml-1">
+              <label className="text-[10px] font-bold text-primary/60 uppercase tracking-widest ml-1">
                 Roll Number
               </label>
-              <div className="h-14 bg-primary/[0.02] border border-primary/5 rounded-2xl flex items-center px-6 text-primary/40 font-bold uppercase overflow-hidden">
+              <div className="h-14 bg-primary/[0.02] border border-primary/5 rounded-2xl flex items-center px-6 text-primary/60 font-bold uppercase overflow-hidden">
                 <span className="truncate">{studentData?.$id}</span>
               </div>
             </div>
             <div className="space-y-2">
-              <label className="text-[10px] font-bold text-primary/20 uppercase tracking-widest ml-1">
+              <label className="text-[10px] font-bold text-primary/70 uppercase tracking-widest ml-1">
                 Full Name
               </label>
-              <div className="h-14 bg-primary/[0.02] border border-primary/5 rounded-2xl flex items-center px-6 text-primary/40 font-bold uppercase overflow-hidden">
+              <div className="h-14 bg-primary/[0.02] border border-primary/5 rounded-2xl flex items-center px-6 text-primary/60 font-bold uppercase overflow-hidden">
                 <span className="truncate">{studentData?.name}</span>
               </div>
             </div>
@@ -235,7 +235,7 @@ export default function LeavePage() {
 
           {/* Reason - Full Width */}
           <div className="space-y-2">
-            <label className="text-[10px] font-bold text-primary/40 uppercase tracking-widest ml-1">
+            <label className="text-[10px] font-bold text-primary/60 uppercase tracking-widest ml-1">
               Reason for Leave
             </label>
             <div className="relative">
@@ -248,14 +248,14 @@ export default function LeavePage() {
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 placeholder="State your reason for leave..."
-                className="w-full min-h-[140px] bg-primary/[0.03] border border-primary/10 rounded-[2rem] pl-14 pr-6 py-5 text-primary font-bold placeholder:text-primary/10 focus:outline-none focus:border-secondary transition-all resize-none leading-relaxed"
+                className="w-full min-h-[140px] bg-primary/[0.03] border border-primary/10 rounded-[2rem] pl-14 pr-6 py-5 text-primary font-bold placeholder:text-primary/60 focus:outline-none focus:border-secondary transition-all resize-none leading-relaxed"
               />
             </div>
           </div>
 
           {/* Place of Visit */}
           <div className="space-y-2">
-            <label className="text-[10px] font-bold text-primary/40 uppercase tracking-widest ml-1">
+            <label className="text-[10px] font-bold text-primary/60 uppercase tracking-widest ml-1">
               Place of Visit
             </label>
             <div className="relative group">
@@ -269,7 +269,7 @@ export default function LeavePage() {
                 value={placeOfVisit}
                 onChange={(e) => setPlaceOfVisit(e.target.value)}
                 placeholder="e.g. Home — Chennai, Tamil Nadu"
-                className="w-full h-14 bg-primary/[0.03] border border-primary/10 rounded-2xl pl-14 pr-6 text-primary font-bold placeholder:text-primary/10 focus:outline-none focus:border-secondary transition-all"
+                className="w-full h-14 bg-primary/[0.03] border border-primary/10 rounded-2xl pl-14 pr-6 text-primary font-bold placeholder:text-primary/60 focus:outline-none focus:border-secondary transition-all"
               />
             </div>
           </div>
@@ -277,7 +277,7 @@ export default function LeavePage() {
           {/* Dates - Grid Spacing */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
             <div className="space-y-2">
-              <label className="text-[10px] font-bold text-primary/40 uppercase tracking-widest ml-1">
+              <label className="text-[10px] font-bold text-primary/60 uppercase tracking-widest ml-1">
                 Departure Date
               </label>
               <div className="relative group">
@@ -294,7 +294,7 @@ export default function LeavePage() {
               </div>
             </div>
             <div className="space-y-2">
-              <label className="text-[10px] font-bold text-primary/40 uppercase tracking-widest ml-1">
+              <label className="text-[10px] font-bold text-primary/60 uppercase tracking-widest ml-1">
                 Return Date
               </label>
               <div className="relative group">
@@ -317,7 +317,7 @@ export default function LeavePage() {
           <div className="bg-primary/5 border border-primary/10 rounded-2xl p-6 sm:p-8 space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[10px] font-bold text-primary/40 uppercase tracking-widest mb-1">
+                <p className="text-[10px] font-bold text-primary/60 uppercase tracking-widest mb-1">
                   Approval Workflow
                 </p>
                 <h3 className="text-sm font-black text-primary uppercase tracking-tight">
@@ -338,7 +338,7 @@ export default function LeavePage() {
                 />
               </button>
             </div>
-            <p className="text-[9px] font-bold text-primary/30 uppercase leading-relaxed tracking-wider">
+            <p className="text-[9px] font-bold text-primary/60 uppercase leading-relaxed tracking-wider">
               {requiresFaculty
                 ? "This leave falls on an institute working day. Faculty Advisor sign-off is usually required."
                 : "This leave appears to be during holidays/weekends. Faculty sign-off may not be needed."}
@@ -370,7 +370,7 @@ export default function LeavePage() {
           </button>
         </motion.form>
 
-        <p className="mt-8 text-center text-primary/20 text-[10px] font-bold uppercase tracking-widest px-8">
+        <p className="mt-8 text-center text-primary/60 text-[10px] font-bold uppercase tracking-widest px-8">
           Note: All leave requests are subject to approval by the caretaker and
           faculty. You will be notified once a decision is made.
         </p>

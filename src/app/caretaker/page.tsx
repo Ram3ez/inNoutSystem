@@ -20,6 +20,7 @@ import { databases, Query, ID } from "@/lib/appwrite";
 import { DB_ID, COLLECTIONS } from "@/lib/constants";
 import { GradientBackground } from "@/components/GradientBackground";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
+import { Navigation } from "@/components/Navigation";
 import { useRouter } from "next/navigation";
 
 interface LeaveRequest {
@@ -33,6 +34,8 @@ interface LeaveRequest {
   caretaker_id: string;
   faculty_id: string;
   requires_faculty: boolean;
+  caretaker_approval: boolean;
+  faculty_approval: boolean;
   student_name?: string;
   student_phone?: number;
 }
@@ -161,6 +164,8 @@ export default function CaretakerDashboard() {
         await databases.updateDocument(DB_ID, COLLECTIONS.LEAVE, requestId, {
           status: nextStatus,
           caretaker_approval: true,
+          requires_faculty: needsFaculty,
+          faculty_approval: false,
         });
       } else {
         nextStatus = "rejected_caretaker";
@@ -179,6 +184,7 @@ export default function CaretakerDashboard() {
 
         archiveData.status = nextStatus;
         archiveData.caretaker_approval = false;
+        archiveData.faculty_approval = false;
 
         await databases.createDocument(
           DB_ID,
@@ -199,11 +205,21 @@ export default function CaretakerDashboard() {
     }
   };
 
-  const toggleWorkingDay = (requestId: string, currentState: boolean) => {
+  const toggleWorkingDay = async (requestId: string, currentVal: boolean) => {
+    const newVal = !currentVal;
     setWorkingDayOverrides((prev) => ({
       ...prev,
-      [requestId]: !currentState,
+      [requestId]: newVal,
     }));
+
+    try {
+      await databases.updateDocument(DB_ID, COLLECTIONS.LEAVE, requestId, {
+        requires_faculty: newVal,
+        faculty_approval: false,
+      });
+    } catch (error) {
+      console.error("Failed to update faculty requirement:", error);
+    }
   };
 
   const toggleExpand = (requestId: string) => {
@@ -213,7 +229,16 @@ export default function CaretakerDashboard() {
     }));
   };
 
-  if (authLoading || isLoading) return <LoadingIndicator />;
+  if (authLoading || isLoading) {
+    return (
+      <GradientBackground>
+        <Navigation />
+        <div className="flex-1 flex items-center justify-center">
+          <LoadingIndicator size="lg" />
+        </div>
+      </GradientBackground>
+    );
+  }
 
   const filteredRequests = requests.filter(
     (r) =>
@@ -223,7 +248,8 @@ export default function CaretakerDashboard() {
 
   return (
     <GradientBackground>
-      <div className="w-full max-w-4xl mx-auto px-6 pt-8 sm:pt-12 pb-24 flex-1 flex flex-col">
+      <Navigation />
+      <div className="w-full max-w-7xl mx-auto px-6 pt-36 sm:pt-40 pb-24 flex-1 flex flex-col">
         {/* Navigation */}
         <motion.div
           initial={{ opacity: 0, x: -20 }}
@@ -246,7 +272,6 @@ export default function CaretakerDashboard() {
 
         {/* Header */}
         <header className="mb-12 relative">
-          <div className="absolute -top-20 -left-20 w-64 h-64 bg-secondary/10 rounded-full blur-[100px] pointer-events-none" />
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -285,7 +310,7 @@ export default function CaretakerDashboard() {
               <ClipboardCheck size={48} className="text-primary" />
             </div>
             <div className="relative z-10">
-              <p className="text-primary/40 text-[10px] font-black uppercase tracking-widest mb-1 flex items-center gap-2">
+              <p className="text-primary/60 text-[10px] font-black uppercase tracking-widest mb-1 flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-secondary animate-pulse" />
                 Action Required
               </p>
@@ -307,7 +332,7 @@ export default function CaretakerDashboard() {
               <div className="p-4 rounded-2xl bg-primary/10 text-primary group-hover:rotate-180 transition-transform duration-500">
                 <RefreshCw size={20} />
               </div>
-              <span className="text-xs font-black uppercase tracking-widest text-primary/60 group-hover:text-primary transition-colors">
+              <span className="text-xs font-black uppercase tracking-widest text-primary/70 group-hover:text-primary transition-colors">
                 Sync Queue
               </span>
             </div>
@@ -330,7 +355,7 @@ export default function CaretakerDashboard() {
             placeholder="Search by student name or roll number..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-surface/40 backdrop-blur-xl border border-primary/10 rounded-full pl-16 pr-6 py-5 sm:py-6 text-sm text-foreground focus:outline-none focus:border-secondary/40 focus:ring-4 focus:ring-secondary/5 transition-all placeholder:text-primary/30 font-bold shadow-lg shadow-black/5"
+            className="w-full bg-surface/40 backdrop-blur-xl border border-primary/10 rounded-full pl-16 pr-6 py-5 sm:py-6 text-sm text-foreground focus:outline-none focus:border-secondary/40 focus:ring-4 focus:ring-secondary/5 transition-all placeholder:text-primary/50 font-bold shadow-lg shadow-black/5"
           />
         </motion.div>
 
@@ -341,7 +366,7 @@ export default function CaretakerDashboard() {
               filteredRequests.map((req, idx) => {
                 const isWeekendDay = isWeekend(req.proposed_exit_date);
                 const isWorkingDay =
-                  workingDayOverrides[req.$id] ?? !isWeekendDay;
+                  workingDayOverrides[req.$id] ?? req.requires_faculty;
 
                 return (
                   <motion.div
@@ -383,7 +408,7 @@ export default function CaretakerDashboard() {
                         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/5 border border-primary/10 text-[9px] sm:text-[10px] font-black text-primary uppercase tracking-widest">
                           <Clock size={12} /> Pending
                         </div>
-                        <p className="text-[9px] text-primary/40 font-black tracking-widest uppercase">
+                        <p className="text-[9px] text-primary/60 font-black tracking-widest uppercase">
                           {expandedRequests[req.$id]
                             ? "Click to collapse"
                             : "Click to view details"}
@@ -406,7 +431,7 @@ export default function CaretakerDashboard() {
                               <div className="absolute top-0 right-0 p-4 opacity-5">
                                 <ClipboardCheck size={40} />
                               </div>
-                              <p className="text-[10px] text-primary/50 uppercase font-black tracking-widest mb-2 flex items-center gap-2">
+                              <p className="text-[10px] text-primary/60 uppercase font-black tracking-widest mb-2 flex items-center gap-2">
                                 Reason for Leave
                               </p>
                               <p className="text-sm sm:text-base text-foreground/80 leading-relaxed font-medium italic relative z-10">
@@ -433,7 +458,7 @@ export default function CaretakerDashboard() {
                                   </svg>
                                 </div>
                                 <div>
-                                  <p className="text-[10px] text-primary/50 uppercase font-black tracking-widest mb-1">
+                                  <p className="text-[10px] text-primary/60 uppercase font-black tracking-widest mb-1">
                                     Place of Visit
                                   </p>
                                   <p className="text-sm text-foreground font-bold">
@@ -452,7 +477,7 @@ export default function CaretakerDashboard() {
                                       <Calendar size={16} />
                                     </div>
                                     <div>
-                                      <p className="text-[8px] sm:text-[9px] font-black text-primary/40 uppercase tracking-widest">
+                                      <p className="text-[8px] sm:text-[9px] font-black text-primary/60 uppercase tracking-widest">
                                         Departure
                                       </p>
                                       <p className="text-xs sm:text-sm text-foreground font-bold">
@@ -465,7 +490,7 @@ export default function CaretakerDashboard() {
                                   </div>
                                   <div className="flex items-center gap-3">
                                     <div className="text-right sm:text-left">
-                                      <p className="text-[8px] sm:text-[9px] font-black text-primary/40 uppercase tracking-widest">
+                                      <p className="text-[8px] sm:text-[9px] font-black text-primary/60 uppercase tracking-widest">
                                         Return
                                       </p>
                                       <p className="text-xs sm:text-sm text-foreground font-bold">
@@ -479,7 +504,7 @@ export default function CaretakerDashboard() {
                                 </div>
 
                                 <div className="flex flex-row md:flex-row items-center justify-between md:justify-end gap-4 md:gap-3 pt-4 md:pt-0 border-t md:border-t-0 border-primary/5">
-                                  <p className="text-[9px] font-black text-primary/40 uppercase tracking-widest">
+                                  <p className="text-[9px] font-black text-primary/80 uppercase tracking-widest">
                                     Working Day?
                                   </p>
                                   <button
@@ -530,7 +555,7 @@ export default function CaretakerDashboard() {
                               <button
                                 disabled={isActioning === req.$id}
                                 onClick={() => handleAction(req.$id, "reject")}
-                                className="flex-1 py-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-500 text-[10px] font-black uppercase tracking-[0.2em] hover:bg-red-500 hover:text-white hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:scale-100"
+                                className="flex-1 py-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-600 text-[10px] font-black uppercase tracking-[0.2em] hover:bg-red-500 hover:text-white hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:scale-100"
                               >
                                 {isActioning === req.$id ? (
                                   <RefreshCw
@@ -546,7 +571,7 @@ export default function CaretakerDashboard() {
                               <button
                                 disabled={isActioning === req.$id}
                                 onClick={() => handleAction(req.$id, "approve")}
-                                className="flex-[2] py-4 rounded-2xl bg-secondary border border-secondary text-background text-[10px] font-black uppercase tracking-[0.2em] hover:opacity-90 hover:shadow-lg hover:shadow-secondary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 grow disabled:opacity-50 disabled:hover:scale-100"
+                                className="flex-[2] py-4 rounded-2xl bg-success border border-success text-background text-[10px] font-black uppercase tracking-[0.2em] hover:opacity-90 hover:shadow-lg hover:shadow-success/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 grow disabled:opacity-50 disabled:hover:scale-100"
                               >
                                 {isActioning === req.$id ? (
                                   <RefreshCw
@@ -569,7 +594,7 @@ export default function CaretakerDashboard() {
                 );
               })
             ) : (
-              <div className="h-64 flex flex-col items-center justify-center text-primary/20 space-y-4">
+              <div className="h-64 flex flex-col items-center justify-center text-primary/40 space-y-4">
                 <ClipboardCheck size={48} strokeWidth={1} />
                 <p className="text-xs font-black uppercase tracking-widest">
                   Your queue is empty
@@ -582,5 +607,3 @@ export default function CaretakerDashboard() {
     </GradientBackground>
   );
 }
-
-

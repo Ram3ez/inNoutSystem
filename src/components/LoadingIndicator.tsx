@@ -27,9 +27,9 @@ export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({ size = 'md' 
                 <motion.p 
                     animate={{ opacity: [0.4, 1, 0.4] }}
                     transition={{ duration: 2, repeat: Infinity }}
-                    className="text-primary/60 text-[10px] tracking-widest uppercase font-bold"
+                    className="text-primary/60 text-[10px] tracking-widest uppercase font-black"
                 >
-                    Securing Connection
+                    Loading Data
                 </motion.p>
             )}
         </div>
