@@ -8,7 +8,8 @@ export const COLLECTIONS = {
     OUTING_ARCHIVE: "outing_archive",
     CARETAKER: "coll_caretaker",
     FACULTY: "coll_faculty",
-    FACIAL_EMBEDDINGS: "facial_embeddings"
+    FACIAL_EMBEDDINGS: "facial_embeddings",
+    STAFF_DETAILS: "staff_details"
 } as const;
 
 export const TEAMS = {

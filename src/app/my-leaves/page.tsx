@@ -19,8 +19,7 @@ import { GradientBackground } from "@/components/GradientBackground";
 import { Navigation } from "@/components/Navigation";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
 import { useRouter } from "next/navigation";
-import { databases } from "@/lib/appwrite";
-import { Query } from "appwrite";
+import { databases, tablesDB, fetchAllRows, Query } from "@/lib/appwrite";
 import { DB_ID, COLLECTIONS } from "@/lib/constants";
 import Link from "next/link";
 
@@ -58,29 +57,24 @@ export default function MyLeavesPage() {
     setIsLoading(true);
     try {
       // Fetch active leaves
-      const activeResponse = await databases.listDocuments(
-        DB_ID,
-        COLLECTIONS.LEAVE,
-        [Query.equal("roll_no", studentData.$id), Query.limit(50)],
-      );
+      const activeLeaves = await fetchAllRows(DB_ID, COLLECTIONS.LEAVE, [
+        Query.equal("roll_no", studentData.$id)
+      ]);
 
       // Fetch archive separately — don't fail if archive has issues
       let archiveDocs: any[] = [];
       try {
-        const archiveResponse = await databases.listDocuments(
-          DB_ID,
-          COLLECTIONS.LEAVE_ARCHIVE,
-          [Query.equal("roll_no", studentData.$id), Query.limit(50)],
-        );
-        archiveDocs = archiveResponse.documents;
+        archiveDocs = await fetchAllRows(DB_ID, COLLECTIONS.LEAVE_ARCHIVE, [
+          Query.equal("roll_no", studentData.$id)
+        ]);
       } catch (archiveError) {
         console.warn(
           "Could not fetch leave archive (check permissions/index):",
-          archiveError,
+          archiveError
         );
       }
 
-      const allLeaves = [...activeResponse.documents, ...archiveDocs];
+      const allLeaves = [...activeLeaves, ...archiveDocs];
       allLeaves.sort(
         (a, b) =>
           new Date(b.$createdAt).getTime() - new Date(a.$createdAt).getTime(),
@@ -131,7 +125,7 @@ export default function MyLeavesPage() {
     <GradientBackground>
       <Navigation />
 
-      <main className="flex-1 max-w-4xl mx-auto w-full px-4 sm:px-6 pt-24 sm:pt-32 pb-12">
+      <main className="flex-1 max-w-4xl mx-auto w-full px-4 sm:px-6 pt-32 sm:pt-40 pb-12">
         <header className="mb-8 flex items-center justify-between">
           <Link
             href="/"

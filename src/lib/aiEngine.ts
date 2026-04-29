@@ -27,6 +27,18 @@ export async function getLandmarker(): Promise<FaceLandmarker> {
       runningMode: "VIDEO",
       outputFaceBlendshapes: false,
     });
+
+    // WARMING PHASE: Run a dummy frame to initialize WASM & WebGL backends
+    try {
+      const dummyCanvas = document.createElement("canvas");
+      dummyCanvas.width = 1;
+      dummyCanvas.height = 1;
+      landmarker.detectForVideo(dummyCanvas, 0);
+      console.log("[🧠 ENGINE] MediaPipe: Landmarker ready.");
+    } catch (e) {
+      // Ignore warming errors
+    }
+
     landmarkerInstance = landmarker;
     return landmarker;
   })();

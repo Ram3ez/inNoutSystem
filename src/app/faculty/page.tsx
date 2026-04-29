@@ -14,7 +14,7 @@ import {
   Phone,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { databases, Query, ID } from "@/lib/appwrite";
+import { databases, tablesDB, fetchAllRows, Query, ID } from "@/lib/appwrite";
 import { DB_ID, COLLECTIONS } from "@/lib/constants";
 import { GradientBackground } from "@/components/GradientBackground";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
@@ -41,29 +41,29 @@ interface LeaveRequest {
 }
 
 export default function FacultyDashboard() {
-  const { user, isLoading: authLoading, isFaculty } = useAuth();
-  const [requests, setRequests] = useState<LeaveRequest[]>([]);
-  const [activeLeaves, setActiveLeaves] = useState<LeaveRequest[]>([]);
-  const [viewMode, setViewMode] = useState<"pending" | "active">("pending");
-  const [isLoading, setIsLoading] = useState(true);
-  const [isActioning, setIsActioning] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [expandedRequests, setExpandedRequests] = useState<
-    Record<string, boolean>
-  >({});
-  const [revealedPhones, setRevealedPhones] = useState<Record<string, boolean>>(
-    {},
-  );
-
-  const router = useRouter();
-
-  useEffect(() => {
-    if (!authLoading && !isFaculty) {
-      router.push("/");
-    } else if (user) {
-      fetchRequests();
-    }
-  }, [authLoading, isFaculty, user]);
+    const { user, isLoading: authLoading, isFaculty, isRegistrationRequired } = useAuth();
+    const [requests, setRequests] = useState<LeaveRequest[]>([]);
+    const [activeLeaves, setActiveLeaves] = useState<LeaveRequest[]>([]);
+    const [viewMode, setViewMode] = useState<"pending" | "active">("pending");
+    const [isLoading, setIsLoading] = useState(true);
+    const [isActioning, setIsActioning] = useState<string | null>(null);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [expandedRequests, setExpandedRequests] = useState<
+      Record<string, boolean>
+    >({});
+    const [revealedPhones, setRevealedPhones] = useState<Record<string, boolean>>(
+      {},
+    );
+  
+    const router = useRouter();
+  
+    useEffect(() => {
+      if (!authLoading && (!isFaculty || isRegistrationRequired)) {
+        router.push("/");
+      } else if (user) {
+        fetchRequests();
+      }
+    }, [authLoading, isFaculty, isRegistrationRequired, user]);
 
   const parseSafeDate = (dateString: string) => {
     if (!dateString) return "Invalid Date";
@@ -88,42 +88,54 @@ export default function FacultyDashboard() {
     if (!user?.email) return;
     setIsLoading(true);
     try {
-      const [pendingRes, activeRes] = await Promise.all([
-        databases.listDocuments(DB_ID, COLLECTIONS.LEAVE, [
+      // Fetch all pending and approved leaves for faculty
+      // We filter by email in the frontend to support multiple advisors per assignment
+      const [pendingRows, activeRows] = await Promise.all([
+        fetchAllRows(DB_ID, COLLECTIONS.LEAVE, [
           Query.equal("status", "pending_faculty"),
-          Query.equal("faculty_id", user.email),
         ]),
-        databases.listDocuments(DB_ID, COLLECTIONS.LEAVE, [
+        fetchAllRows(DB_ID, COLLECTIONS.LEAVE, [
           Query.equal("status", "approved"),
-          Query.equal("faculty_id", user.email),
         ]),
       ]);
 
-      const enrichDocs = async (docs: any[]) => {
-        return Promise.all(
-          docs.map(async (doc) => {
-            const leaveDoc = doc as unknown as LeaveRequest;
-            try {
-              const student = await databases.getDocument(
-                DB_ID,
-                COLLECTIONS.STUDENTS,
-                leaveDoc.roll_no,
-              );
-              return {
-                ...leaveDoc,
-                student_name: student.name,
-                student_phone: student.phone_no,
-              } as LeaveRequest;
-            } catch {
-              return leaveDoc;
-            }
-          }),
-        );
+      const isMyRequest = (req: any) => {
+        if (!req.faculty_id) return false;
+        const approvers = req.faculty_id.split(/[ ,]+/).map((e: string) => e.toLowerCase().trim());
+        return approvers.includes(user.email.toLowerCase().trim());
       };
 
-      const enrichedPending = await enrichDocs(pendingRes.documents);
+      const myPending = pendingRows.filter(isMyRequest);
+      const myActive = activeRows.filter(isMyRequest);
+
+      const enrichDocs = async (docs: any[]) => {
+        const rollNos = Array.from(new Set(docs.map((r: any) => r.roll_no)));
+        const studentMap = new Map<string, any>();
+        
+        if (rollNos.length > 0) {
+          for (let i = 0; i < rollNos.length; i += 100) {
+            const batch = rollNos.slice(i, i + 100);
+            const students = await fetchAllRows<any>(DB_ID, COLLECTIONS.STUDENTS, [
+              Query.equal("$id", batch)
+            ]);
+            students.forEach(s => studentMap.set(s.$id, s));
+          }
+        }
+
+        return docs.map((doc) => {
+          const leaveDoc = doc as unknown as LeaveRequest;
+          const student = studentMap.get(leaveDoc.roll_no);
+          return {
+            ...leaveDoc,
+            student_name: student?.name || "Unknown",
+            student_phone: student?.phone_no,
+          } as LeaveRequest;
+        });
+      };
+
+      const enrichedPending = await enrichDocs(myPending);
       const enrichedActive = await enrichDocs(
-        activeRes.documents.filter((d) => d.exit_date_time && !d.in_date_time),
+        myActive.filter((d: any) => d.exit_date_time && !d.in_date_time),
       );
 
       setRequests(enrichedPending);
@@ -145,14 +157,30 @@ export default function FacultyDashboard() {
       if (!request) return;
 
       if (action === "approve") {
-        await databases.updateDocument(DB_ID, COLLECTIONS.LEAVE, requestId, {
-          status: "approved",
-          faculty_approval: true,
+        /*
+        await databases.updateDocument({
+          databaseId: DB_ID,
+          collectionId: COLLECTIONS.LEAVE,
+          documentId: requestId,
+          data: {
+            status: "approved",
+            faculty_approval: true,
+          }
+        });
+        */
+        await tablesDB.updateRow({
+          databaseId: DB_ID,
+          tableId: COLLECTIONS.LEAVE,
+          rowId: requestId,
+          data: {
+            status: "approved",
+            faculty_approval: true,
+          }
         });
       } else {
         const {
           $id,
-          $collectionId,
+          $tableId,
           $databaseId,
           $createdAt,
           $updatedAt,
@@ -165,13 +193,30 @@ export default function FacultyDashboard() {
         archiveData.status = "rejected_faculty";
         archiveData.faculty_approval = false;
 
-        await databases.createDocument(
-          DB_ID,
-          COLLECTIONS.LEAVE_ARCHIVE,
-          ID.unique(),
-          archiveData,
-        );
-        await databases.deleteDocument(DB_ID, COLLECTIONS.LEAVE, requestId);
+        /*
+        await databases.createDocument({
+          databaseId: DB_ID,
+          collectionId: COLLECTIONS.LEAVE_ARCHIVE,
+          documentId: ID.unique(),
+          data: archiveData
+        });
+        await databases.deleteDocument({
+          databaseId: DB_ID,
+          collectionId: COLLECTIONS.LEAVE,
+          documentId: requestId
+        });
+        */
+        await tablesDB.createRow({
+          databaseId: DB_ID,
+          tableId: COLLECTIONS.LEAVE_ARCHIVE,
+          rowId: ID.unique(),
+          data: archiveData
+        });
+        await tablesDB.deleteRow({
+          databaseId: DB_ID,
+          tableId: COLLECTIONS.LEAVE,
+          rowId: requestId
+        });
       }
 
       // Remove from local list
@@ -244,7 +289,7 @@ export default function FacultyDashboard() {
             <div className="space-y-2">
               <p className="text-primary font-black text-[10px] tracking-[0.3em] uppercase flex items-center gap-2">
                 <UserCheck size={12} />
-                Warden Portal
+                Faculty Portal
               </p>
               <h1 className="text-4xl md:text-5xl font-black text-foreground tracking-tight">
                 Welcome,{" "}

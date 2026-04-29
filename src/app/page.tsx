@@ -18,8 +18,7 @@ import { GradientBackground } from "@/components/GradientBackground";
 import { Navigation } from "@/components/Navigation";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
 import { useRouter } from "next/navigation";
-import { databases } from "@/lib/appwrite";
-import { Query } from "appwrite";
+import { databases, tablesDB, fetchAllRows, Query } from "@/lib/appwrite";
 import { format } from "date-fns";
 import { loadFaceApiModels, loadFaceCache } from "@/lib/faceCache";
 import { getLandmarker } from "@/lib/aiEngine";
@@ -60,22 +59,25 @@ export default function Dashboard() {
 
   // Background "Warming" for Kiosk/Admin
   React.useEffect(() => {
-    if (isAdmin || isKiosk) {
-      const warmEngine = async () => {
+    if (typeof window !== "undefined" && (isAdmin || isKiosk)) {
+      const startSync = async () => {
         try {
-          console.log("[🧠 ENGINE] Warming up AI models in background...");
-          // We run these in parallel to maximize speed
-          await Promise.all([
-            loadFaceApiModels(),
-            loadFaceCache(),
-            getLandmarker(),
-          ]);
-          console.log("[🧠 ENGINE] AI Models ready for instant capture.");
+          // 1. Start the face cache / sync IMMEDIATELY
+          await loadFaceCache();
+          
+          // 2. Wait 2 seconds before doing heavy AI GPU warming
+          // to keep the dashboard initial load buttery smooth.
+          setTimeout(async () => {
+             await Promise.all([
+               loadFaceApiModels(),
+               getLandmarker(),
+             ]);
+          }, 2000);
         } catch (e) {
-          console.warn("[🧠 ENGINE] Background warming failed", e);
+          console.warn("[🧠 ENGINE] Background warming/sync failed", e);
         }
       };
-      warmEngine();
+      startSync();
     }
   }, [isAdmin, isKiosk]);
 
@@ -84,23 +86,21 @@ export default function Dashboard() {
     try {
       if (isAdmin || isKiosk) {
         // Fetch ALL students who are currently out (no in_time)
-        const resp = await databases.listDocuments(DB_ID, COLL_OUTING, [
+        const allOutings = await fetchAllRows(DB_ID, COLL_OUTING, [
           Query.isNull("in_time"),
           Query.orderDesc("out_time"),
-          Query.limit(50),
         ]);
-        setLiveOutings(resp.documents);
+        setLiveOutings(allOutings);
       } else {
         // Fetch personal history for student
         const rollNo = studentData?.$id;
         if (!rollNo) return;
 
-        const resp = await databases.listDocuments(DB_ID, COLL_OUTING, [
+        const history = await fetchAllRows(DB_ID, COLL_OUTING, [
           Query.equal("roll_no", rollNo),
           Query.orderDesc("out_time"),
-          Query.limit(10),
         ]);
-        setOutings(resp.documents);
+        setOutings(history);
       }
     } catch (err) {
       console.error("Failed to fetch outings", err);

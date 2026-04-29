@@ -16,7 +16,7 @@ import {
   Check,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { databases, Query, ID } from "@/lib/appwrite";
+import { databases, tablesDB, fetchAllRows, Query, ID } from "@/lib/appwrite";
 import { DB_ID, COLLECTIONS } from "@/lib/constants";
 import { GradientBackground } from "@/components/GradientBackground";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
@@ -41,7 +41,7 @@ interface LeaveRequest {
 }
 
 export default function CaretakerDashboard() {
-  const { user, isLoading: authLoading, isCaretaker } = useAuth();
+  const { user, isLoading: authLoading, isCaretaker, isRegistrationRequired } = useAuth();
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isActioning, setIsActioning] = useState<string | null>(null);
@@ -60,12 +60,12 @@ export default function CaretakerDashboard() {
   const router = useRouter();
 
   useEffect(() => {
-    if (!authLoading && !isCaretaker) {
+    if (!authLoading && (!isCaretaker || isRegistrationRequired)) {
       router.push("/");
     } else if (user) {
       fetchRequests();
     }
-  }, [authLoading, isCaretaker, user]);
+  }, [authLoading, isCaretaker, isRegistrationRequired, user]);
 
   const parseSafeDate = (dateString: string) => {
     if (!dateString) return "Invalid Date";
@@ -102,37 +102,44 @@ export default function CaretakerDashboard() {
     if (!user?.email) return;
     setIsLoading(true);
     try {
-      const queries = [
-        Query.equal("status", "pending_caretaker"),
-        Query.equal("caretaker_id", user.email),
-      ];
+      // Fetch all pending requests for caretakers
+      // We filter by email in the frontend to support multiple caretakers per assignment
+      const allPending = await fetchAllRows(DB_ID, COLLECTIONS.LEAVE, [
+        Query.equal("status", "pending_caretaker")
+      ]);
 
-      const response = await databases.listDocuments(
-        DB_ID,
-        COLLECTIONS.LEAVE,
-        queries,
-      );
+      const isMyRequest = (req: any) => {
+        if (!req.caretaker_id) return false;
+        // Support exact match or space/comma separated list
+        const approvers = req.caretaker_id.split(/[ ,]+/).map((e: string) => e.toLowerCase().trim());
+        return approvers.includes(user.email.toLowerCase().trim());
+      };
 
-      // Enrich with student details
-      const enriched = await Promise.all(
-        response.documents.map(async (doc) => {
-          const leaveDoc = doc as unknown as LeaveRequest;
-          try {
-            const student = await databases.getDocument(
-              DB_ID,
-              COLLECTIONS.STUDENTS,
-              leaveDoc.roll_no,
-            );
-            return {
-              ...leaveDoc,
-              student_name: student.name,
-              student_phone: student.phone_no,
-            } as LeaveRequest;
-          } catch {
-            return leaveDoc;
-          }
-        }),
-      );
+      const myPendingRequests = allPending.filter(isMyRequest);
+
+      // Enrich with student details using batched queries for scalability
+      const rollNos = Array.from(new Set(myPendingRequests.map((r: any) => r.roll_no)));
+      const studentMap = new Map<string, any>();
+      
+      if (rollNos.length > 0) {
+        for (let i = 0; i < rollNos.length; i += 100) {
+          const batch = rollNos.slice(i, i + 100);
+          const students = await fetchAllRows<any>(DB_ID, COLLECTIONS.STUDENTS, [
+            Query.equal("$id", batch)
+          ]);
+          students.forEach(s => studentMap.set(s.$id, s));
+        }
+      }
+
+      const enriched = myPendingRequests.map((doc) => {
+        const leaveDoc = doc as unknown as LeaveRequest;
+        const student = studentMap.get(leaveDoc.roll_no);
+        return {
+          ...leaveDoc,
+          student_name: student?.name || "Unknown",
+          student_phone: student?.phone_no,
+        } as LeaveRequest;
+      });
 
       setRequests(enriched);
     } catch (error) {
@@ -161,18 +168,36 @@ export default function CaretakerDashboard() {
             : request.requires_faculty;
         nextStatus = needsFaculty ? "pending_faculty" : "approved";
 
-        await databases.updateDocument(DB_ID, COLLECTIONS.LEAVE, requestId, {
-          status: nextStatus,
-          caretaker_approval: true,
-          requires_faculty: needsFaculty,
-          faculty_approval: false,
+        /*
+        await databases.updateDocument({
+          databaseId: DB_ID,
+          collectionId: COLLECTIONS.LEAVE,
+          documentId: requestId,
+          data: {
+            status: nextStatus,
+            caretaker_approval: true,
+            requires_faculty: needsFaculty,
+            faculty_approval: false,
+          },
+        });
+        */
+        await tablesDB.updateRow({
+          databaseId: DB_ID,
+          tableId: COLLECTIONS.LEAVE,
+          rowId: requestId,
+          data: {
+            status: nextStatus,
+            caretaker_approval: true,
+            requires_faculty: needsFaculty,
+            faculty_approval: false,
+          },
         });
       } else {
         nextStatus = "rejected_caretaker";
 
         const {
           $id,
-          $collectionId,
+          $tableId,
           $databaseId,
           $createdAt,
           $updatedAt,
@@ -186,13 +211,30 @@ export default function CaretakerDashboard() {
         archiveData.caretaker_approval = false;
         archiveData.faculty_approval = false;
 
-        await databases.createDocument(
-          DB_ID,
-          COLLECTIONS.LEAVE_ARCHIVE,
-          ID.unique(),
-          archiveData,
-        );
-        await databases.deleteDocument(DB_ID, COLLECTIONS.LEAVE, requestId);
+        /*
+        await databases.createDocument({
+          databaseId: DB_ID,
+          collectionId: COLLECTIONS.LEAVE_ARCHIVE,
+          documentId: ID.unique(),
+          data: archiveData
+        });
+        await databases.deleteDocument({
+          databaseId: DB_ID,
+          collectionId: COLLECTIONS.LEAVE,
+          documentId: requestId
+        });
+        */
+        await tablesDB.createRow({
+          databaseId: DB_ID,
+          tableId: COLLECTIONS.LEAVE_ARCHIVE,
+          rowId: ID.unique(),
+          data: archiveData
+        });
+        await tablesDB.deleteRow({
+          databaseId: DB_ID,
+          tableId: COLLECTIONS.LEAVE,
+          rowId: requestId
+        });
       }
 
       // Remove from local list
@@ -213,9 +255,20 @@ export default function CaretakerDashboard() {
     }));
 
     try {
+      /*
       await databases.updateDocument(DB_ID, COLLECTIONS.LEAVE, requestId, {
         requires_faculty: newVal,
         faculty_approval: false,
+      });
+      */
+      await tablesDB.updateRow({
+        databaseId: DB_ID,
+        tableId: COLLECTIONS.LEAVE,
+        rowId: requestId,
+        data: {
+          requires_faculty: newVal,
+          faculty_approval: false,
+        }
       });
     } catch (error) {
       console.error("Failed to update faculty requirement:", error);

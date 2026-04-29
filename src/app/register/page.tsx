@@ -29,8 +29,8 @@ import { LoadingIndicator } from "@/components/LoadingIndicator";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
-import { databases } from "@/lib/appwrite";
-import { Query } from "appwrite";
+import { databases, tablesDB, fetchAllRows, Query } from "@/lib/appwrite";
+import { ID } from "appwrite";
 import { generateAugmentations } from "@/lib/augmentFace";
 import { uploadEmbeddings, loadFaceApiModels, areModelsLoaded } from "@/lib/faceCache";
 import { getLandmarker, isLandmarkerLoaded, getLandmarkerSync } from "@/lib/aiEngine";
@@ -91,8 +91,11 @@ export default function RegisterFacePage() {
   const webcamRef = useRef<ReactWebcam>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const isMounted = useRef(true);
+
   // Initialize face-api models + MediaPipe — singletons, only warm up once per session
   React.useEffect(() => {
+    isMounted.current = true;
     // If already loaded in background (e.g. from Home page), skip the await chain for instant UI
     if (areModelsLoaded() && isLandmarkerLoaded()) {
       setFaceLandmarker(getLandmarkerSync());
@@ -105,8 +108,10 @@ export default function RegisterFacePage() {
             loadFaceApiModels(),
             getLandmarker()
           ]);
-          setFaceLandmarker(getLandmarkerSync());
-          setAiLoaded(true);
+          if (isMounted.current) {
+            setFaceLandmarker(getLandmarkerSync());
+            setAiLoaded(true);
+          }
         } catch (e) {
           console.error("Failed to initialize AI engine", e);
         }
@@ -114,18 +119,72 @@ export default function RegisterFacePage() {
       init();
     }
 
-    if (!authLoading && (isAdmin || isKiosk)) {
-      fetchPendingStudents();
-    }
-  }, [authLoading, isAdmin, isKiosk]);
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
-  const fetchPendingStudents = async () => {
+  // Search-driven student loading to prevent lag with thousands of records
+  useEffect(() => {
+    if (!authLoading && (isAdmin || isKiosk)) {
+      const delayDebounceFn = setTimeout(() => {
+        if (isMounted.current) fetchPendingStudents(searchTerm);
+      }, 300); // Debounce search
+
+      return () => clearTimeout(delayDebounceFn);
+    }
+  }, [searchTerm, authLoading, isAdmin, isKiosk]);
+
+  const resetEnrollment = () => {
+    setSelectedRollNo("");
+    setSearchTerm("");
+    setCollectedEmbeddings([]);
+    collectedCountRef.current = 0;
+    setEnrollmentStatus("idle");
+    setIsFaceValid(false);
+    setIsCapturing(false);
+    setIsSubmitting(false);
+    setError(null);
+    setSuccess(false);
+    setStatusText("");
+    lastLandmarks.current = null;
+  };
+
+  const fetchPendingStudents = async (query: string = "") => {
     try {
-      const resp = await databases.listDocuments(DB_ID, COLL_STUDENTS, [
-        Query.equal("faceRegistered", false),
-        Query.limit(100),
-      ]);
-      setPendingStudents(resp.documents);
+      // Don't set loading to false here to prevent flickering while typing
+      const q = query.trim().toUpperCase();
+      
+      const baseQueries = [Query.equal("faceRegistered", false)];
+      
+      if (!q) {
+        const { rows } = await tablesDB.listRows({
+          databaseId: DB_ID,
+          tableId: COLL_STUDENTS,
+          queries: [...baseQueries, Query.limit(50), Query.orderDesc("$createdAt")]
+        });
+        setPendingStudents(rows);
+      } else {
+        // Fetch by name and ID in parallel for maximum reliability
+        const [nameResults, idResults] = await Promise.all([
+          tablesDB.listRows({
+            databaseId: DB_ID,
+            tableId: COLL_STUDENTS,
+            queries: [...baseQueries, Query.startsWith("name", query.trim()), Query.limit(50)]
+          }),
+          tablesDB.listRows({
+            databaseId: DB_ID,
+            tableId: COLL_STUDENTS,
+            queries: [...baseQueries, Query.startsWith("$id", q), Query.limit(50)]
+          })
+        ]);
+
+        // Merge and deduplicate
+        const merged = [...nameResults.rows, ...idResults.rows];
+        const unique = Array.from(new Map(merged.map(s => [s.$id, s])).values());
+        
+        setPendingStudents(unique);
+      }
       setIsDataLoaded(true);
     } catch (err) {
       console.error("Failed to fetch pending students", err);
@@ -137,11 +196,20 @@ export default function RegisterFacePage() {
     let animationFrameId: number;
 
     const detect = async () => {
+      if (!isMounted.current) return;
+
       if (faceLandmarker && webcamRef.current?.video?.readyState === 4) {
         const video = webcamRef.current.video;
-        const result = faceLandmarker.detectForVideo(video, performance.now());
-
-        processResults(result);
+        
+        // Safety check for active stream tracks
+        if (video.srcObject) {
+          try {
+            const result = faceLandmarker.detectForVideo(video, performance.now());
+            processResults(result);
+          } catch (e) {
+            console.warn("MediaPipe detection skipped (stream likely closed)", e);
+          }
+        }
       }
       animationFrameId = requestAnimationFrame(detect);
     };
@@ -230,9 +298,10 @@ export default function RegisterFacePage() {
       );
     } else {
       // Phase 4: want a slight down-tilt (chin down) then up
+      // also suggest removing glasses for a split second if wearing
       setDetectionFeedback(
         pitch > 0.1
-          ? "Hold Still — Capturing"
+          ? "Hold Still — (Remove Specs briefly if wearing)"
           : "Tilt your head slightly down",
       );
     }
@@ -293,12 +362,17 @@ export default function RegisterFacePage() {
 
         serverLog("REGISTRATION", `Extracted Organic Embedding #${collectedCountRef.current}`);
       }
-
-      if ((faceapi as any).tf && (faceapi as any).tf.engine) {
-        (faceapi as any).tf.engine().endScope();
-      }
     } catch (err) {
       console.error("Embedding extraction failed:", err);
+    } finally {
+      try {
+        const tf = (faceapi as any).tf;
+        if (tf && tf.engine && tf.engine().state.numDataBuffers > 0) {
+          tf.engine().endScope();
+        }
+      } catch (e) {
+        // Silently handle if scope already closed
+      }
     }
   };
 
@@ -329,20 +403,22 @@ export default function RegisterFacePage() {
     setIsCapturing(false);
 
     try {
+      if ((faceapi as any).tf && (faceapi as any).tf.engine) {
+        (faceapi as any).tf.engine().startScope();
+      }
+
       if (!selectedRollNo) throw new Error("Roll Number lost during session");
 
       setStatusText("Generating augmented identity cluster...");
       await new Promise((r) => setTimeout(r, 100));
 
-      // --- Brightness augmentation (runs once at completion, not in the loop) ---
-      // Capture the current video frame into a canvas, then shift brightness ±40
-      // and extract 2 extra descriptors to improve lighting robustness.
+      // --- Brightness augmentation ---
       let finalEmbeddings = [...embeddings];
       const video = webcamRef.current?.video;
       if (video && video.readyState === 4) {
+        let frameCanvas: HTMLCanvasElement | null = null;
         try {
-          // Draw current frame
-          const frameCanvas = document.createElement("canvas");
+          frameCanvas = document.createElement("canvas");
           frameCanvas.width = video.videoWidth;
           frameCanvas.height = video.videoHeight;
           const fCtx = frameCanvas.getContext("2d");
@@ -351,26 +427,30 @@ export default function RegisterFacePage() {
 
             const detectConfig = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 });
 
-            // Bright + and bright - variants
             for (const offset of [40, -40]) {
               const augCanvas = adjustBrightness(frameCanvas, offset);
-              const det = await faceapi
-                .detectSingleFace(augCanvas, detectConfig)
-                .withFaceLandmarks()
-                .withFaceDescriptor();
-              if (det) {
-                finalEmbeddings.push(det.descriptor);
-                serverLog("REGISTRATION", `Augmented embedding (brightness ${offset > 0 ? "+" : ""}${offset})`);
+              try {
+                const det = await faceapi
+                  .detectSingleFace(augCanvas, detectConfig)
+                  .withFaceLandmarks()
+                  .withFaceDescriptor();
+                if (det) {
+                  finalEmbeddings.push(det.descriptor);
+                  serverLog("REGISTRATION", `Augmented embedding (brightness ${offset > 0 ? "+" : ""}${offset})`);
+                }
+              } finally {
+                augCanvas.width = 0;
+                augCanvas.height = 0;
               }
-              // Free the canvas
-              augCanvas.width = 0;
-              augCanvas.height = 0;
             }
-            frameCanvas.width = 0;
-            frameCanvas.height = 0;
           }
         } catch (augErr) {
           console.warn("Augmentation step failed (non-critical):", augErr);
+        } finally {
+          if (frameCanvas) {
+            frameCanvas.width = 0;
+            frameCanvas.height = 0;
+          }
         }
       }
 
@@ -378,8 +458,11 @@ export default function RegisterFacePage() {
       await uploadEmbeddings(selectedRollNo, finalEmbeddings);
 
       try {
-        await databases.updateDocument(DB_ID, COLL_STUDENTS, selectedRollNo, {
-          faceRegistered: true,
+        await tablesDB.updateRow({
+          databaseId: DB_ID,
+          tableId: COLL_STUDENTS,
+          rowId: selectedRollNo,
+          data: { faceRegistered: true }
         });
       } catch (dbErr) {
         console.warn("Could not update faceRegistered status in DB", dbErr);
@@ -392,6 +475,9 @@ export default function RegisterFacePage() {
       setEnrollmentStatus("idle");
     } finally {
       setIsSubmitting(false);
+      if ((faceapi as any).tf && (faceapi as any).tf.engine) {
+        (faceapi as any).tf.engine().endScope();
+      }
     }
   };
 
@@ -508,13 +594,6 @@ export default function RegisterFacePage() {
                         className="absolute z-50 w-full mt-2 bg-surface/90 backdrop-blur-2xl border border-white/10 rounded-2xl overflow-hidden shadow-2xl max-h-60 overflow-y-auto"
                       >
                         {pendingStudents
-                          .filter((s) => {
-                            const q = searchTerm.toLowerCase();
-                            return (
-                              s.$id.toLowerCase().includes(q) ||
-                              (s.name && s.name.toLowerCase().includes(q))
-                            );
-                          })
                           .map((student) => (
                             <button
                               key={student.$id}
@@ -560,10 +639,7 @@ export default function RegisterFacePage() {
                   {!isCapturing && !isSubmitting && !success && (
                     <button
                       type="button"
-                      onClick={() => {
-                        setSelectedRollNo("");
-                        setSearchTerm("");
-                      }}
+                      onClick={resetEnrollment}
                       className="text-primary/20 hover:text-secondary p-2 text-xs font-bold uppercase tracking-widest"
                     >
                       Clear
@@ -677,13 +753,13 @@ export default function RegisterFacePage() {
 
               <div className="p-8 space-y-8">
                 <div className="flex justify-center">
-                  <div className="relative w-fit rounded-[2rem] overflow-hidden bg-black border border-white/5 shadow-inner">
+                  <div className="relative w-full max-w-xl aspect-[4/3] sm:aspect-video rounded-[2rem] overflow-hidden bg-black border border-white/5 shadow-inner">
                     <ReactWebcam
                       audio={false}
                       ref={webcamRef}
                       mirrored={true}
                       screenshotFormat="image/jpeg"
-                      className="max-w-full max-h-[60vh] h-auto block translate-z-0"
+                      className="w-full h-full object-cover block"
                       videoConstraints={{
                         width: 1280,
                         height: 720,
@@ -730,11 +806,19 @@ export default function RegisterFacePage() {
                   </div>
                 </div>
 
-                <div className="bg-secondary/5 border border-secondary/10 p-4 rounded-2xl text-center">
+                <div className="bg-secondary/5 border border-secondary/10 p-4 rounded-2xl text-center space-y-4">
                   <p className="text-primary/60 text-[9px] font-bold uppercase tracking-widest leading-relaxed">
                     Move your head slowly to allow the neural engine <br /> to
                     capture various organic identity angles
                   </p>
+                  
+                  <button
+                    onClick={resetEnrollment}
+                    className="flex items-center space-x-2 mx-auto text-secondary hover:text-secondary/80 transition-colors py-2 px-4 rounded-xl hover:bg-secondary/5"
+                  >
+                    <X size={14} />
+                    <span className="text-[10px] font-black uppercase tracking-widest">Cancel Registration</span>
+                  </button>
                 </div>
               </div>
             </motion.div>

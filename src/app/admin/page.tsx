@@ -2,10 +2,9 @@
 
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, ShieldCheck, Users, Search, Trash2, UserCheck, UserX, ScanFace, RefreshCw } from 'lucide-react';
+import { ArrowLeft, ShieldCheck, Users, Search, Trash2, UserCheck, UserX, ScanFace, RefreshCw, ChevronDown } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { databases } from '@/lib/appwrite';
-import { Query } from 'appwrite';
+import { databases, tablesDB, fetchAllRows, Query } from '@/lib/appwrite';
 import { GradientBackground } from '@/components/GradientBackground';
 import { LoadingIndicator } from '@/components/LoadingIndicator';
 import { Navigation } from '@/components/Navigation';
@@ -19,7 +18,7 @@ import { teams as appwriteTeams } from '@/lib/appwrite';
 import { Models } from 'appwrite';
 
 export default function AdminPortal() {
-    const { user, isLoading: authLoading, isAdmin } = useAuth();
+    const { user, isLoading: authLoading, isAdmin, isRegistrationRequired } = useAuth();
     const router = useRouter();
     
     const [activeTab, setActiveTab] = useState<'students' | 'assignments' | 'faculty' | 'caretakers'>('students');
@@ -36,6 +35,7 @@ export default function AdminPortal() {
     // Team Management State
     const [facultyMembers, setFacultyMembers] = useState<Models.Membership[]>([]);
     const [caretakerMembers, setCaretakerMembers] = useState<Models.Membership[]>([]);
+    const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
     const [isManagingTeam, setIsManagingTeam] = useState(false);
     const [inviteEmail, setInviteEmail] = useState("");
     const [inviteName, setInviteName] = useState("");
@@ -57,7 +57,7 @@ export default function AdminPortal() {
         if (!authLoading) {
             if (!user) {
                 router.push('/login');
-            } else if (!isAdmin) {
+            } else if (!isAdmin || isRegistrationRequired) {
                 router.push('/');
             } else {
                 fetchStudents();
@@ -65,7 +65,7 @@ export default function AdminPortal() {
                 fetchTeamMembers();
             }
         }
-    }, [authLoading, user, isAdmin, router]);
+    }, [authLoading, user, isAdmin, isRegistrationRequired, router]);
 
     const fetchTeamMembers = async () => {
         try {
@@ -102,13 +102,14 @@ export default function AdminPortal() {
         setIsManagingTeam(true);
         setInviteError(null);
         try {
-            // Appwrite Client SDK uses createMembership which sends an invitation
+            // Using the modern Object-style parameter as recommended by the SDK
             await appwriteTeams.createMembership({
-                teamId,
-                roles: ['owner'], // default roles
+                teamId: teamId,
+                roles: ['owner'], 
                 email: inviteEmail,
-                url: `${window.location.origin}/accept-invite`, // url for verification/acceptance
-                name: inviteName
+                userId: undefined, // Let Appwrite generate or match
+                name: inviteName,
+                url: `${window.location.origin}/accept-invite`
             });
             
             setInviteEmail("");
@@ -139,18 +140,11 @@ export default function AdminPortal() {
 
     const fetchStaffAssignments = async () => {
         try {
-            const cResp = await databases.listDocuments({
-                databaseId: DB_ID, 
-                collectionId: COLLECTIONS.CARETAKER, 
-                queries: [Query.limit(100)]
-            });
-            setCaretakerAssignments(cResp.documents);
-            const fResp = await databases.listDocuments({
-                databaseId: DB_ID, 
-                collectionId: COLLECTIONS.FACULTY, 
-                queries: [Query.limit(100)]
-            });
-            setFacultyAssignments(fResp.documents);
+            const cRows = await fetchAllRows(DB_ID, COLLECTIONS.CARETAKER);
+            setCaretakerAssignments(cRows);
+
+            const fRows = await fetchAllRows(DB_ID, COLLECTIONS.FACULTY);
+            setFacultyAssignments(fRows);
         } catch (error) {
             console.error("Failed to fetch staff assignments:", error);
         }
@@ -159,10 +153,18 @@ export default function AdminPortal() {
     const handleUpdateStaff = async (collId: string, docId: string, email: string) => {
         setIsSavingStaff(docId);
         try {
+            /*
             await databases.updateDocument({
                 databaseId: DB_ID, 
                 collectionId: collId, 
                 documentId: docId, 
+                data: { email }
+            });
+            */
+            await tablesDB.updateRow({
+                databaseId: DB_ID, 
+                tableId: collId, 
+                rowId: docId, 
                 data: { email }
             });
             // Refresh local state
@@ -179,18 +181,46 @@ export default function AdminPortal() {
         }
     };
 
-    const fetchStudents = async () => {
+    // Optimized search for thousands of students
+    useEffect(() => {
+        if (!authLoading && isAdmin) {
+            const delayDebounceFn = setTimeout(() => {
+                fetchStudents(searchTerm);
+            }, 300);
+            return () => clearTimeout(delayDebounceFn);
+        }
+    }, [searchTerm, authLoading, isAdmin]);
+
+    const fetchStudents = async (query: string = "") => {
         setIsLoading(true);
         try {
-            const response = await databases.listDocuments({
-                databaseId: DB_ID, 
-                collectionId: COLLECTIONS.STUDENTS, 
-                queries: [
-                    Query.limit(100),
-                    Query.orderDesc("$createdAt")
-                ]
-            });
-            setStudents(response.documents as unknown as Student[]);
+            const q = query.trim();
+            if (!q) {
+                const { rows } = await tablesDB.listRows({
+                    databaseId: DB_ID,
+                    tableId: COLLECTIONS.STUDENTS,
+                    queries: [Query.orderDesc("$createdAt"), Query.limit(100)]
+                });
+                setStudents(rows as unknown as Student[]);
+            } else {
+                // Parallel search for maximum reliability on all attributes
+                const [nameResults, idResults] = await Promise.all([
+                    tablesDB.listRows({
+                        databaseId: DB_ID,
+                        tableId: COLLECTIONS.STUDENTS,
+                        queries: [Query.startsWith("name", q), Query.limit(100)]
+                    }),
+                    tablesDB.listRows({
+                        databaseId: DB_ID,
+                        tableId: COLLECTIONS.STUDENTS,
+                        queries: [Query.startsWith("$id", q.toUpperCase()), Query.limit(100)]
+                    })
+                ]);
+
+                const merged = [...nameResults.rows, ...idResults.rows];
+                const unique = Array.from(new Map(merged.map(s => [s.$id, s])).values());
+                setStudents(unique as unknown as Student[]);
+            }
         } catch (error) {
             console.error("Failed to fetch students:", error);
         } finally {
@@ -206,10 +236,17 @@ export default function AdminPortal() {
         setIsDeleting(studentId);
         try {
             try {
+                /*
                 await databases.deleteDocument({
                     databaseId: DB_ID, 
                     collectionId: COLLECTIONS.FACIAL_EMBEDDINGS, 
                     documentId: studentId
+                });
+                */
+                await tablesDB.deleteRow({
+                    databaseId: DB_ID, 
+                    tableId: COLLECTIONS.FACIAL_EMBEDDINGS, 
+                    rowId: studentId
                 });
             } catch (dbErr: any) {
                 if (dbErr.code !== 404) {
@@ -218,10 +255,20 @@ export default function AdminPortal() {
             }
 
             // Update Appwrite student record
+            /*
             await databases.updateDocument({
                 databaseId: DB_ID, 
                 collectionId: COLLECTIONS.STUDENTS, 
                 documentId: studentId, 
+                data: {
+                    faceRegistered: false
+                }
+            });
+            */
+            await tablesDB.updateRow({
+                databaseId: DB_ID, 
+                tableId: COLLECTIONS.STUDENTS, 
+                rowId: studentId, 
                 data: {
                     faceRegistered: false
                 }
@@ -235,10 +282,7 @@ export default function AdminPortal() {
         }
     };
 
-    const filteredStudents = students.filter(s => 
-        s.$id.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        s.name?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const filteredStudents = students;
 
     if (authLoading || (isLoading && students.length === 0)) {
         return (
@@ -270,29 +314,29 @@ export default function AdminPortal() {
                     </div>
 
                     <div className="flex flex-col sm:flex-row items-center gap-4 w-full md:w-auto">
-                        {/* Tab Switcher */}
-                        <div className="flex bg-primary/5 p-1 rounded-2xl border border-primary/5 w-full sm:w-auto">
+                        {/* Tab Switcher - Now scrollable on mobile */}
+                        <div className="flex bg-primary/5 p-1 rounded-2xl border border-primary/5 w-full sm:w-auto overflow-x-auto no-scrollbar scroll-smooth snap-x">
                             <button 
                                 onClick={() => setActiveTab('students')}
-                                className={`flex-1 sm:flex-none px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'students' ? 'bg-primary text-background shadow-lg shadow-primary/20' : 'text-primary/60 hover:text-primary'}`}
+                                className={`flex-shrink-0 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all snap-start ${activeTab === 'students' ? 'bg-primary text-background shadow-lg shadow-primary/20' : 'text-primary/60 hover:text-primary'}`}
                             >
                                 Students
                             </button>
                             <button 
                                 onClick={() => setActiveTab('assignments')}
-                                className={`flex-1 sm:flex-none px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'assignments' ? 'bg-primary text-background shadow-lg shadow-primary/20' : 'text-primary/60 hover:text-primary'}`}
+                                className={`flex-shrink-0 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all snap-start ${activeTab === 'assignments' ? 'bg-primary text-background shadow-lg shadow-primary/20' : 'text-primary/60 hover:text-primary'}`}
                             >
                                 Assignments
                             </button>
                             <button 
                                 onClick={() => setActiveTab('faculty')}
-                                className={`flex-1 sm:flex-none px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'faculty' ? 'bg-primary text-background shadow-lg shadow-primary/20' : 'text-primary/60 hover:text-primary'}`}
+                                className={`flex-shrink-0 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all snap-start ${activeTab === 'faculty' ? 'bg-primary text-background shadow-lg shadow-primary/20' : 'text-primary/60 hover:text-primary'}`}
                             >
                                 Faculty Team
                             </button>
                             <button 
                                 onClick={() => setActiveTab('caretakers')}
-                                className={`flex-1 sm:flex-none px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'caretakers' ? 'bg-primary text-background shadow-lg shadow-primary/20' : 'text-primary/60 hover:text-primary'}`}
+                                className={`flex-shrink-0 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all snap-start ${activeTab === 'caretakers' ? 'bg-primary text-background shadow-lg shadow-primary/20' : 'text-primary/60 hover:text-primary'}`}
                             >
                                 Caretaker Team
                             </button>
@@ -437,41 +481,88 @@ export default function AdminPortal() {
                                     <ShieldCheck size={20} className="text-secondary" />
                                     <h2 className="text-lg font-black text-primary uppercase tracking-tight">Hostel Caretakers</h2>
                                 </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {caretakerAssignments.map((assignment) => (
-                                        <div key={assignment.$id} className="bg-surface border border-primary/5 p-6 rounded-[2rem] space-y-4">
-                                            <div className="flex justify-between items-center">
-                                                <p className="text-[10px] font-black text-secondary uppercase tracking-[0.2em]">{assignment.gender} • {assignment.YEAR} YEAR</p>
-                                                <ShieldCheck size={14} className="text-primary/10" />
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {caretakerAssignments.map((assignment) => {
+                                        const emails = assignment.email ? assignment.email.split(',').map((e: string) => e.trim()).filter(Boolean) : [];
+                                        return (
+                                            <div key={assignment.$id} className="bg-surface border border-primary/5 p-6 rounded-[2.5rem] space-y-6 shadow-xl shadow-primary/5">
+                                                <div className="flex justify-between items-center">
+                                                    <div>
+                                                        <p className="text-[10px] font-black text-secondary uppercase tracking-[0.2em] mb-1">{assignment.gender} • {assignment.year} YEAR</p>
+                                                        <h3 className="text-xs font-bold text-primary/40 uppercase">Assigned Caretakers</h3>
+                                                    </div>
+                                                    <div className="w-10 h-10 bg-secondary/10 rounded-full flex items-center justify-center text-secondary border border-secondary/10">
+                                                        <ShieldCheck size={18} />
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex flex-wrap gap-2">
+                                                    {emails.map((email: string, idx: number) => (
+                                                        <div key={idx} className="bg-primary/5 border border-primary/10 pl-3 pr-2 py-1.5 rounded-xl flex items-center gap-2 group transition-all hover:border-secondary/30">
+                                                            <span className="text-[10px] font-bold text-primary/80">{email}</span>
+                                                            <button 
+                                                                onClick={() => {
+                                                                    const newEmails = emails.filter((_: any, i: number) => i !== idx);
+                                                                    handleUpdateStaff(COLLECTIONS.CARETAKER, assignment.$id, newEmails.join(', '));
+                                                                }}
+                                                                className="p-1 text-primary/20 hover:text-secondary hover:bg-secondary/10 rounded-lg transition-all"
+                                                            >
+                                                                <UserX size={12} />
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                    {emails.length === 0 && (
+                                                        <p className="text-[10px] text-primary/20 font-bold uppercase tracking-widest py-2 italic">No staff assigned</p>
+                                                    )}
+                                                </div>
+
+                                                <div className="relative">
+                                                    <button 
+                                                        onClick={() => setOpenDropdownId(openDropdownId === assignment.$id ? null : assignment.$id)}
+                                                        className="w-full bg-primary/5 border border-primary/10 rounded-2xl h-12 px-4 flex items-center justify-between group hover:border-secondary/30 transition-all"
+                                                    >
+                                                        <span className="text-[10px] font-black uppercase text-primary/60 group-hover:text-primary transition-colors">+ Assign Caretaker...</span>
+                                                        <ChevronDown size={14} className={`text-primary/20 transition-transform duration-300 ${openDropdownId === assignment.$id ? 'rotate-180' : ''}`} />
+                                                    </button>
+
+                                                    <AnimatePresence>
+                                                        {openDropdownId === assignment.$id && (
+                                                            <>
+                                                                <div 
+                                                                    className="fixed inset-0 z-40" 
+                                                                    onClick={() => setOpenDropdownId(null)}
+                                                                />
+                                                                <motion.div 
+                                                                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                                                    className="absolute z-50 left-0 right-0 mt-2 bg-surface/90 backdrop-blur-2xl border border-primary/10 rounded-2xl overflow-hidden shadow-2xl max-h-60 overflow-y-auto no-scrollbar"
+                                                                >
+                                                                    {caretakerMembers.length === 0 ? (
+                                                                        <div className="px-6 py-4 text-[10px] font-bold text-primary/20 uppercase tracking-widest text-center italic">No caretakers in team</div>
+                                                                    ) : caretakerMembers.map(m => (
+                                                                        <button 
+                                                                            key={m.$id}
+                                                                            onClick={() => {
+                                                                                if (!emails.includes(m.userEmail)) {
+                                                                                    handleUpdateStaff(COLLECTIONS.CARETAKER, assignment.$id, [...emails, m.userEmail].join(', '));
+                                                                                }
+                                                                                setOpenDropdownId(null);
+                                                                            }}
+                                                                            className="w-full px-6 py-4 flex flex-col items-start hover:bg-secondary/10 transition-all border-b border-primary/5 last:border-0 text-left"
+                                                                        >
+                                                                            <span className="text-[10px] font-black text-primary uppercase tracking-tight">{m.userName || m.userEmail.split('@')[0]}</span>
+                                                                            <span className="text-[9px] font-bold text-primary/40 uppercase tracking-widest">{m.userEmail}</span>
+                                                                        </button>
+                                                                    ))}
+                                                                </motion.div>
+                                                            </>
+                                                        )}
+                                                    </AnimatePresence>
+                                                </div>
                                             </div>
-                                            <div className="flex gap-2">
-                                                <input 
-                                                    type="email"
-                                                    defaultValue={assignment.email}
-                                                    id={`input-c-${assignment.$id}`}
-                                                    onChange={(e) => {
-                                                        const btn = document.getElementById(`btn-c-${assignment.$id}`);
-                                                        if (btn) btn.style.display = e.target.value !== assignment.email ? 'block' : 'none';
-                                                    }}
-                                                    placeholder="Enter caretaker email"
-                                                    className="flex-1 bg-primary/5 border border-primary/5 rounded-xl h-12 px-4 text-sm text-primary focus:outline-none focus:border-secondary/50 transition-all font-bold"
-                                                />
-                                                <button 
-                                                    id={`btn-c-${assignment.$id}`}
-                                                    style={{ display: 'none' }}
-                                                    onClick={() => {
-                                                        const input = document.getElementById(`input-c-${assignment.$id}`) as HTMLInputElement;
-                                                        handleUpdateStaff(COLLECTIONS.CARETAKER, assignment.$id, input.value);
-                                                        const btn = document.getElementById(`btn-c-${assignment.$id}`);
-                                                        if (btn) btn.style.display = 'none';
-                                                    }}
-                                                    className="bg-secondary text-background px-4 rounded-xl text-[10px] font-black hover:opacity-90 transition-all"
-                                                >
-                                                    {isSavingStaff === assignment.$id ? <RefreshCw size={14} className="animate-spin" /> : "SAVE"}
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </section>
 
@@ -481,41 +572,87 @@ export default function AdminPortal() {
                                     <UserCheck size={20} className="text-secondary" />
                                     <h2 className="text-lg font-black text-primary uppercase tracking-tight">Faculty Advisors</h2>
                                 </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {facultyAssignments.map((assignment) => (
-                                        <div key={assignment.$id} className="bg-surface border border-primary/5 p-6 rounded-[2rem] space-y-4">
-                                            <div className="flex justify-between items-center">
-                                                <p className="text-[10px] font-black text-secondary uppercase tracking-[0.2em]">{assignment.department} • {assignment.year} YEAR</p>
-                                                <UserCheck size={14} className="text-primary/10" />
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {facultyAssignments.map((assignment) => {
+                                        const emails = assignment.email ? assignment.email.split(',').map((e: string) => e.trim()).filter(Boolean) : [];
+                                        return (
+                                            <div key={assignment.$id} className="bg-surface border border-primary/5 p-6 rounded-[2.5rem] space-y-6 shadow-xl shadow-primary/5">
+                                                <div className="flex justify-between items-center">
+                                                    <div>
+                                                        <p className="text-[10px] font-black text-secondary uppercase tracking-[0.2em] mb-1">{assignment.department} • {assignment.year} YEAR</p>
+                                                        <h3 className="text-xs font-bold text-primary/40 uppercase">Assigned Advisor</h3>
+                                                    </div>
+                                                    <div className="w-10 h-10 bg-secondary/10 rounded-full flex items-center justify-center text-secondary border border-secondary/10">
+                                                        <UserCheck size={18} />
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex flex-wrap gap-2">
+                                                    {emails.map((email: string, idx: number) => (
+                                                        <div key={idx} className="bg-primary/5 border border-primary/10 pl-3 pr-2 py-1.5 rounded-xl flex items-center gap-2 group transition-all hover:border-secondary/30">
+                                                            <span className="text-[10px] font-bold text-primary/80">{email}</span>
+                                                            <button 
+                                                                onClick={() => {
+                                                                    handleUpdateStaff(COLLECTIONS.FACULTY, assignment.$id, "");
+                                                                }}
+                                                                className="p-1 text-primary/20 hover:text-secondary hover:bg-secondary/10 rounded-lg transition-all"
+                                                            >
+                                                                <UserX size={12} />
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                    {emails.length === 0 && (
+                                                        <p className="text-[10px] text-primary/20 font-bold uppercase tracking-widest py-2 italic">No advisor assigned</p>
+                                                    )}
+                                                </div>
+
+                                                <div className="relative">
+                                                    <button 
+                                                        onClick={() => setOpenDropdownId(openDropdownId === assignment.$id ? null : assignment.$id)}
+                                                        className="w-full bg-primary/5 border border-primary/10 rounded-2xl h-12 px-4 flex items-center justify-between group hover:border-secondary/30 transition-all"
+                                                    >
+                                                        <span className="text-[10px] font-black uppercase text-primary/60 group-hover:text-primary transition-colors">
+                                                            {emails.length > 0 ? "Change Advisor..." : "+ Assign Advisor..."}
+                                                        </span>
+                                                        <ChevronDown size={14} className={`text-primary/20 transition-transform duration-300 ${openDropdownId === assignment.$id ? 'rotate-180' : ''}`} />
+                                                    </button>
+
+                                                    <AnimatePresence>
+                                                        {openDropdownId === assignment.$id && (
+                                                            <>
+                                                                <div 
+                                                                    className="fixed inset-0 z-40" 
+                                                                    onClick={() => setOpenDropdownId(null)}
+                                                                />
+                                                                <motion.div 
+                                                                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                                                    className="absolute z-50 left-0 right-0 mt-2 bg-surface/90 backdrop-blur-2xl border border-primary/10 rounded-2xl overflow-hidden shadow-2xl max-h-60 overflow-y-auto no-scrollbar"
+                                                                >
+                                                                    {facultyMembers.length === 0 ? (
+                                                                        <div className="px-6 py-4 text-[10px] font-bold text-primary/20 uppercase tracking-widest text-center italic">No faculty in team</div>
+                                                                    ) : facultyMembers.map(m => (
+                                                                        <button 
+                                                                            key={m.$id}
+                                                                            onClick={() => {
+                                                                                handleUpdateStaff(COLLECTIONS.FACULTY, assignment.$id, m.userEmail);
+                                                                                setOpenDropdownId(null);
+                                                                            }}
+                                                                            className="w-full px-6 py-4 flex flex-col items-start hover:bg-secondary/10 transition-all border-b border-primary/5 last:border-0 text-left"
+                                                                        >
+                                                                            <span className="text-[10px] font-black text-primary uppercase tracking-tight">{m.userName || m.userEmail.split('@')[0]}</span>
+                                                                            <span className="text-[9px] font-bold text-primary/40 uppercase tracking-widest">{m.userEmail}</span>
+                                                                        </button>
+                                                                    ))}
+                                                                </motion.div>
+                                                            </>
+                                                        )}
+                                                    </AnimatePresence>
+                                                </div>
                                             </div>
-                                            <div className="flex gap-2">
-                                                <input 
-                                                    type="email"
-                                                    defaultValue={assignment.email}
-                                                    id={`input-f-${assignment.$id}`}
-                                                    onChange={(e) => {
-                                                        const btn = document.getElementById(`btn-f-${assignment.$id}`);
-                                                        if (btn) btn.style.display = e.target.value !== assignment.email ? 'block' : 'none';
-                                                    }}
-                                                    placeholder="Enter faculty email"
-                                                    className="flex-1 bg-primary/5 border border-primary/5 rounded-xl h-12 px-4 text-sm text-primary focus:outline-none focus:border-secondary/50 transition-all font-bold"
-                                                />
-                                                <button 
-                                                    id={`btn-f-${assignment.$id}`}
-                                                    style={{ display: 'none' }}
-                                                    onClick={() => {
-                                                        const input = document.getElementById(`input-f-${assignment.$id}`) as HTMLInputElement;
-                                                        handleUpdateStaff(COLLECTIONS.FACULTY, assignment.$id, input.value);
-                                                        const btn = document.getElementById(`btn-f-${assignment.$id}`);
-                                                        if (btn) btn.style.display = 'none';
-                                                    }}
-                                                    className="bg-secondary text-background px-4 rounded-xl text-[10px] font-black hover:opacity-90 transition-all"
-                                                >
-                                                    {isSavingStaff === assignment.$id ? <RefreshCw size={14} className="animate-spin" /> : "SAVE"}
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </section>
                         </motion.div>
@@ -543,7 +680,7 @@ export default function AdminPortal() {
                                             <label className="text-[10px] font-black text-primary/40 uppercase tracking-widest ml-4">Staff Name</label>
                                             <input 
                                                 type="text"
-                                                placeholder="e.g. Dr. Rameez"
+                                                placeholder="e.g. John Doe"
                                                 value={inviteName}
                                                 onChange={(e) => setInviteName(e.target.value)}
                                                 className="w-full bg-primary/5 border border-primary/10 rounded-2xl h-14 px-6 text-sm font-bold text-primary focus:border-secondary transition-all"

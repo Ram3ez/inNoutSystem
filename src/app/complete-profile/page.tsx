@@ -9,7 +9,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { databases } from "@/lib/appwrite";
+import { databases, tablesDB } from "@/lib/appwrite";
 import { useRouter } from "next/navigation";
 import { GradientBackground } from "@/components/GradientBackground";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
@@ -21,6 +21,7 @@ export default function CompleteProfilePage() {
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
   const [gender, setGender] = useState<"MALE" | "FEMALE" | "">("");
+  const [location, setLocation] = useState(""); // Building + Room/Floor for Staff
   const [department, setDepartment] = useState("");
   const [year, setYear] = useState("");
   const [course, setCourse] = useState("");
@@ -28,6 +29,9 @@ export default function CompleteProfilePage() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+
+  const profileId = user?.email.split("@")[0].toUpperCase() || "";
+  const isStudent = /^[A-Z]{2}[0-9]{2}[A-Z][0-9]{4}$/.test(profileId);
 
   const decodeRollNumber = (rollNo: string) => {
     if (!rollNo || rollNo.length < 5) return null;
@@ -38,33 +42,21 @@ export default function CompleteProfilePage() {
 
     if (isNaN(joinYearShort)) return null;
 
-    // 1. Department Mapping
     const branchMap: Record<string, string> = {
-      CS: "CSE",
-      EC: "ECE",
-      EE: "EEE",
-      CE: "CIVIL",
-      ME: "MECH",
-      ED: "EDUCATION",
-      PY: "PHY",
-      CH: "CHEM",
-      MA: "MATH",
+      CS: "CSE", EC: "ECE", EE: "EEE", CE: "CIVIL", ME: "MECH",
+      ED: "EDUCATION", PY: "PHY", CH: "CHEM", MA: "MATH",
     };
     const dept = branchMap[branchCode] || "OTHER";
 
-    // 2. Year Calculation (Dynamic based on current date)
     const now = new Date();
     const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth() + 1; // getMonth() is 0-indexed
-
+    const currentMonth = now.getMonth() + 1;
     const joinYear = 2000 + joinYearShort;
     let acadYear = currentYear - joinYear;
     if (currentMonth >= 7) acadYear += 1;
 
-    // 3. Course Mapping & Duration Logic
     let courseType = "";
-    let duration = 4; // Default
-    
+    let duration = 4;
     const engBranches = ["CS", "EC", "EE", "ME", "CE"];
     const alwaysMsc = ["PY", "MA", "CH"];
 
@@ -80,7 +72,6 @@ export default function CompleteProfilePage() {
         duration = 4;
       }
     } else {
-      // EDUCATION or others
       if (degreeLetter === "M") {
         courseType = "msc";
         duration = 2;
@@ -89,10 +80,7 @@ export default function CompleteProfilePage() {
         duration = 4;
       }
     }
-
-    // Clamp year between 1 and duration
     const finalYear = Math.max(1, Math.min(duration, acadYear)).toString();
-
     return { department: dept, year: finalYear, course: courseType };
   };
 
@@ -105,50 +93,115 @@ export default function CompleteProfilePage() {
 
     if (user) {
       setName(user.name || "");
-      const rollNo = user.email.split("@")[0].toUpperCase();
-      const decoded = decodeRollNumber(rollNo);
-      if (decoded) {
-        setDepartment(decoded.department);
-        setYear(decoded.year);
-        setCourse(decoded.course);
+      if (isStudent) {
+        const decoded = decodeRollNumber(profileId);
+        if (decoded) {
+          setDepartment(decoded.department);
+          setYear(decoded.year);
+          setCourse(decoded.course);
+        }
       }
     }
-  }, [user, authLoading, isRegistrationRequired, router]);
+  }, [user, authLoading, isRegistrationRequired, router, isStudent, profileId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !user.email) return;
 
-    if (!gender) {
-      setError("Please select your gender");
+    // Basic Validation
+    if (name.trim().length < 3) {
+      setError("Please enter your full name (minimum 3 characters)");
       return;
     }
 
-    if (phone.length !== 10) {
-      setError("Phone number must be exactly 10 digits");
+    if (phone.length !== 10 || !/^[6-9]\d{9}$/.test(phone)) {
+      setError("Please enter a valid 10-digit Indian mobile number");
       return;
+    }
+
+    if (isStudent) {
+      if (!gender) {
+        setError("Please select your gender");
+        return;
+      }
+      if (!department || !year || !course) {
+        setError("Academic details could not be detected. Please contact support.");
+        return;
+      }
+    } else {
+      if (!location || location.trim().length < 5) {
+        setError("Please enter a detailed campus location (e.g. Science Block, Room 204)");
+        return;
+      }
     }
 
     setIsSubmitting(true);
     setError(null);
 
-    const rollNumber = user.email.split("@")[0].toUpperCase();
-
     try {
-      await databases.createDocument(DB_ID, COLLECTIONS.STUDENTS, rollNumber, {
-        name: name,
-        phone_no: parseInt(phone),
-        gender: gender,
-        department: department,
-        year: year,
-        course: course,
-        is_out: false,
-        faceRegistered: false,
-      });
+      if (isStudent) {
+        /*
+        await databases.createDocument({
+          databaseId: DB_ID,
+          collectionId: COLLECTIONS.STUDENTS,
+          documentId: profileId,
+          data: {
+            name: name,
+            phone_no: parseInt(phone),
+            gender: gender,
+            department: department,
+            year: year,
+            course: course,
+            is_out: false,
+            faceRegistered: false,
+          }
+        });
+        */
+        await tablesDB.createRow({
+          databaseId: DB_ID,
+          tableId: COLLECTIONS.STUDENTS,
+          rowId: profileId,
+          data: {
+            name: name,
+            phone_no: parseInt(phone),
+            gender: gender,
+            department: department,
+            year: year,
+            course: course,
+            is_out: false,
+            faceRegistered: false,
+          }
+        });
+      } else {
+        /*
+        await databases.createDocument({
+          databaseId: DB_ID,
+          collectionId: COLLECTIONS.STAFF_DETAILS,
+          documentId: profileId.toLowerCase(),
+          data: {
+            name: name,
+            phone_no: parseInt(phone),
+            location: location,
+            email: user.email
+          }
+        });
+        */
+        await tablesDB.createRow({
+          databaseId: DB_ID,
+          tableId: COLLECTIONS.STAFF_DETAILS,
+          rowId: profileId.toLowerCase(),
+          data: {
+            name: name,
+            phone_no: parseInt(phone),
+            location: location,
+            email: user.email
+          }
+        });
+      }
 
       setIsSuccess(true);
       setTimeout(() => {
-        window.location.href = "/"; // Force a full reload to refresh AuthContext state
+        window.location.href = "/";
       }, 2000);
     } catch (err: any) {
       console.error("Registration failed:", err);
@@ -185,120 +238,113 @@ export default function CompleteProfilePage() {
                 exit={{ opacity: 0 }}
               >
                 <div className="mb-8 text-center">
-                  <h1 className="text-2xl font-bold text-primary mb-2 uppercase tracking-widest">
-                    Complete Profile
+                  <h1 className="text-2xl font-bold text-primary mb-2 uppercase tracking-widest italic">
+                    {isStudent ? 'Complete Student Profile' : 'Complete Staff Profile'}
                   </h1>
-                  <p className="text-primary/70 text-sm tracking-wide uppercase font-bold">
-                    Academic details detected automatically
+                  <p className="text-primary/70 text-[10px] tracking-wide uppercase font-bold">
+                    {isStudent ? 'Academic details detected automatically' : 'Provide your contact and office details'}
                   </p>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-6">
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-primary/60 uppercase tracking-widest ml-1">
+                    <label className="text-[10px] font-black text-primary/40 uppercase tracking-widest ml-4">
                       Full Name
                     </label>
                     <div className="relative">
-                      <UserIcon
-                        className="absolute left-4 top-1/2 -translate-y-1/2 text-primary/20"
-                        size={18}
-                      />
+                      <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-primary/20" size={18} />
                       <input
                         type="text"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         required
                         placeholder="Enter full name"
-                        className="w-full h-14 bg-primary/5 border border-primary/10 rounded-xl pl-12 pr-4 text-primary placeholder:text-primary/60 focus:outline-none focus:border-secondary transition-all font-bold uppercase"
+                        className="w-full h-14 bg-primary/5 border border-primary/10 rounded-2xl pl-12 pr-4 text-primary placeholder:text-primary/60 focus:outline-none focus:border-secondary transition-all font-bold uppercase"
                       />
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-primary/60 uppercase tracking-widest ml-1">
+                    <label className="text-[10px] font-black text-primary/40 uppercase tracking-widest ml-4">
                       Phone Number
                     </label>
                     <div className="relative">
-                      <Phone
-                        className="absolute left-4 top-1/2 -translate-y-1/2 text-primary/20"
-                        size={18}
-                      />
+                      <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-primary/20" size={18} />
                       <input
                         type="tel"
                         value={phone}
-                        onChange={(e) =>
-                          setPhone(
-                            e.target.value.replace(/\D/g, "").slice(0, 10),
-                          )
-                        }
+                        onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
                         required
                         maxLength={10}
                         placeholder="Enter 10-digit number"
-                        className="w-full h-14 bg-primary/5 border border-primary/10 rounded-xl pl-12 pr-4 text-primary placeholder:text-primary/60 focus:outline-none focus:border-secondary transition-all font-bold"
+                        className="w-full h-14 bg-primary/5 border border-primary/10 rounded-2xl pl-12 pr-4 text-primary placeholder:text-primary/60 focus:outline-none focus:border-secondary transition-all font-bold"
                       />
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-primary/60 uppercase tracking-widest ml-1">
-                      Gender
-                    </label>
-                    <div className="grid grid-cols-2 gap-2 sm:gap-4">
-                      <button
-                        type="button"
-                        onClick={() => setGender("MALE")}
-                        className={`h-14 rounded-xl font-bold uppercase tracking-widest transition-all ${
-                          gender === "MALE"
-                            ? "bg-secondary text-white shadow-lg shadow-secondary/20"
-                            : "bg-primary/5 text-primary/60 border border-primary/5 hover:bg-primary/10"
-                        }`}
-                      >
-                        Male
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setGender("FEMALE")}
-                        className={`h-14 rounded-xl font-bold uppercase tracking-widest transition-all ${
-                          gender === "FEMALE"
-                            ? "bg-secondary text-white shadow-lg shadow-secondary/20"
-                            : "bg-primary/5 text-primary/60 border border-primary/5 hover:bg-primary/10"
-                        }`}
-                      >
-                        Female
-                      </button>
-                    </div>
-                  </div>
+                  {isStudent ? (
+                    <>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-primary/40 uppercase tracking-widest ml-4">Gender</label>
+                        <div className="grid grid-cols-2 gap-2 sm:gap-4">
+                          <button
+                            type="button"
+                            onClick={() => setGender("MALE")}
+                            className={`h-14 rounded-2xl font-bold uppercase tracking-widest transition-all ${
+                              gender === "MALE"
+                                ? "bg-secondary text-white shadow-lg shadow-secondary/20"
+                                : "bg-primary/5 text-primary/60 border border-primary/5 hover:bg-primary/10"
+                            }`}
+                          >
+                            Male
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setGender("FEMALE")}
+                            className={`h-14 rounded-2xl font-bold uppercase tracking-widest transition-all ${
+                              gender === "FEMALE"
+                                ? "bg-secondary text-white shadow-lg shadow-secondary/20"
+                                : "bg-primary/5 text-primary/60 border border-primary/5 hover:bg-primary/10"
+                            }`}
+                          >
+                            Female
+                          </button>
+                        </div>
+                      </div>
 
-                  {/* Calculated Academic Info Display */}
-                  <div className="bg-primary/5 border border-primary/10 rounded-2xl p-6 space-y-4">
-                    <div className="flex justify-between items-center border-b border-primary/5 pb-4">
-                      <p className="text-[10px] font-bold text-primary/70 uppercase tracking-widest">
-                        Department
-                      </p>
-                      <p className="text-sm font-black text-secondary uppercase tracking-tight">
-                        {department || "---"}
-                      </p>
+                      <div className="bg-primary/5 border border-primary/10 rounded-[2rem] p-6 space-y-4">
+                        <div className="flex justify-between items-center border-b border-primary/5 pb-4">
+                          <p className="text-[9px] font-bold text-primary/30 uppercase tracking-widest">Department</p>
+                          <p className="text-sm font-black text-secondary uppercase tracking-tight">{department || "---"}</p>
+                        </div>
+                        <div className="flex justify-between items-center border-b border-primary/5 pb-4">
+                          <p className="text-[9px] font-bold text-primary/30 uppercase tracking-widest">Academic Year</p>
+                          <p className="text-sm font-black text-secondary uppercase tracking-tight">{year ? `${year} Year` : "---"}</p>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <p className="text-[9px] font-bold text-primary/30 uppercase tracking-widest">Course</p>
+                          <p className="text-sm font-black text-secondary uppercase tracking-tight">{course || "---"}</p>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-primary/40 uppercase tracking-widest ml-4">
+                        Campus Location (Building + Floor + Room)
+                      </label>
+                      <input
+                        type="text"
+                        value={location}
+                        onChange={(e) => setLocation(e.target.value)}
+                        required
+                        placeholder="e.g. Science Block, 2nd Floor, Room 204"
+                        className="w-full h-14 bg-primary/5 border border-primary/10 rounded-2xl px-6 text-primary placeholder:text-primary/60 focus:outline-none focus:border-secondary transition-all font-bold uppercase"
+                      />
                     </div>
-                    <div className="flex justify-between items-center border-b border-primary/5 pb-4">
-                      <p className="text-[10px] font-bold text-primary/70 uppercase tracking-widest">
-                        Academic Year
-                      </p>
-                      <p className="text-sm font-black text-secondary uppercase tracking-tight">
-                        {year ? `${year} Year` : "---"}
-                      </p>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <p className="text-[10px] font-bold text-primary/70 uppercase tracking-widest">
-                        Course
-                      </p>
-                      <p className="text-sm font-black text-secondary uppercase tracking-tight">
-                        {course || "---"}
-                      </p>
-                    </div>
-                  </div>
+                  )}
 
                   {error && (
-                    <p className="text-error text-xs font-bold uppercase tracking-wider text-center bg-error/10 py-3 rounded-lg border border-error/20">
+                    <p className="text-[10px] font-bold text-secondary uppercase tracking-widest text-center bg-secondary/10 py-3 rounded-2xl border border-secondary/20">
                       {error}
                     </p>
                   )}
@@ -306,13 +352,13 @@ export default function CompleteProfilePage() {
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="w-full h-14 bg-primary text-white rounded-xl font-bold uppercase tracking-widest flex items-center justify-center space-x-3 transition-all hover:brightness-110 active:scale-95 disabled:opacity-50 shadow-xl shadow-primary/20"
+                    className="w-full h-16 bg-primary text-background rounded-[2rem] text-[10px] font-black uppercase tracking-[0.2em] shadow-lg shadow-primary/20 hover:brightness-110 active:scale-[0.98] transition-all disabled:opacity-50 flex items-center justify-center gap-3"
                   >
                     {isSubmitting ? (
-                      <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <div className="w-6 h-6 border-2 border-background border-t-transparent rounded-full animate-spin" />
                     ) : (
                       <>
-                        <span>Save & Continue</span>
+                        <span>Complete Profile</span>
                         <ArrowRight size={20} />
                       </>
                     )}

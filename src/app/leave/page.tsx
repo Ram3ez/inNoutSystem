@@ -12,7 +12,7 @@ import {
   MapPin,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { databases, ID } from "@/lib/appwrite";
+import { databases, tablesDB, ID } from "@/lib/appwrite";
 import { Query } from "appwrite";
 import { GradientBackground } from "@/components/GradientBackground";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
@@ -51,20 +51,42 @@ export default function LeavePage() {
         const COLL_FACULTY = COLLECTIONS.FACULTY;
 
         // Fetch Caretaker
+        /*
         const cResp = await databases.listDocuments(DB_ID, COLL_CARETAKER, [
           Query.equal("gender", studentData.gender),
           Query.equal("year", parseInt(studentData.year)),
           Query.limit(1),
         ]);
-        if (cResp.documents[0]) setCaretakerEmail(cResp.documents[0].email);
+        */
+        const cResp = await tablesDB.listRows({
+          databaseId: DB_ID,
+          tableId: COLL_CARETAKER,
+          queries: [
+            Query.equal("gender", studentData.gender),
+            Query.equal("year", parseInt(studentData.year)),
+            Query.limit(1),
+          ]
+        });
+        if (cResp.rows[0]) setCaretakerEmail(cResp.rows[0].email);
 
         // Fetch Faculty (Shared for B.Tech/M.Tech)
+        /*
         const fResp = await databases.listDocuments(DB_ID, COLL_FACULTY, [
           Query.equal("department", studentData.department),
           Query.equal("year", parseInt(studentData.year)),
           Query.limit(1),
         ]);
-        if (fResp.documents[0]) setFacultyEmail(fResp.documents[0].email);
+        */
+        const fResp = await tablesDB.listRows({
+          databaseId: DB_ID,
+          tableId: COLL_FACULTY,
+          queries: [
+            Query.equal("department", studentData.department),
+            Query.equal("year", parseInt(studentData.year)),
+            Query.limit(1),
+          ]
+        });
+        if (fResp.rows[0]) setFacultyEmail(fResp.rows[0].email);
       } catch (err) {
         console.error("Failed to load staff assignments:", err);
       } finally {
@@ -129,18 +151,43 @@ export default function LeavePage() {
         caretakerEmail || "general_caretaker@nitpy.ac.in";
       const finalFacultyId = facultyEmail || "general_faculty@nitpy.ac.in";
 
-      await databases.createDocument(DB_ID, COLLECTIONS.LEAVE, ID.unique(), {
-        roll_no: studentData.$id,
-        reason: reason,
-        place_of_visit: placeOfVisit,
-        proposed_exit_date: departure.toISOString(),
-        proposed_in_date: returnDate.toISOString(),
-        status: "pending_caretaker",
-        caretaker_id: finalCaretakerId,
-        faculty_id: finalFacultyId,
-        requires_faculty: requiresFaculty,
-        caretaker_approval: false,
-        faculty_approval: false,
+      /*
+      await databases.createDocument({
+        databaseId: DB_ID,
+        collectionId: COLLECTIONS.LEAVE,
+        documentId: ID.unique(),
+        data: {
+          roll_no: studentData.$id,
+          reason: reason,
+          place_of_visit: placeOfVisit,
+          proposed_exit_date: departure.toISOString(),
+          proposed_in_date: returnDate.toISOString(),
+          status: "pending_caretaker",
+          caretaker_id: finalCaretakerId,
+          faculty_id: finalFacultyId,
+          requires_faculty: requiresFaculty,
+          caretaker_approval: false,
+          faculty_approval: false,
+        }
+      });
+      */
+      await tablesDB.createRow({
+        databaseId: DB_ID,
+        tableId: COLLECTIONS.LEAVE,
+        rowId: ID.unique(),
+        data: {
+          roll_no: studentData.$id,
+          reason: reason,
+          place_of_visit: placeOfVisit,
+          proposed_exit_date: departure.toISOString(),
+          proposed_in_date: returnDate.toISOString(),
+          status: "pending_caretaker",
+          caretaker_id: finalCaretakerId,
+          faculty_id: finalFacultyId,
+          requires_faculty: requiresFaculty,
+          caretaker_approval: false,
+          faculty_approval: false,
+        }
       });
 
       setIsSuccess(true);
@@ -187,7 +234,7 @@ export default function LeavePage() {
 
   return (
     <GradientBackground>
-      <main className="flex-1 max-w-2xl mx-auto w-full px-4 sm:px-6 pt-24 sm:pt-32 pb-12">
+      <main className="flex-1 max-w-2xl mx-auto w-full px-4 sm:px-6 pt-32 sm:pt-40 pb-12">
         <header className="mb-12">
           <div className="flex items-center space-x-4 mb-6">
             <Link
@@ -333,7 +380,7 @@ export default function LeavePage() {
                 className={`w-14 h-8 rounded-full transition-all relative ${requiresFaculty ? "bg-secondary shadow-lg shadow-secondary/20" : "bg-primary/10"}`}
               >
                 <motion.div
-                  animate={{ x: requiresFaculty ? 24 : 4 }}
+                  animate={{ x: requiresFaculty ? 28 : 4 }}
                   className="absolute top-1 w-6 h-6 bg-white rounded-full shadow-sm"
                 />
               </button>

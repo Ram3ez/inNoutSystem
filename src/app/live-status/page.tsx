@@ -1,11 +1,10 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Footprints, Search, AlertCircle, CheckCircle2, RefreshCw, User, Phone, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { databases } from '@/lib/appwrite';
-import { Query } from 'appwrite';
+import { databases, tablesDB, fetchAllRows, Query } from '@/lib/appwrite';
 import { GradientBackground } from '@/components/GradientBackground';
 import { LoadingIndicator } from '@/components/LoadingIndicator';
 import { Navigation } from "@/components/Navigation";
@@ -27,6 +26,7 @@ export default function LiveStatusPage() {
     
     const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
     const [isLoadingDetails, setIsLoadingDetails] = useState(false);
+    const isFetchingRef = useRef(false);
 
     useEffect(() => {
         if (!authLoading) {
@@ -46,7 +46,11 @@ export default function LiveStatusPage() {
     const handleStudentClick = async (rollNo: string) => {
         setIsLoadingDetails(true);
         try {
-            const student = await databases.getDocument(DB_ID, COLLECTIONS.STUDENTS, rollNo);
+            const student = await tablesDB.getRow({
+                databaseId: DB_ID,
+                tableId: COLLECTIONS.STUDENTS,
+                rowId: rollNo
+            });
             setSelectedStudent(student as unknown as Student);
         } catch (error) {
             console.error("Failed to fetch student details:", error);
@@ -57,24 +61,31 @@ export default function LiveStatusPage() {
     };
 
     const fetchLiveOutings = async () => {
+        if (isFetchingRef.current) return;
+        isFetchingRef.current = true;
+        
         setIsLoading(true);
         try {
-            const response = await databases.listDocuments(DB_ID, COLLECTIONS.OUTING, [
+            const allOutings = await fetchAllRows<any>(DB_ID, COLLECTIONS.OUTING, [
                 Query.isNull("in_time"),
                 Query.orderDesc("out_time"),
-                Query.limit(100)
             ]);
             
             // Enrich with gender data
-            const rollNos = response.documents.map(o => o.roll_no);
+            const rollNos = Array.from(new Set(allOutings.map((o: any) => o.roll_no)));
             if (rollNos.length > 0) {
-                // Fetch student details in one batch for better performance
-                const studentResp = await databases.listDocuments(DB_ID, COLLECTIONS.STUDENTS, [
-                    Query.equal("$id", rollNos)
-                ]);
+                // Fetch student details in batches of 100 for better performance and to stay within Appwrite limits
+                const studentRows: any[] = [];
+                for (let i = 0; i < rollNos.length; i += 100) {
+                    const batch = rollNos.slice(i, i + 100);
+                    const batchRows = await fetchAllRows<any>(DB_ID, COLLECTIONS.STUDENTS, [
+                        Query.equal("$id", batch)
+                    ]);
+                    studentRows.push(...batchRows);
+                }
                 
-                const genderMap = new Map(studentResp.documents.map(s => [s.$id, s.gender]));
-                const enriched = response.documents.map(o => ({
+                const genderMap = new Map(studentRows.map((s: any) => [s.$id, s.gender]));
+                const enriched = allOutings.map((o: any) => ({
                     ...o,
                     gender: genderMap.get(o.roll_no) || 'UNKNOWN'
                 }));
@@ -88,6 +99,7 @@ export default function LiveStatusPage() {
             console.error("Failed to fetch live outings:", error);
         } finally {
             setIsLoading(false);
+            isFetchingRef.current = false;
         }
     };
 

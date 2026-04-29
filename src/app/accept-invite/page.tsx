@@ -30,6 +30,7 @@ function AcceptInviteContent() {
 
     const handleAccept = async (teamId: string, membershipId: string, userId: string, secret: string) => {
         try {
+            // Using the modern Object-style parameter for updateMembershipStatus
             await teams.updateMembershipStatus({
                 teamId,
                 membershipId,

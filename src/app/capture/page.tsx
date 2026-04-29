@@ -26,7 +26,7 @@ import { GradientBackground } from "@/components/GradientBackground";
 import { Navigation } from "@/components/Navigation";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
 import { useRouter, useSearchParams } from "next/navigation";
-import { databases, ID } from "@/lib/appwrite";
+import { databases, tablesDB, ID } from "@/lib/appwrite";
 import { Query } from "appwrite";
 import { DB_ID, COLLECTIONS } from "@/lib/constants";
 import Link from "next/link";
@@ -43,6 +43,8 @@ import {
 } from "@/lib/aiEngine";
 import * as faceapi from "face-api.js";
 import { addToOfflineQueue, isSystemOnline } from "@/lib/offlineQueue";
+
+const SSD_OPTIONS = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.2 });
 
 function CaptureContent() {
   const {
@@ -79,24 +81,33 @@ function CaptureContent() {
   } | null>(null);
 
   const [faceLandmarker, setFaceLandmarker] = useState<FaceLandmarker | null>(
-    null,
+    typeof window !== "undefined" ? getLandmarkerSync() : null,
   );
   const [isFaceValid, setIsFaceValid] = useState(false);
   const [detectionFeedback, setDetectionFeedback] =
     useState("Initializing AI...");
   const [isScanning, setIsScanning] = useState(false);
-  const [aiLoaded, setAiLoaded] = useState(false);
+  const [aiLoaded, setAiLoaded] = useState(
+    typeof window !== "undefined" ? isAIReady() && isLandmarkerLoaded() : false,
+  );
   const [showNotRecognized, setShowNotRecognized] = useState(false);
 
   // Liveness & Blur states
   const [livenessScore, setLivenessScore] = useState(0);
   const [isStable, setIsStable] = useState(true);
   const lastLandmarks = useRef<any>(null);
+  const consensusBuffer = useRef<{ rollNo: string; count: number }>({
+    rollNo: "",
+    count: 0,
+  });
 
   const webcamRef = useRef<ReactWebcam>(null);
 
+  const isMounted = useRef(true);
+
   // Initialize face-api cache + MediaPipe — singletons, only runs once per session
   useEffect(() => {
+    isMounted.current = true;
     // If already loaded in background (e.g. from Home page), skip the await chain for instant UI
     if (isAIReady() && isLandmarkerLoaded()) {
       setFaceLandmarker(getLandmarkerSync());
@@ -113,13 +124,19 @@ function CaptureContent() {
           getLandmarker(),
         ]);
 
-        setFaceLandmarker(getLandmarkerSync());
-        setAiLoaded(true);
+        if (isMounted.current) {
+          setFaceLandmarker(getLandmarkerSync());
+          setAiLoaded(true);
+        }
       } catch (e) {
         console.error("Failed to initialize AI engine", e);
       }
     };
     init();
+
+    return () => {
+      isMounted.current = false;
+    };
   }, []);
 
   // Detection Loop
@@ -127,15 +144,37 @@ function CaptureContent() {
     let animationFrameId: number;
 
     const detect = async () => {
-      if (
-        faceLandmarker &&
-        !imgSrc &&
-        !isProcessing &&
-        webcamRef.current?.video?.readyState === 4
-      ) {
-        const video = webcamRef.current.video;
-        const result = faceLandmarker.detectForVideo(video, performance.now());
-        processResults(result);
+      if (typeof window === "undefined" || !isMounted.current) return;
+
+      // Safety: Stop if tab is hidden
+      if (document.visibilityState !== "visible") {
+        setIsScanning(false);
+        return;
+      }
+
+      try {
+        if (
+          faceLandmarker &&
+          !imgSrc &&
+          !isProcessing &&
+          webcamRef.current?.video?.readyState === 4
+        ) {
+          const video = webcamRef.current.video;
+
+          if (video.srcObject) {
+            try {
+              const result = faceLandmarker.detectForVideo(
+                video,
+                performance.now(),
+              );
+              processResults(result);
+            } catch (e) {
+              // MediaPipe detection skipped (stream likely closed)
+            }
+          }
+        }
+      } catch (e) {
+        // Silent catch for frame drops
       }
       animationFrameId = requestAnimationFrame(detect);
     };
@@ -214,6 +253,14 @@ function CaptureContent() {
 
   // Auto-capture logic
   useEffect(() => {
+    // SECURITY: Prevent build-time or background execution
+    if (
+      typeof window === "undefined" ||
+      !window.location.pathname.includes("/capture")
+    ) {
+      return;
+    }
+
     let timerId: NodeJS.Timeout;
 
     if (
@@ -223,11 +270,10 @@ function CaptureContent() {
       !isScanning &&
       !confirmationData
     ) {
-      // Silent throttle loop: trigger scan every 600ms of stabilized holding
+      // Snappy loop: trigger scan every 150ms for temporal consensus
       timerId = setTimeout(() => {
         triggerLiveScan();
-        setLivenessScore(0);
-      }, 600);
+      }, 150);
     }
 
     return () => {
@@ -249,6 +295,7 @@ function CaptureContent() {
     setIsFaceValid(false);
     setLivenessScore(0);
     setIsScanning(false);
+    consensusBuffer.current = { rollNo: "", count: 0 };
   };
 
   // Helper to convert base64 to Blob without fetch
@@ -264,8 +311,19 @@ function CaptureContent() {
     return new Blob([u8arr], { type: mime });
   };
 
+  const lastLogTime = useRef<number>(0);
+
   const processLiveFrame = async (videoElement: HTMLVideoElement) => {
-    setStatusText("Locating & Matching Face...");
+    if (
+      typeof window === "undefined" ||
+      !isMounted.current ||
+      document.visibilityState !== "visible"
+    ) {
+      setIsScanning(false);
+      return;
+    }
+
+    setStatusText("Analyzing Biometrics...");
     setError(null);
 
     try {
@@ -273,49 +331,83 @@ function CaptureContent() {
         (faceapi as any).tf.engine().startScope();
       }
 
-      // Force WebKit Event Loop to yield
-      await new Promise((r) => setTimeout(r, 100));
+      // Yield to the browser for 10ms to keep UI/Animations smooth
+      await new Promise((r) => setTimeout(r, 10));
+      if (!isMounted.current) return;
 
-      const detectConfig = new faceapi.SsdMobilenetv1Options({
-        minConfidence: 0.1,
-      });
       const detection = await faceapi
-        .detectSingleFace(videoElement, detectConfig) // Passes live hardware video buffer directly!
+        .detectSingleFace(videoElement, SSD_OPTIONS)
         .withFaceLandmarks()
         .withFaceDescriptor();
 
-      // Force another WebKit GC sweep
-      await new Promise((r) => setTimeout(r, 100));
+      if (!isMounted.current) return;
 
       if (!detection) {
         setIsScanning(false);
-        setDetectionFeedback("Searching for matches...");
+        consensusBuffer.current = { rollNo: "", count: 0 };
         return;
       }
 
       const match = getBestMatch(detection.descriptor);
-      serverLog(
-        "RECOGNITION",
-        `Match found: ${match.rollNo} (score: ${match.score})`,
-      );
 
+      // --- TEMPORAL CONSENSUS ---
       if (match.rollNo === "Unknown") {
+        consensusBuffer.current = { rollNo: "", count: 0 };
+
+        // Throttle conflict logs to once every 2 seconds to prevent network lag
+        const now = Date.now();
+        if (match.conflictWith && now - lastLogTime.current > 2000) {
+          lastLogTime.current = now;
+          serverLog(
+            "CONFLICT",
+            `Identity conflict: ${match.potentialMatch} vs ${match.conflictWith}. Gap too small.`,
+          );
+        }
+
         setIsScanning(false);
-        setDetectionFeedback("Scanning for Face...");
-        setShowNotRecognized(true);
-        setTimeout(() => setShowNotRecognized(false), 2500);
+        setDetectionFeedback("Match Uncertain...");
         return;
       }
 
-      // We have a verified match, Lock the UI!
-      const screenshot = webcamRef.current?.getScreenshot();
-      if (screenshot) setImgSrc(screenshot); // Freeze screen ONLY on success
+      // If we match the same person as the previous frame, increment count
+      if (consensusBuffer.current.rollNo === match.rollNo) {
+        consensusBuffer.current.count++;
+      } else {
+        consensusBuffer.current.rollNo = match.rollNo;
+        consensusBuffer.current.count = 1;
+      }
 
-      setIsProcessing(true); // Initiate database lock UI
+      // Only proceed after 5 consistent matches (approx 0.7s)
+      if (consensusBuffer.current.count < 2) {
+        setDetectionFeedback(`Verifying... ${consensusBuffer.current.count}/5`);
+        setIsScanning(false);
+        return;
+      }
+
+      // Success! Lock the identity
+      serverLog(
+        "RECOGNITION",
+        `Confirmed: ${match.rollNo} (2-frame consensus)`,
+      );
+      const screenshot = webcamRef.current?.getScreenshot();
+      if (screenshot) setImgSrc(screenshot);
+
+      setIsProcessing(true);
       handleRecognitionComplete(match.rollNo);
     } catch (err: any) {
-      serverLog("ERROR", err.message || "An unexpected error occurred");
       setIsScanning(false);
+    } finally {
+      try {
+        const tf = (faceapi as any).tf;
+        if (
+          isMounted.current &&
+          tf &&
+          tf.engine &&
+          tf.engine().state.numDataBuffers > 0
+        ) {
+          tf.engine().endScope();
+        }
+      } catch (e) {}
     }
   };
 
@@ -349,16 +441,22 @@ function CaptureContent() {
       setIsScanning(false);
       return;
     }
-
     try {
       const COLL_STUDENTS = COLLECTIONS.STUDENTS;
 
       try {
-        const student = await databases.getDocument(
-          DB_ID,
-          COLL_STUDENTS,
-          rollNumber,
-        );
+        /*
+        const student = await databases.getDocument({
+          databaseId: DB_ID,
+          collectionId: COLL_STUDENTS,
+          documentId: rollNumber,
+        });
+        */
+        const student = await tablesDB.getRow({
+          databaseId: DB_ID,
+          tableId: COLL_STUDENTS,
+          rowId: rollNumber,
+        });
         setConfirmationData({
           rollNo: rollNumber,
           name: (student as any).name,
@@ -404,13 +502,28 @@ function CaptureContent() {
 
       if (actionType === "Leave") {
         const COLL_LEAVE = COLLECTIONS.LEAVE;
-        const searchResult = await databases.listDocuments(DB_ID, COLL_LEAVE, [
-          Query.equal("roll_no", rollNumber),
-          Query.orderDesc("$createdAt"),
-          Query.limit(1),
-        ]);
+        /*
+        const searchResult = await databases.listDocuments({
+          databaseId: DB_ID,
+          collectionId: COLL_LEAVE,
+          queries: [
+            Query.equal("roll_no", rollNumber),
+            Query.orderDesc("$createdAt"),
+            Query.limit(1),
+          ]
+        });
+        */
+        const { rows: documents } = await tablesDB.listRows({
+          databaseId: DB_ID,
+          tableId: COLL_LEAVE,
+          queries: [
+            Query.equal("roll_no", rollNumber),
+            Query.orderDesc("$createdAt"),
+            Query.limit(1),
+          ],
+        });
 
-        const latestLeave = searchResult.documents[0];
+        const latestLeave = documents[0];
 
         if (!latestLeave) {
           setResultDialog({
@@ -460,7 +573,7 @@ function CaptureContent() {
           // Returning
           const {
             $id,
-            $collectionId,
+            $tableId,
             $databaseId,
             $createdAt,
             $updatedAt,
@@ -469,22 +582,45 @@ function CaptureContent() {
           } = latestLeave as any;
 
           archiveData.in_date_time = currentTime;
-
-          await databases.createDocument(
-            DB_ID,
-            COLLECTIONS.LEAVE_ARCHIVE,
-            ID.unique(),
-            archiveData,
-          );
-          await databases.deleteDocument(DB_ID, COLL_LEAVE, latestLeave.$id);
-
-          try {
-            await databases.updateDocument(DB_ID, COLL_STUDENTS, rollNumber, {
+          const COLL_LEAVE_ARCHIVE = COLLECTIONS.LEAVE_ARCHIVE;
+          /*
+          await databases.createDocument({
+            databaseId: DB_ID,
+            collectionId: COLL_LEAVE_ARCHIVE,
+            documentId: ID.unique(),
+            data: archiveData,
+          });
+          await databases.deleteDocument({
+            databaseId: DB_ID,
+            collectionId: COLL_LEAVE,
+            documentId: latestLeave.$id
+          });
+          await databases.updateDocument({
+            databaseId: DB_ID,
+            collectionId: COLL_STUDENTS,
+            documentId: rollNumber,
+            data: {
               is_on_leave: false,
-            });
-          } catch (e) {
-            console.warn("Student info sync failed", e);
-          }
+            }
+          });
+          */
+          await tablesDB.createRow({
+            databaseId: DB_ID,
+            tableId: COLL_LEAVE_ARCHIVE,
+            rowId: ID.unique(),
+            data: archiveData,
+          });
+          await tablesDB.deleteRow({
+            databaseId: DB_ID,
+            tableId: COLL_LEAVE,
+            rowId: latestLeave.$id,
+          });
+          await tablesDB.updateRow({
+            databaseId: DB_ID,
+            tableId: COLL_STUDENTS,
+            rowId: rollNumber,
+            data: { is_on_leave: false },
+          });
           dbMessage = "LEAVE RETURN SUCCESSFUL & ARCHIVED";
         } else if (!latestLeave.exit_date_time) {
           // Departing
@@ -503,16 +639,36 @@ function CaptureContent() {
             return;
           }
 
-          await databases.updateDocument(DB_ID, COLL_LEAVE, latestLeave.$id, {
-            exit_date_time: currentTime,
+          /*
+          await databases.updateDocument({
+            databaseId: DB_ID,
+            collectionId: COLL_LEAVE,
+            documentId: latestLeave.$id,
+            data: {
+              exit_date_time: currentTime,
+            }
           });
-          try {
-            await databases.updateDocument(DB_ID, COLL_STUDENTS, rollNumber, {
+          await databases.updateDocument({
+            databaseId: DB_ID,
+            collectionId: COLL_STUDENTS,
+            documentId: rollNumber,
+            data: {
               is_on_leave: true,
-            });
-          } catch (e) {
-            console.warn("Student info sync failed", e);
-          }
+            }
+          });
+          */
+          await tablesDB.updateRow({
+            databaseId: DB_ID,
+            tableId: COLL_LEAVE,
+            rowId: latestLeave.$id,
+            data: { exit_date_time: currentTime },
+          });
+          await tablesDB.updateRow({
+            databaseId: DB_ID,
+            tableId: COLL_STUDENTS,
+            rowId: rollNumber,
+            data: { is_on_leave: true },
+          });
           dbMessage = "LEAVE DEPARTURE SUCCESSFUL";
         } else {
           setResultDialog({
@@ -524,47 +680,115 @@ function CaptureContent() {
           return;
         }
       } else {
-        const searchResult = await databases.listDocuments(DB_ID, COLL_OUTING, [
-          Query.equal("roll_no", rollNumber),
-          Query.orderDesc("out_time"),
-          Query.limit(1),
-        ]);
+        /*
+        const searchResult = await databases.listDocuments({
+          databaseId: DB_ID,
+          collectionId: COLL_OUTING,
+          queries: [
+            Query.equal("roll_no", rollNumber),
+            Query.orderDesc("out_time"),
+            Query.limit(1),
+          ]
+        });
+        */
+        const { rows: documents } = await tablesDB.listRows({
+          databaseId: DB_ID,
+          tableId: COLL_OUTING,
+          queries: [
+            Query.equal("roll_no", rollNumber),
+            Query.orderDesc("out_time"),
+            Query.limit(1),
+          ],
+        });
 
-        const openOuting = searchResult.documents.find((doc) => !doc.in_time);
+        const openOuting = documents.find((doc) => !doc.in_time);
 
         if (openOuting) {
           // 1. Move to Archive
-          await databases.createDocument(DB_ID, COLL_ARCHIVE, ID.unique(), {
-            roll_no: rollNumber,
-            out_time: openOuting.out_time,
-            in_time: currentTime,
+          /*
+          await databases.createDocument({
+            databaseId: DB_ID,
+            collectionId: COLL_ARCHIVE,
+            documentId: ID.unique(),
+            data: {
+              roll_no: rollNumber,
+              out_time: openOuting.out_time,
+              in_time: currentTime,
+            }
           });
-
           // 2. Delete from active Outings
-          await databases.deleteDocument(DB_ID, COLL_OUTING, openOuting.$id);
-
-          try {
-            await databases.updateDocument(DB_ID, COLL_STUDENTS, rollNumber, {
+          await databases.deleteDocument({
+            databaseId: DB_ID,
+            collectionId: COLL_OUTING,
+            documentId: openOuting.$id
+          });
+          await databases.updateDocument({
+            databaseId: DB_ID,
+            collectionId: COLL_STUDENTS,
+            documentId: rollNumber,
+            data: {
               is_out: false,
-            });
-          } catch (e) {
-            console.warn("Student info sync failed", e);
-          }
+            }
+          });
+          */
+          await tablesDB.createRow({
+            databaseId: DB_ID,
+            tableId: COLL_ARCHIVE,
+            rowId: ID.unique(),
+            data: {
+              roll_no: rollNumber,
+              out_time: openOuting.out_time,
+              in_time: currentTime,
+            },
+          });
+          await tablesDB.deleteRow({
+            databaseId: DB_ID,
+            tableId: COLL_OUTING,
+            rowId: openOuting.$id,
+          });
+          await tablesDB.updateRow({
+            databaseId: DB_ID,
+            tableId: COLL_STUDENTS,
+            rowId: rollNumber,
+            data: { is_out: false },
+          });
 
           dbMessage = "CHECK-IN SUCCESSFUL & ARCHIVED";
         } else {
-          await databases.createDocument(DB_ID, COLL_OUTING, ID.unique(), {
-            roll_no: rollNumber,
-            out_time: currentTime,
+          /*
+          await databases.createDocument({
+            databaseId: DB_ID,
+            collectionId: COLL_OUTING,
+            documentId: ID.unique(),
+            data: {
+              roll_no: rollNumber,
+              out_time: currentTime,
+            }
           });
-
-          try {
-            await databases.updateDocument(DB_ID, COLL_STUDENTS, rollNumber, {
+          await databases.updateDocument({
+            databaseId: DB_ID,
+            collectionId: COLL_STUDENTS,
+            documentId: rollNumber,
+            data: {
               is_out: true,
-            });
-          } catch (e) {
-            console.warn("Student info sync failed", e);
-          }
+            }
+          });
+          */
+          await tablesDB.createRow({
+            databaseId: DB_ID,
+            tableId: COLL_OUTING,
+            rowId: ID.unique(),
+            data: {
+              roll_no: rollNumber,
+              out_time: currentTime,
+            },
+          });
+          await tablesDB.updateRow({
+            databaseId: DB_ID,
+            tableId: COLL_STUDENTS,
+            rowId: rollNumber,
+            data: { is_out: true },
+          });
 
           dbMessage = "CHECK-OUT SUCCESSFUL";
         }
@@ -602,9 +826,13 @@ function CaptureContent() {
       }
     } finally {
       setIsProcessing(false);
-      // Aggressively obliterate orphaned Tensors
-      if ((faceapi as any).tf && (faceapi as any).tf.engine) {
-        (faceapi as any).tf.engine().endScope();
+      try {
+        const tf = (faceapi as any).tf;
+        if (tf && tf.engine && tf.engine().state.numDataBuffers > 0) {
+          tf.engine().endScope();
+        }
+      } catch (e) {
+        // Silently handle if scope already closed
       }
     }
   };
@@ -670,7 +898,7 @@ function CaptureContent() {
         </header>
 
         <div className="flex-1 flex flex-col items-center">
-          <div className="relative w-full max-w-2xl rounded-3xl overflow-hidden bg-black border border-white/5 shadow-2xl aspect-video flex items-center justify-center">
+          <div className="relative w-full max-w-2xl rounded-3xl overflow-hidden bg-black border border-white/5 shadow-2xl aspect-[4/3] sm:aspect-video flex items-center justify-center">
             {!imgSrc ? (
               <ReactWebcam
                 audio={false}

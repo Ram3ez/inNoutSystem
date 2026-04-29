@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { account, OAuthProvider, databases, teams } from "@/lib/appwrite";
+import { account, OAuthProvider, databases, tablesDB, teams } from "@/lib/appwrite";
 import { Models } from "appwrite";
 import { useRouter, usePathname } from "next/navigation";
 import { Student } from "@/types/models";
@@ -12,6 +12,7 @@ interface AuthContextType {
   isLoading: boolean;
   isRegistrationRequired: boolean;
   studentData: Student | null;
+  staffData: any | null;
   loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
   isAdmin: boolean;
@@ -31,6 +32,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [isRegistrationRequired, setIsRegistrationRequired] = useState(false);
   const [studentData, setStudentData] = useState<Student | null>(null);
+  const [staffData, setStaffData] = useState<any | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isKiosk, setIsKiosk] = useState(false);
   const [isFaculty, setIsFaculty] = useState(false);
@@ -44,6 +46,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const CACHE_KEY_FACULTY = "nitpy_auth_isFaculty";
   const CACHE_KEY_CARETAKER = "nitpy_auth_isCaretaker";
   const CACHE_KEY_STUDENT = "nitpy_auth_studentData";
+  const CACHE_KEY_STAFF = "nitpy_auth_staffData";
 
   useEffect(() => {
     checkUser();
@@ -78,23 +81,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         setIsCaretaker(caretakerStatus);
       }
 
-      // Check if student exists in database
+      // Check if profile exists in database
       if (currentUser.email) {
-        const rollNumber = currentUser.email.split("@")[0].toUpperCase();
+        const profileId = currentUser.email.split("@")[0].toUpperCase();
+        const isStudentEmail = /^[A-Z]{2}[0-9]{2}[A-Z][0-9]{4}$/.test(profileId);
+
         try {
-          const data = await databases.getDocument(
-            DB_ID,
-            COLLECTIONS.STUDENTS,
-            rollNumber,
-          );
-          setStudentData(data as unknown as Student);
-          setIsRegistrationRequired(false);
-          localStorage.setItem(CACHE_KEY_STUDENT, JSON.stringify(data));
+          if (isStudentEmail) {
+            /*
+            const data = await databases.getDocument({
+              databaseId: DB_ID,
+              collectionId: COLLECTIONS.STUDENTS,
+              documentId: profileId,
+            });
+            */
+            const data = await tablesDB.getRow({
+              databaseId: DB_ID,
+              tableId: COLLECTIONS.STUDENTS,
+              rowId: profileId,
+            });
+            setStudentData(data as unknown as Student);
+            setStaffData(null);
+            setIsRegistrationRequired(false);
+            localStorage.setItem(CACHE_KEY_STUDENT, JSON.stringify(data));
+          } else {
+            /*
+            const data = await databases.getDocument({
+              databaseId: DB_ID,
+              collectionId: COLLECTIONS.STAFF_DETAILS,
+              documentId: profileId.toLowerCase(),
+            });
+            */
+            const data = await tablesDB.getRow({
+              databaseId: DB_ID,
+              tableId: COLLECTIONS.STAFF_DETAILS,
+              rowId: profileId.toLowerCase(),
+            });
+            setStaffData(data);
+            setStudentData(null);
+            setIsRegistrationRequired(false);
+            localStorage.setItem(CACHE_KEY_STAFF, JSON.stringify(data));
+          }
         } catch (dbError: any) {
           if (dbError.code === 404) {
             setStudentData(null);
-            const isStaff = adminStatus || kioskStatus || facultyStatus || caretakerStatus;
-            setIsRegistrationRequired(!isStaff);
+            setStaffData(null);
+            setIsRegistrationRequired(true);
           }
         }
       }
@@ -118,6 +150,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           const cachedStudent = localStorage.getItem(CACHE_KEY_STUDENT);
           if (cachedStudent)
             setStudentData(JSON.parse(cachedStudent) as unknown as Student);
+          const cachedStaff = localStorage.getItem(CACHE_KEY_STAFF);
+          if (cachedStaff)
+            setStaffData(JSON.parse(cachedStaff));
           setIsLoading(false);
           return;
         }
@@ -125,6 +160,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
       setUser(null);
       setStudentData(null);
+      setStaffData(null);
       setIsRegistrationRequired(false);
       setIsAdmin(false);
       setIsKiosk(false);
@@ -161,11 +197,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       localStorage.removeItem(CACHE_KEY_FACULTY);
       localStorage.removeItem(CACHE_KEY_CARETAKER);
       localStorage.removeItem(CACHE_KEY_STUDENT);
+      localStorage.removeItem(CACHE_KEY_STAFF);
       router.push("/login");
     } catch (error) {
       console.error("Logout failed:", error);
     }
   };
+
+  useEffect(() => {
+    if (user && !isLoading) {
+      // Start pre-loading AI engine in the background for a seamless experience
+      import("@/lib/faceCache").then((m) => {
+        m.loadFaceApiModels();
+        // For Kiosks and Admins, also pre-load the student face database (IndexedDB)
+        if (isKiosk || isAdmin) {
+          m.loadFaceCache();
+        }
+      });
+    }
+  }, [user, isLoading, isKiosk, isAdmin]);
 
   return (
     <AuthContext.Provider
@@ -174,6 +224,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         isLoading,
         isRegistrationRequired,
         studentData,
+        staffData,
         loginWithGoogle,
         logout,
         isAdmin,
