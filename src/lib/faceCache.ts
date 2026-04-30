@@ -350,7 +350,7 @@ export function getBestMatch(queryDescriptor: Float32Array): RecognitionResult {
   }
 
   // Strict threshold — reduces false positives significantly
-  const THRESHOLD = 0.95;
+  const THRESHOLD = 0.969;
 
   // Conflict Detection: Only reject if the runner-up is ALSO a very strong candidate
   // AND the two scores are mathematically too close (Ratio Test).

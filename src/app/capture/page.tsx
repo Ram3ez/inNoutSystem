@@ -100,6 +100,7 @@ function CaptureContent() {
     rollNo: "",
     count: 0,
   });
+  const failureBuffer = useRef<number>(0);
 
   const webcamRef = useRef<ReactWebcam>(null);
 
@@ -146,8 +147,12 @@ function CaptureContent() {
     const detect = async () => {
       if (typeof window === "undefined" || !isMounted.current) return;
 
-      // Safety: Stop if tab is hidden
-      if (document.visibilityState !== "visible") {
+      // Safety: Stop if tab is hidden or a dialog is open
+      if (
+        document.visibilityState !== "visible" ||
+        resultDialog ||
+        confirmationData
+      ) {
         setIsScanning(false);
         return;
       }
@@ -181,7 +186,7 @@ function CaptureContent() {
 
     detect();
     return () => cancelAnimationFrame(animationFrameId);
-  }, [faceLandmarker, imgSrc, isProcessing]);
+  }, [faceLandmarker, imgSrc, isProcessing, resultDialog, confirmationData]);
 
   const processResults = (result: FaceLandmarkerResult) => {
     if (result.faceLandmarks.length === 0) {
@@ -268,7 +273,8 @@ function CaptureContent() {
       !imgSrc &&
       !isProcessing &&
       !isScanning &&
-      !confirmationData
+      !confirmationData &&
+      !resultDialog
     ) {
       // Snappy loop: trigger scan every 150ms for temporal consensus
       timerId = setTimeout(() => {
@@ -285,6 +291,7 @@ function CaptureContent() {
     isProcessing,
     isScanning,
     confirmationData,
+    resultDialog,
     triggerLiveScan,
   ]);
 
@@ -296,6 +303,7 @@ function CaptureContent() {
     setLivenessScore(0);
     setIsScanning(false);
     consensusBuffer.current = { rollNo: "", count: 0 };
+    failureBuffer.current = 0;
   };
 
   // Helper to convert base64 to Blob without fetch
@@ -345,6 +353,7 @@ function CaptureContent() {
       if (!detection) {
         setIsScanning(false);
         consensusBuffer.current = { rollNo: "", count: 0 };
+        // We DON'T reset failureBuffer here to survive small frame flickers
         return;
       }
 
@@ -353,6 +362,22 @@ function CaptureContent() {
       // --- TEMPORAL CONSENSUS ---
       if (match.rollNo === "Unknown") {
         consensusBuffer.current = { rollNo: "", count: 0 };
+        failureBuffer.current++;
+
+        // If we fail to recognize after 10 consecutive attempts (~1.5s of face being present)
+        if (failureBuffer.current >= 10) {
+          console.log(
+            `[🚫 FAILURE] Threshold reached (${failureBuffer.current}). Showing Error Popup.`,
+          );
+          failureBuffer.current = 0;
+          setIsScanning(false);
+          setResultDialog({
+            title: "Recognition Error",
+            message: "Face not recognized. Please ensure you are registered and looking directly at the camera.",
+            type: "error",
+          });
+          return;
+        }
 
         // Throttle conflict logs to once every 2 seconds to prevent network lag
         const now = Date.now();
@@ -360,14 +385,19 @@ function CaptureContent() {
           lastLogTime.current = now;
           serverLog(
             "CONFLICT",
-            `Identity conflict: ${match.potentialMatch} vs ${match.conflictWith}. Gap too small.`,
+            `Identity conflict: ${match.potentialMatch} (${(match.score * 100).toFixed(1)}%) vs ${match.conflictWith} (${((match.conflictScore || 0) * 100).toFixed(1)}%). Gap too small.`,
           );
         }
 
         setIsScanning(false);
-        setDetectionFeedback("Match Uncertain...");
+        setDetectionFeedback(
+          `${match.potentialMatch || "Unknown"} (${(match.score * 100).toFixed(1)}%)`,
+        );
         return;
       }
+
+      // Reset failure buffer if we find any non-unknown match
+      failureBuffer.current = 0;
 
       // If we match the same person as the previous frame, increment count
       if (consensusBuffer.current.rollNo === match.rollNo) {
@@ -377,9 +407,11 @@ function CaptureContent() {
         consensusBuffer.current.count = 1;
       }
 
-      // Only proceed after 5 consistent matches (approx 0.7s)
+      // Only proceed after 2 consistent matches (approx 0.3s)
       if (consensusBuffer.current.count < 2) {
-        setDetectionFeedback(`Verifying... ${consensusBuffer.current.count}/5`);
+        setDetectionFeedback(
+          `Verifying... ${consensusBuffer.current.count}/2 (${(match.score * 100).toFixed(1)}%)`,
+        );
         setIsScanning(false);
         return;
       }
@@ -387,7 +419,10 @@ function CaptureContent() {
       // Success! Lock the identity
       serverLog(
         "RECOGNITION",
-        `Confirmed: ${match.rollNo} (2-frame consensus)`,
+        `Confirmed: ${match.rollNo} (${(match.score * 100).toFixed(1)}%) (2-frame consensus)`,
+      );
+      console.log(
+        `[🧠 RECOGNITION] Confirmed: ${match.rollNo} (${(match.score * 100).toFixed(1)}%)`,
       );
       const screenshot = webcamRef.current?.getScreenshot();
       if (screenshot) setImgSrc(screenshot);
