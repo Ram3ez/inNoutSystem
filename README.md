@@ -12,11 +12,12 @@ A premium, touchless biometric hostel management system built for **NIT Puducher
 
 ## 🚀 Key Features
 
-### 1. Multi-Threaded Biometric AI Engine
+### 1. Hybrid AI Biometric Engine
 *   **Web Worker Offloading**: High-performance face detection and search are handled in dedicated background threads (`faceSearch.worker.ts`, `ghostface.worker.ts`), ensuring a 60FPS UI even during heavy AI processing.
-*   **Dual-Model Pipeline**: 
-    *   **face-api.js/MediaPipe**: Used for lightning-fast face detection, alignment, and liveness checks.
-    *   **GhostFace (ONNX)**: A specialized high-precision model running via `onnxruntime-web` for generating 128-d or 512-d embeddings with superior accuracy in low-light and diverse angle conditions.
+*   **Precision AI Pipeline**: 
+    *   **MediaPipe**: Used for real-time face landmarking, pose estimation, and "Stability" checks.
+    *   **GhostFaceNet (ONNX)**: A specialized SOTA recognition model running via `onnxruntime-web` for generating 512-d embeddings with extreme precision.
+    *   **face-api.js**: Leveraged for ultra-fast face detection and affine alignment before feature extraction.
 *   **Temporal Consensus**: Recognition isn't instant; the system requires a stable "consensus" over multiple frames to eliminate false positives.
 
 ### 2. Relational Data & TablesDB (1.9.0+)
@@ -43,7 +44,7 @@ A premium, touchless biometric hostel management system built for **NIT Puducher
 | :--- | :--- |
 | **Framework** | Next.js 15 (App Router) |
 | **Runtime** | React 19 + TypeScript |
-| **AI Processing** | ONNX Runtime Web + face-api.js |
+| **AI Processing** | GhostFaceNet (ONNX) + MediaPipe + face-api.js |
 | **Backend** | Appwrite (Auth, TablesDB, Teams, Storage) |
 | **Offline Sync** | Service Workers + IndexedDB |
 | **Styling** | Tailwind CSS 4 + Framer Motion |
@@ -54,9 +55,9 @@ A premium, touchless biometric hostel management system built for **NIT Puducher
 ## 🏗 System Architecture
 
 ### Biometric Pipeline
-1.  **Detection**: MediaPipe identifies a face and ensures "Stability" (centered and still).
-2.  **Worker Transfer**: The image buffer is sent to `ghostface.worker.ts`.
-3.  **Embedding Generation**: GhostFace generates a high-precision descriptor.
+1.  **Detection**: face-api.js identifies a face and ensures "Stability" via MediaPipe.
+2.  **Worker Transfer**: The aligned face buffer is sent to `ghostface.worker.ts`.
+3.  **Embedding Generation**: GhostFaceNet generates a 512-dimension descriptor.
 4.  **Conflict Detection**: The system checks the `CONFLICT_GAP` between the best match and the runner-up to prevent identity confusion among lookalikes.
 5.  **Sync**: Successful matches update the `outing` or `leave` records via the `OfflineSyncManager`.
 
@@ -68,7 +69,7 @@ All AI sensitivities are centralized in `src/lib/constants.ts`, allowing for ins
 ## 📊 Database Schema
 
 ### Relational Tables
-*   `student_details`: Metadata for students (Roll No as Primary Key).
+*   `student_details`: Metadata for students (Roll Number as Primary Key).
 *   `facial_embeddings`: High-dimensional AI vectors for each student.
 *   `outing` / `leave`: Real-time tracking of student movement.
 *   `staff_details`: Building/Room assignments for faculty and caretakers.
@@ -91,8 +92,8 @@ All AI sensitivities are centralized in `src/lib/constants.ts`, allowing for ins
 3.  **Environment Variables**:
     Create a `.env.local` file:
     ```env
-    NEXT_PUBLIC_APPWRITE_ENDPOINT=https://hostel.ram3ez.dev/v1
-    NEXT_PUBLIC_APPWRITE_PROJECT_ID=6991740c001012a4a46f
+    NEXT_PUBLIC_APPWRITE_ENDPOINT=YOUR_APPWRITE_ENDPOINT
+    NEXT_PUBLIC_APPWRITE_PROJECT_ID=YOUR_PROJECT_ID
     ```
 
 4.  **Run Development Server**:
