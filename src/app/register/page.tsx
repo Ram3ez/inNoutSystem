@@ -2,10 +2,7 @@
 
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  FaceLandmarker,
-  FaceLandmarkerResult,
-} from "@mediapipe/tasks-vision";
+import { FaceLandmarker, FaceLandmarkerResult } from "@mediapipe/tasks-vision";
 import {
   Camera,
   Upload,
@@ -23,6 +20,7 @@ import {
   Trash2,
 } from "lucide-react";
 import ReactWebcam from "react-webcam";
+import { DB_ID, COLLECTIONS, BIOMETRIC_THRESHOLDS } from "@/lib/constants";
 import { GradientBackground } from "@/components/GradientBackground";
 import { Navigation } from "@/components/Navigation";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
@@ -32,12 +30,23 @@ import { useAuth } from "@/context/AuthContext";
 import { databases, tablesDB, fetchAllRows, Query } from "@/lib/appwrite";
 import { ID } from "appwrite";
 import { generateAugmentations } from "@/lib/augmentFace";
-import { uploadEmbeddings, loadFaceApiModels, areModelsLoaded } from "@/lib/faceCache";
-import { getLandmarker, isLandmarkerLoaded, getLandmarkerSync } from "@/lib/aiEngine";
+import {
+  uploadEmbeddings,
+  loadBaseFaceModels,
+  loadFaceRecognitionModel,
+  loadFaceApiModels,
+  areModelsLoaded,
+  loadFaceCache,
+  isUserRegisteredFor,
+} from "@/lib/faceCache";
+import {
+  getLandmarker,
+  isLandmarkerLoaded,
+  getLandmarkerSync,
+} from "@/lib/aiEngine";
+import { initGhostFace, getGhostFaceDescriptor } from "@/lib/ghostfaceEngine";
 import * as faceapi from "face-api.js";
 
-const DB_ID = "69cb970a000853f23489";
-const COLL_STUDENTS = "student_details";
 
 // Target number of embeddings to collect for a high-accuracy profile
 const TARGET_EMBEDDINGS = 8;
@@ -58,8 +67,10 @@ export default function RegisterFacePage() {
   const [selectedRollNo, setSelectedRollNo] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [showDropdown, setShowDropdown] = useState(false);
-  const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [aiLoaded, setAiLoaded] = useState(false);
+  const [modelType, setModelType] = useState<"face-api" | "ghostface">(
+    "ghostface",
+  );
 
   // Unified Enrollment Pipeline States
   const [collectedEmbeddings, setCollectedEmbeddings] = useState<
@@ -81,6 +92,7 @@ export default function RegisterFacePage() {
   const lastExtractionTime = useRef<number>(0);
   const collectedCountRef = useRef<number>(0); // ref so detection loop reads live value
   const extractionInterval = 500; // ms between extractions
+  const basePose = useRef<{ yaw: number; pitch: number } | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusText, setStatusText] = useState("");
@@ -92,10 +104,13 @@ export default function RegisterFacePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isMounted = useRef(true);
+  const lastScanTime = useRef(0);
+  const isIOSDevice = useRef(false);
 
   // Initialize face-api models + MediaPipe — singletons, only warm up once per session
   React.useEffect(() => {
     isMounted.current = true;
+    isIOSDevice.current = /iPad|iPhone|iPod/.test(navigator.userAgent);
     // If already loaded in background (e.g. from Home page), skip the await chain for instant UI
     if (areModelsLoaded() && isLandmarkerLoaded()) {
       setFaceLandmarker(getLandmarkerSync());
@@ -103,11 +118,26 @@ export default function RegisterFacePage() {
     } else {
       const init = async () => {
         try {
-          // Both return existing promises if already loading
-          await Promise.all([
-            loadFaceApiModels(),
-            getLandmarker()
-          ]);
+          // Neural engine initialization
+          await loadBaseFaceModels();
+
+          const tf = (faceapi as any).tf;
+          if (tf) {
+            try {
+              tf.env().set("WASM_HAS_SIMD_SUPPORT", false);
+              tf.env().set("WASM_HAS_MULTITHREAD_SUPPORT", false);
+            } catch (e) {
+              console.warn(
+                "[📱 MAIN] Could not set TFJS flags, continuing with defaults...",
+              );
+            }
+          }
+          await new Promise((r) => setTimeout(r, 150));
+          await loadFaceCache();
+          await new Promise((r) => setTimeout(r, 150));
+          await getLandmarker();
+          await new Promise((r) => setTimeout(r, 150));
+          await initGhostFace();
           if (isMounted.current) {
             setFaceLandmarker(getLandmarkerSync());
             setAiLoaded(true);
@@ -133,7 +163,7 @@ export default function RegisterFacePage() {
 
       return () => clearTimeout(delayDebounceFn);
     }
-  }, [searchTerm, authLoading, isAdmin, isKiosk]);
+  }, [searchTerm, authLoading, isAdmin, isKiosk, modelType]);
 
   const resetEnrollment = () => {
     setSelectedRollNo("");
@@ -154,14 +184,23 @@ export default function RegisterFacePage() {
     try {
       // Don't set loading to false here to prevent flickering while typing
       const q = query.trim().toUpperCase();
-      
-      const baseQueries = [Query.equal("faceRegistered", false)];
-      
+
+      // Use model-specific flags for filtering
+      // For GhostFace migration, we also allow null/missing values if the user hasn't initialized the column
+      const baseQueries =
+        modelType === "ghostface"
+          ? [Query.notEqual("ghostface_registered", true)] // Matches false or null
+          : [Query.equal("faceRegistered", false)];
+
       if (!q) {
         const { rows } = await tablesDB.listRows({
           databaseId: DB_ID,
-          tableId: COLL_STUDENTS,
-          queries: [...baseQueries, Query.limit(50), Query.orderDesc("$createdAt")]
+          tableId: COLLECTIONS.STUDENTS,
+          queries: [
+            ...baseQueries,
+            Query.limit(50),
+            Query.orderDesc("$createdAt"),
+          ],
         });
         setPendingStudents(rows);
       } else {
@@ -169,233 +208,40 @@ export default function RegisterFacePage() {
         const [nameResults, idResults] = await Promise.all([
           tablesDB.listRows({
             databaseId: DB_ID,
-            tableId: COLL_STUDENTS,
-            queries: [...baseQueries, Query.startsWith("name", query.trim()), Query.limit(50)]
+            tableId: COLLECTIONS.STUDENTS,
+            queries: [
+              ...baseQueries,
+              Query.startsWith("name", query.trim()),
+              Query.limit(50),
+            ],
           }),
           tablesDB.listRows({
             databaseId: DB_ID,
-            tableId: COLL_STUDENTS,
-            queries: [...baseQueries, Query.startsWith("$id", q), Query.limit(50)]
-          })
+            tableId: COLLECTIONS.STUDENTS,
+            queries: [
+              ...baseQueries,
+              Query.startsWith("$id", q),
+              Query.limit(50),
+            ],
+          }),
         ]);
 
         // Merge and deduplicate
         const merged = [...nameResults.rows, ...idResults.rows];
-        const unique = Array.from(new Map(merged.map(s => [s.$id, s])).values());
-        
+        const unique = Array.from(
+          new Map(merged.map((s) => [s.$id, s])).values(),
+        );
+
         setPendingStudents(unique);
       }
-      setIsDataLoaded(true);
     } catch (err) {
       console.error("Failed to fetch pending students", err);
     }
   };
 
-  // Detection Loop
-  useEffect(() => {
-    let animationFrameId: number;
-
-    const detect = async () => {
-      if (!isMounted.current) return;
-
-      if (faceLandmarker && webcamRef.current?.video?.readyState === 4) {
-        const video = webcamRef.current.video;
-        
-        // Safety check for active stream tracks
-        if (video.srcObject) {
-          try {
-            const result = faceLandmarker.detectForVideo(video, performance.now());
-            processResults(result);
-          } catch (e) {
-            console.warn("MediaPipe detection skipped (stream likely closed)", e);
-          }
-        }
-      }
-      animationFrameId = requestAnimationFrame(detect);
-    };
-
-    if (isCapturing) {
-      detect();
-    }
-
-    return () => cancelAnimationFrame(animationFrameId);
-  }, [faceLandmarker, isCapturing]);
-
-  const processResults = async (result: FaceLandmarkerResult) => {
-    if (enrollmentStatus !== "scanning") return;
-
-    if (result.faceLandmarks.length === 0) {
-      setIsFaceValid(false);
-      setDetectionFeedback("Bring Face into Frame");
-      return;
-    }
-
-    const landmarks = result.faceLandmarks[0];
-
-    // --- 1. Stability & Motion Detection ---
-    if (lastLandmarks.current) {
-      const movement =
-        landmarks.reduce((acc, curr, idx) => {
-          const last = lastLandmarks.current[idx];
-          if (!last) return acc;
-          return (
-            acc +
-            Math.sqrt(
-              Math.pow(curr.x - last.x, 2) + Math.pow(curr.y - last.y, 2),
-            )
-          );
-        }, 0) / landmarks.length;
-
-      const stable = movement < 0.02;
-      setIsStable(stable);
-      if (!stable) {
-        setDetectionFeedback("Please Hold Still...");
-        lastLandmarks.current = landmarks;
-        return;
-      }
-    }
-    lastLandmarks.current = landmarks;
-
-    // --- 2. Live Pose-Driven Guidance ---
-    // We read from a ref so we always have the current count,
-    // even though processResults runs in a stale rAF closure.
-    const nose = landmarks[1];
-    const leftEye = landmarks[33];
-    const rightEye = landmarks[263];
-    const forehead = landmarks[10];
-    const chin = landmarks[152];
-
-    const yaw =
-      (nose.x - (leftEye.x + rightEye.x) / 2) / (rightEye.x - leftEye.x);
-    const pitch =
-      (nose.y - (leftEye.y + rightEye.y) / 2) / (chin.y - forehead.y);
-
-    const count = collectedCountRef.current;
-    const total = TARGET_EMBEDDINGS;
-
-    // Guide the user through poses based on actual live head angle,
-    // not a rigid phase counter — so it responds to what they're actually doing.
-    if (count < Math.floor(total * 0.25)) {
-      // Phase 1: center baseline
-      setDetectionFeedback(
-        Math.abs(yaw) < 0.1 && Math.abs(pitch) < 0.1
-          ? "Hold Still — Capturing"
-          : "Look straight at the camera",
-      );
-    } else if (count < Math.floor(total * 0.5)) {
-      // Phase 2: want a left turn — encourage if not there yet
-      setDetectionFeedback(
-        yaw < -0.15
-          ? "Hold Still — Capturing"
-          : "Slowly turn your head left",
-      );
-    } else if (count < Math.floor(total * 0.75)) {
-      // Phase 3: want a right turn
-      setDetectionFeedback(
-        yaw > 0.15
-          ? "Hold Still — Capturing"
-          : "Slowly turn your head right",
-      );
-    } else {
-      // Phase 4: want a slight down-tilt (chin down) then up
-      // also suggest removing glasses for a split second if wearing
-      setDetectionFeedback(
-        pitch > 0.1
-          ? "Hold Still — (Remove Specs briefly if wearing)"
-          : "Tilt your head slightly down",
-      );
-    }
-
-    // --- 3. Live Embedding Extraction ---
-    const now = performance.now();
-    if (now - lastExtractionTime.current > extractionInterval) {
-      lastExtractionTime.current = now;
-      extractEmbedding();
-    }
-  };
-
-  const extractEmbedding = async () => {
-    if (!webcamRef.current?.video || enrollmentStatus !== "scanning") return;
-
-    try {
-      const video = webcamRef.current.video;
-
-      if ((faceapi as any).tf && (faceapi as any).tf.engine) {
-        (faceapi as any).tf.engine().startScope();
-      }
-
-      await new Promise((r) => setTimeout(r, 50));
-
-      const detectConfig = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.6 });
-      const detection = await faceapi
-        .detectSingleFace(video, detectConfig)
-        .withFaceLandmarks()
-        .withFaceDescriptor();
-
-      if (detection) {
-        const newDescriptor = detection.descriptor;
-
-        setCollectedEmbeddings((prev) => {
-          if (prev.length >= TARGET_EMBEDDINGS) return prev;
-
-          // Diversity gate
-          const DIVERSITY_THRESHOLD = 0.97;
-          const isDuplicate = prev.some((existing) => {
-            let dot = 0, normA = 0, normB = 0;
-            for (let i = 0; i < existing.length; i++) {
-              dot   += existing[i] * newDescriptor[i];
-              normA += existing[i] * existing[i];
-              normB += newDescriptor[i] * newDescriptor[i];
-            }
-            return dot / (Math.sqrt(normA) * Math.sqrt(normB)) > DIVERSITY_THRESHOLD;
-          });
-
-          if (isDuplicate) return prev;
-
-          const next = [...prev, newDescriptor];
-          collectedCountRef.current = next.length;
-          if (next.length === TARGET_EMBEDDINGS) {
-            setTimeout(() => handleEnrollmentComplete(next), 0);
-          }
-          return next;
-        });
-
-        serverLog("REGISTRATION", `Extracted Organic Embedding #${collectedCountRef.current}`);
-      }
-    } catch (err) {
-      console.error("Embedding extraction failed:", err);
-    } finally {
-      try {
-        const tf = (faceapi as any).tf;
-        if (tf && tf.engine && tf.engine().state.numDataBuffers > 0) {
-          tf.engine().endScope();
-        }
-      } catch (e) {
-        // Silently handle if scope already closed
-      }
-    }
-  };
-
-  /** Adjusts brightness of a canvas by offset (e.g. +40, -40) and returns new canvas */
-  const adjustBrightness = (source: HTMLCanvasElement, offset: number): HTMLCanvasElement => {
-    const c = document.createElement("canvas");
-    c.width = source.width;
-    c.height = source.height;
-    const ctx = c.getContext("2d");
-    if (!ctx) return c;
-    ctx.drawImage(source, 0, 0);
-    const imgData = ctx.getImageData(0, 0, c.width, c.height);
-    for (let i = 0; i < imgData.data.length; i += 4) {
-      imgData.data[i]   = Math.min(255, Math.max(0, imgData.data[i]   + offset));
-      imgData.data[i+1] = Math.min(255, Math.max(0, imgData.data[i+1] + offset));
-      imgData.data[i+2] = Math.min(255, Math.max(0, imgData.data[i+2] + offset));
-    }
-    ctx.putImageData(imgData, 0, 0);
-    return c;
-  };
-
   const handleEnrollmentComplete = async (embeddings: Float32Array[]) => {
-    if (enrollmentStatus === "processing" || enrollmentStatus === "done") return;
+    if (enrollmentStatus === "processing" || enrollmentStatus === "done")
+      return;
 
     setEnrollmentStatus("processing");
     setIsSubmitting(true);
@@ -415,7 +261,7 @@ export default function RegisterFacePage() {
       // --- Brightness augmentation ---
       let finalEmbeddings = [...embeddings];
       const video = webcamRef.current?.video;
-      if (video && video.readyState === 4) {
+      if (video && video.readyState === 4 && modelType === "face-api") {
         let frameCanvas: HTMLCanvasElement | null = null;
         try {
           frameCanvas = document.createElement("canvas");
@@ -425,7 +271,9 @@ export default function RegisterFacePage() {
           if (fCtx) {
             fCtx.drawImage(video, 0, 0);
 
-            const detectConfig = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 });
+            const detectConfig = new faceapi.SsdMobilenetv1Options({
+              minConfidence: 0.5,
+            });
 
             for (const offset of [40, -40]) {
               const augCanvas = adjustBrightness(frameCanvas, offset);
@@ -435,8 +283,11 @@ export default function RegisterFacePage() {
                   .withFaceLandmarks()
                   .withFaceDescriptor();
                 if (det) {
-                  finalEmbeddings.push(det.descriptor);
-                  serverLog("REGISTRATION", `Augmented embedding (brightness ${offset > 0 ? "+" : ""}${offset})`);
+                  finalEmbeddings.push(new Float32Array(det.descriptor));
+                  serverLog(
+                    "REGISTRATION",
+                    `Augmented embedding (brightness ${offset > 0 ? "+" : ""}${offset})`,
+                  );
                 }
               } finally {
                 augCanvas.width = 0;
@@ -455,17 +306,19 @@ export default function RegisterFacePage() {
       }
 
       // Push all embeddings (organic + augmented) to Appwrite
-      await uploadEmbeddings(selectedRollNo, finalEmbeddings);
+      await uploadEmbeddings(selectedRollNo, finalEmbeddings, modelType);
 
       try {
+        const regFlag =
+          modelType === "ghostface" ? "ghostface_registered" : "faceRegistered";
         await tablesDB.updateRow({
           databaseId: DB_ID,
-          tableId: COLL_STUDENTS,
+          tableId: COLLECTIONS.STUDENTS,
           rowId: selectedRollNo,
-          data: { faceRegistered: true }
+          data: { [regFlag]: true },
         });
       } catch (dbErr) {
-        console.warn("Could not update faceRegistered status in DB", dbErr);
+        console.warn("Could not update registration status in DB", dbErr);
       }
 
       setEnrollmentStatus("done");
@@ -481,6 +334,270 @@ export default function RegisterFacePage() {
     }
   };
 
+  const extractEmbedding = useCallback(async () => {
+    if (!webcamRef.current?.video || enrollmentStatus !== "scanning") return;
+
+    try {
+      const video = webcamRef.current.video;
+      let descriptor: Float32Array | null = null;
+
+      const tf = (faceapi as any).tf;
+      if (tf && tf.engine) tf.engine().startScope();
+
+      try {
+        if (modelType === "ghostface") {
+          // Use the high-fidelity MediaPipe landmarks already cached by the live loop
+          const landmarks = lastLandmarks.current;
+          if (!landmarks || landmarks.length === 0) return;
+
+          // Estimate a bounding box from landmarks for the crop
+          const xs = landmarks.map((p: any) => p.x);
+          const ys = landmarks.map((p: any) => p.y);
+          const minX = Math.min(...xs),
+            maxX = Math.max(...xs);
+          const minY = Math.min(...ys),
+            maxY = Math.max(...ys);
+
+          // sw/sh are needed for getGhostFaceDescriptor (pixel conversion)
+          const sw = video.videoWidth;
+          const sh = video.videoHeight;
+
+          const box = {
+            x: minX * sw,
+            y: minY * sh,
+            width: (maxX - minX) * sw,
+            height: (maxY - minY) * sh,
+          };
+
+          descriptor = await getGhostFaceDescriptor(video, box, landmarks);
+
+          let isAllZeros = true;
+          for (let i = 0; i < descriptor.length; i++) {
+            if (descriptor[i] !== 0) {
+              isAllZeros = false;
+              break;
+            }
+          }
+          if (isAllZeros) return;
+        } else {
+          const detectConfig = new faceapi.SsdMobilenetv1Options({
+            minConfidence: 0.6,
+          });
+          const detection = await faceapi
+            .detectSingleFace(video, detectConfig)
+            .withFaceLandmarks()
+            .withFaceDescriptor();
+          if (!detection) return;
+          descriptor = detection.descriptor;
+        }
+      } finally {
+        if (tf && tf.engine) tf.engine().endScope();
+      }
+
+      if (!descriptor) return;
+      const d = new Float32Array(descriptor); // Force-clone to raw array (prevents disposal errors)
+
+      setCollectedEmbeddings((prev) => {
+        if (prev.length >= TARGET_EMBEDDINGS) return prev;
+
+        const DIVERSITY_THRESHOLD =
+          modelType === "ghostface"
+            ? BIOMETRIC_THRESHOLDS.GHOSTFACE.DIVERSITY
+            : BIOMETRIC_THRESHOLDS.FACE_API.DIVERSITY;
+        const isDuplicate = prev.some((existing) => {
+          let dot = 0,
+            normA = 0,
+            normB = 0;
+          for (let i = 0; i < existing.length; i++) {
+            dot += existing[i] * d[i];
+            normA += existing[i] * existing[i];
+            normB += d[i] * d[i];
+          }
+          return (
+            dot / (Math.sqrt(normA) * Math.sqrt(normB)) > DIVERSITY_THRESHOLD
+          );
+        });
+
+        if (isDuplicate) return prev;
+
+        const next = [...prev, d];
+        collectedCountRef.current = next.length;
+        serverLog(
+          "REGISTRATION",
+          `Extracted ${modelType} Embedding #${next.length}`,
+        );
+
+        if (next.length >= TARGET_EMBEDDINGS) {
+          setTimeout(() => handleEnrollmentComplete(next), 0);
+        }
+        return next;
+      });
+    } catch (err) {
+      console.error("Embedding extraction failed:", err);
+    } finally {
+      try {
+        const tf = (faceapi as any).tf;
+        if (tf && tf.engine && tf.engine().state.numDataBuffers > 0) {
+          tf.engine().endScope();
+        }
+      } catch (e) {}
+    }
+  }, [enrollmentStatus, modelType, handleEnrollmentComplete]);
+
+  const processResults = useCallback(
+    async (result: FaceLandmarkerResult) => {
+      if (enrollmentStatus !== "scanning") return;
+
+      if (result.faceLandmarks.length === 0) {
+        setIsFaceValid(false);
+        setDetectionFeedback("Bring Face into Frame");
+        return;
+      }
+
+      const landmarks = result.faceLandmarks[0];
+
+      // --- 1. Stability & Motion Detection ---
+      if (lastLandmarks.current) {
+        const movement =
+          landmarks.reduce((acc, curr, idx) => {
+            const last = lastLandmarks.current[idx];
+            if (!last) return acc;
+            return (
+              acc +
+              Math.sqrt(
+                Math.pow(curr.x - last.x, 2) + Math.pow(curr.y - last.y, 2),
+              )
+            );
+          }, 0) / landmarks.length;
+
+        const stable = movement < 0.05;
+        setIsStable(stable);
+        if (!stable) {
+          setDetectionFeedback("Please Hold Still...");
+          lastLandmarks.current = landmarks;
+          return;
+        }
+      }
+      lastLandmarks.current = landmarks;
+
+      // --- 2. Live Pose-Driven Guidance ---
+      // We read from a ref so we always have the current count,
+      // even though processResults runs in a stale rAF closure.
+      const nose = landmarks[1];
+      const leftEye = landmarks[33];
+      const rightEye = landmarks[263];
+      const forehead = landmarks[10];
+      const chin = landmarks[152];
+
+      const yaw =
+        (nose.x - (leftEye.x + rightEye.x) / 2) / (rightEye.x - leftEye.x);
+      const pitch =
+        (nose.y - (leftEye.y + rightEye.y) / 2) / (chin.y - forehead.y);
+
+      const count = collectedCountRef.current;
+      const total = TARGET_EMBEDDINGS;
+      let isPoseValidForPhase = false;
+
+      // --- Calibration: On Phase 1, lock the natural resting angle ---
+      if (count === 0 && !basePose.current) {
+        // We only set baseline once we are stable and roughly centered
+        if (Math.abs(yaw) < 0.3 && Math.abs(pitch) < 0.3) {
+          basePose.current = { yaw, pitch };
+          console.log(
+            `[📱 CALIBRATION] Base Pose Locked: Y:${yaw.toFixed(2)} P:${pitch.toFixed(2)}`,
+          );
+        }
+      }
+
+      const bp = basePose.current || { yaw: 0, pitch: 0 };
+      const relYaw = yaw - bp.yaw;
+      const relPitch = pitch - bp.pitch;
+
+      // Guide the user through poses based on relative movement from their own baseline
+      if (count < Math.floor(total * 0.25)) {
+        // Phase 1: center baseline (looking straight)
+        isPoseValidForPhase =
+          Math.abs(relYaw) < 0.2 && Math.abs(relPitch) < 0.2;
+        setDetectionFeedback(
+          isPoseValidForPhase
+            ? "HOLD STILL — CAPTURING"
+            : "LOOK STRAIGHT AT CAMERA",
+        );
+      } else if (count < Math.floor(total * 0.5)) {
+        // Phase 2: want a left turn (Swapped for Mirror Fix)
+        isPoseValidForPhase = relYaw > 0.2;
+        setDetectionFeedback(
+          isPoseValidForPhase
+            ? "HOLD STILL — CAPTURING LEFT"
+            : "TURN HEAD TO THE LEFT",
+        );
+      } else if (count < Math.floor(total * 0.75)) {
+        // Phase 3: want a right turn (Swapped for Mirror Fix)
+        isPoseValidForPhase = relYaw < -0.2;
+        setDetectionFeedback(
+          isPoseValidForPhase
+            ? "HOLD STILL — CAPTURING RIGHT"
+            : "TURN HEAD TO THE RIGHT",
+        );
+      } else {
+        // Phase 4: Down & Up tilts
+        if (count < total - 1) {
+          isPoseValidForPhase = relPitch > 0.1;
+          setDetectionFeedback(
+            isPoseValidForPhase
+              ? "HOLD STILL — CAPTURING DOWN"
+              : "TILT HEAD DOWN (CHIN TO CHEST)",
+          );
+        } else {
+          isPoseValidForPhase = relPitch < -0.08;
+          setDetectionFeedback(
+            isPoseValidForPhase
+              ? "HOLD STILL — CAPTURING UP"
+              : "TILT HEAD UP (LOOK AT CEILING)",
+          );
+        }
+      }
+
+      // --- 3. Live Embedding Extraction ---
+      const now = performance.now();
+      if (
+        isPoseValidForPhase &&
+        now - lastExtractionTime.current > extractionInterval
+      ) {
+        lastExtractionTime.current = now;
+        extractEmbedding();
+      }
+    },
+    [enrollmentStatus, extractEmbedding],
+  );
+
+  /** Adjusts brightness of a canvas by offset (e.g. +40, -40) and returns new canvas */
+  const adjustBrightness = (
+    source: HTMLCanvasElement,
+    offset: number,
+  ): HTMLCanvasElement => {
+    const c = document.createElement("canvas");
+    c.width = source.width;
+    c.height = source.height;
+    const ctx = c.getContext("2d");
+    if (!ctx) return c;
+    ctx.drawImage(source, 0, 0);
+    const imgData = ctx.getImageData(0, 0, c.width, c.height);
+    for (let i = 0; i < imgData.data.length; i += 4) {
+      imgData.data[i] = Math.min(255, Math.max(0, imgData.data[i] + offset));
+      imgData.data[i + 1] = Math.min(
+        255,
+        Math.max(0, imgData.data[i + 1] + offset),
+      );
+      imgData.data[i + 2] = Math.min(
+        255,
+        Math.max(0, imgData.data[i + 2] + offset),
+      );
+    }
+    ctx.putImageData(imgData, 0, 0);
+    return c;
+  };
+
   const startEnrollment = () => {
     if (!selectedRollNo) {
       setError("Please select a student first");
@@ -492,6 +609,50 @@ export default function RegisterFacePage() {
     setEnrollmentStatus("scanning");
     setIsCapturing(true);
   };
+
+  // Detection Loop
+  useEffect(() => {
+    let animationFrameId: number;
+
+    const detect = async () => {
+      if (!isMounted.current) return;
+
+      const now = performance.now();
+      const throttleMs = isIOSDevice.current ? 200 : 100;
+      if (now - lastScanTime.current < throttleMs) {
+        animationFrameId = requestAnimationFrame(detect);
+        return;
+      }
+      lastScanTime.current = now;
+
+      if (faceLandmarker && webcamRef.current?.video?.readyState === 4) {
+        const video = webcamRef.current.video;
+
+        // Safety check for active stream tracks
+        if (video.srcObject) {
+          try {
+            const result = faceLandmarker.detectForVideo(
+              video,
+              performance.now(),
+            );
+            processResults(result);
+          } catch (e) {
+            console.warn(
+              "MediaPipe detection skipped (stream likely closed)",
+              e,
+            );
+          }
+        }
+      }
+      animationFrameId = requestAnimationFrame(detect);
+    };
+
+    if (isCapturing) {
+      detect();
+    }
+
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [faceLandmarker, isCapturing, processResults]);
 
   if (authLoading)
     return (
@@ -549,11 +710,45 @@ export default function RegisterFacePage() {
               </h1>
             </div>
           </div>
-          <div className="hidden md:flex items-center space-x-2 text-primary/40 bg-primary/5 px-4 py-2 rounded-full border border-primary/5 shadow-sm">
-            <ScanFace size={18} className="text-secondary" />
-            <span className="text-xs font-bold uppercase tracking-wider">
-              Profile Enrollment
-            </span>
+          <div className="flex items-center space-x-6">
+            {/* Model Selector */}
+            <div className="flex scale-90 sm:scale-100 bg-primary/5 p-1 rounded-2xl border border-primary/10 shadow-inner">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (modelType === "face-api") return;
+                  setAiLoaded(false);
+                  await loadFaceRecognitionModel();
+                  setModelType("face-api");
+                  setAiLoaded(true);
+                }}
+                className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${
+                  modelType === "face-api"
+                    ? "bg-primary text-background shadow-lg"
+                    : "text-primary/40 hover:text-primary"
+                }`}
+              >
+                Face-API
+              </button>
+              <button
+                type="button"
+                onClick={() => setModelType("ghostface")}
+                className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${
+                  modelType === "ghostface"
+                    ? "bg-secondary text-background shadow-lg"
+                    : "text-primary/40 hover:text-primary"
+                }`}
+              >
+                GhostFaceNet
+              </button>
+            </div>
+
+            <div className="hidden md:flex items-center space-x-2 text-primary/40 bg-primary/5 px-4 py-2 rounded-full border border-primary/5 shadow-sm">
+              <ScanFace size={18} className="text-secondary" />
+              <span className="text-xs font-bold uppercase tracking-wider">
+                Profile Enrollment
+              </span>
+            </div>
           </div>
         </header>
 
@@ -582,6 +777,17 @@ export default function RegisterFacePage() {
                   placeholder="SEARCH BY ROLL NUMBER OR NAME..."
                 />
 
+                <div className="mt-4 flex items-center space-x-2 bg-secondary/5 px-4 py-2 rounded-xl border border-secondary/10">
+                  <ScanFace size={14} className="text-secondary" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-primary/60">
+                    Showing students pending{" "}
+                    <span className="text-secondary">
+                      {modelType === "ghostface" ? "GhostFaceNet" : "Face-API"}
+                    </span>{" "}
+                    enrollment
+                  </span>
+                </div>
+
                 {/* Search Dropdown */}
                 <AnimatePresence>
                   {showDropdown &&
@@ -593,25 +799,31 @@ export default function RegisterFacePage() {
                         exit={{ opacity: 0, y: -10 }}
                         className="absolute z-50 w-full mt-2 bg-surface/90 backdrop-blur-2xl border border-white/10 rounded-2xl overflow-hidden shadow-2xl max-h-60 overflow-y-auto"
                       >
-                        {pendingStudents
-                          .map((student) => (
-                            <button
-                              key={student.$id}
-                              onClick={() => {
-                                setSelectedRollNo(student.$id);
-                                setSearchTerm(student.$id);
-                                setShowDropdown(false);
-                              }}
-                              className="w-full px-6 py-4 flex items-center justify-between hover:bg-secondary/5 text-primary transition-all border-b border-primary/5 last:border-0"
-                            >
+                        {pendingStudents.map((student) => (
+                          <button
+                            key={student.$id}
+                            onClick={() => {
+                              setSelectedRollNo(student.$id);
+                              setSearchTerm(student.$id);
+                              setShowDropdown(false);
+                            }}
+                            className="w-full px-6 py-4 flex items-center justify-between hover:bg-secondary/5 text-primary transition-all border-b border-primary/5 last:border-0"
+                          >
+                            <div className="flex flex-col text-left">
                               <span className="font-bold tracking-widest uppercase">
                                 {student.$id}
                               </span>
-                              <span className="text-[10px] text-primary/60 font-bold">
-                                {student.name}
-                              </span>
-                            </button>
-                          ))}
+                              {isUserRegisteredFor(student.$id, modelType) && (
+                                <span className="text-[8px] text-secondary font-bold uppercase tracking-tighter">
+                                  Already Registered ({modelType})
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-primary/60 font-bold text-right">
+                              {student.name}
+                            </span>
+                          </button>
+                        ))}
                       </motion.div>
                     )}
                 </AnimatePresence>
@@ -740,7 +952,8 @@ export default function RegisterFacePage() {
                     Biometric Enrollment
                   </h2>
                   <p className="text-primary/40 text-[10px] uppercase tracking-widest font-bold">
-                    Student: <span className="text-secondary">{selectedRollNo}</span>
+                    Student:{" "}
+                    <span className="text-secondary">{selectedRollNo}</span>
                   </p>
                 </div>
                 <button
@@ -753,7 +966,7 @@ export default function RegisterFacePage() {
 
               <div className="p-8 space-y-8">
                 <div className="flex justify-center">
-                  <div className="relative w-full max-w-xl aspect-[4/3] sm:aspect-video rounded-[2rem] overflow-hidden bg-black border border-white/5 shadow-inner">
+                  <div className="relative w-full max-w-xl aspect-[3/4] sm:aspect-[4/3] rounded-[2rem] overflow-hidden bg-black border border-white/5 shadow-inner">
                     <ReactWebcam
                       audio={false}
                       ref={webcamRef}
@@ -761,46 +974,72 @@ export default function RegisterFacePage() {
                       screenshotFormat="image/jpeg"
                       className="w-full h-full object-cover block"
                       videoConstraints={{
-                        width: 1280,
-                        height: 720,
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
                         facingMode: "user",
                       }}
                     />
 
                     {/* Enrollment progress overlay */}
-                    <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-between p-6 sm:p-10">
-                      {/* Top instruction prompt */}
+                    <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-between">
+                      {/* Top instruction prompt - Sleek Banner */}
                       <motion.div
                         key={detectionFeedback}
-                        initial={{ opacity: 0, y: -10 }}
+                        initial={{ opacity: 0, y: -20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="bg-black/60 backdrop-blur-md px-4 py-2 sm:px-6 sm:py-3 rounded-xl sm:rounded-2xl border border-white/10"
+                        className="w-full bg-gradient-to-b from-black/80 to-transparent pt-4 pb-10 px-6"
                       >
-                        <p className="text-secondary font-bold uppercase tracking-widest text-[9px] sm:text-[11px] text-center">
-                          {detectionFeedback}
-                        </p>
+                        <div className="flex flex-col items-center space-y-1">
+                          <div className="flex items-center space-x-2 text-secondary animate-pulse">
+                            <div className="w-1 h-1 rounded-full bg-secondary" />
+                            <span className="text-[8px] font-black uppercase tracking-[0.4em]">
+                              Neural Scanner
+                            </span>
+                          </div>
+                          <p className="text-white font-black uppercase tracking-[0.15em] text-[16px] sm:text-[22px] text-center drop-shadow-lg">
+                            {detectionFeedback}
+                          </p>
+                        </div>
                       </motion.div>
 
-                      {/* Face bounding guide */}
-                      <div
-                        className={`w-48 h-60 sm:w-64 sm:h-80 border-2 border-dashed rounded-[4rem] sm:rounded-[6rem] transition-all duration-500 scale-95 ${collectedEmbeddings.length > 0 ? "border-secondary" : "border-white/10"}`}
-                      />
+                      {/* Face bounding guide - ALWAYS CLEAR IN CENTER */}
+                      <div className="relative flex-1 flex items-center justify-center w-full px-4">
+                        <div
+                          className={`w-36 h-44 sm:w-56 sm:h-64 border-2 border-dashed rounded-[3rem] sm:rounded-[5rem] transition-all duration-700 ${collectedEmbeddings.length > 0 ? "border-secondary/60 scale-100 bg-secondary/5" : "border-white/20 scale-95"}`}
+                        />
+                      </div>
 
-                      {/* Progress Metrics */}
-                      <div className="w-full flex flex-col items-center space-y-3 sm:space-y-4">
-                        <div className="w-full max-w-[160px] sm:max-w-[200px] h-1.5 bg-primary/10 rounded-full overflow-hidden border border-primary/5">
+                      {/* Progress Metrics - Bottom Hub */}
+                      <div className="w-full bg-gradient-to-t from-black/80 to-transparent pt-10 pb-6 px-10 flex flex-col items-center space-y-3">
+                        {/* Pose Stepper Dots */}
+                        <div className="flex space-x-2 mb-1">
+                          {Array.from({ length: TARGET_EMBEDDINGS }).map(
+                            (_, i) => (
+                              <div
+                                key={i}
+                                className={`w-1.5 h-1.5 rounded-full transition-all duration-500 ${i < collectedEmbeddings.length ? "bg-secondary scale-125 shadow-[0_0_10px_rgba(var(--secondary),0.5)]" : "bg-white/20"}`}
+                              />
+                            ),
+                          )}
+                        </div>
+
+                        <div className="w-full max-w-[200px] h-1 bg-white/10 rounded-full overflow-hidden border border-white/5">
                           <motion.div
                             initial={{ width: 0 }}
                             animate={{
                               width: `${(collectedEmbeddings.length / TARGET_EMBEDDINGS) * 100}%`,
                             }}
-                            className="h-full bg-secondary"
+                            className="h-full bg-secondary shadow-[0_0_15px_rgba(var(--secondary),0.6)]"
                           />
                         </div>
-                        <p className="text-foreground/60 font-bold uppercase text-[8px] sm:text-[9px] tracking-[0.3em] font-mono">
-                          Yield: {collectedEmbeddings.length} /{" "}
-                          {TARGET_EMBEDDINGS}
-                        </p>
+                        <div className="flex items-center space-x-4 opacity-50">
+                          <span className="text-[7px] font-black text-white uppercase tracking-widest">
+                            Vector Extraction
+                          </span>
+                          <span className="text-[9px] font-mono text-secondary font-bold">
+                            {collectedEmbeddings.length} / {TARGET_EMBEDDINGS}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -811,13 +1050,15 @@ export default function RegisterFacePage() {
                     Move your head slowly to allow the neural engine <br /> to
                     capture various organic identity angles
                   </p>
-                  
+
                   <button
                     onClick={resetEnrollment}
                     className="flex items-center space-x-2 mx-auto text-secondary hover:text-secondary/80 transition-colors py-2 px-4 rounded-xl hover:bg-secondary/5"
                   >
                     <X size={14} />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Cancel Registration</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest">
+                      Cancel Registration
+                    </span>
                   </button>
                 </div>
               </div>

@@ -36,6 +36,16 @@ export const Navigation: React.FC = () => {
                     </div>
                     
                     <div className="flex items-center space-x-2">
+                        {(isFaculty || isCaretaker) && (
+                            <Link 
+                                href="/system"
+                                className={`p-2.5 rounded-xl transition-all ${pathname === '/system' ? 'bg-secondary/10 text-secondary' : 'text-primary/40 hover:text-primary hover:bg-primary/5'}`}
+                                title="System Maintenance"
+                            >
+                                <Settings size={20} />
+                            </Link>
+                        )}
+
                         <button 
                             onClick={toggleTheme}
                             className="p-2.5 text-primary/60 hover:text-primary hover:bg-primary/5 rounded-xl transition-all"

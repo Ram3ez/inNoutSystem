@@ -28,13 +28,16 @@ import { LoadingIndicator } from "@/components/LoadingIndicator";
 import { useRouter, useSearchParams } from "next/navigation";
 import { databases, tablesDB, ID } from "@/lib/appwrite";
 import { Query } from "appwrite";
-import { DB_ID, COLLECTIONS } from "@/lib/constants";
+import { DB_ID, COLLECTIONS, BIOMETRIC_THRESHOLDS } from "@/lib/constants";
 import Link from "next/link";
 import {
+  loadBaseFaceModels,
+  loadFaceRecognitionModel,
   loadFaceApiModels,
   loadFaceCache,
   getBestMatch,
   isAIReady,
+  rollingUpdateEmbedding,
 } from "@/lib/faceCache";
 import {
   getLandmarker,
@@ -43,6 +46,7 @@ import {
 } from "@/lib/aiEngine";
 import * as faceapi from "face-api.js";
 import { addToOfflineQueue, isSystemOnline } from "@/lib/offlineQueue";
+import { initGhostFace, getGhostFaceDescriptor } from "@/lib/ghostfaceEngine";
 
 const SSD_OPTIONS = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.2 });
 
@@ -90,6 +94,9 @@ function CaptureContent() {
   const [aiLoaded, setAiLoaded] = useState(
     typeof window !== "undefined" ? isAIReady() && isLandmarkerLoaded() : false,
   );
+  const [modelType, setModelType] = useState<"face-api" | "ghostface">(
+    "ghostface",
+  );
   const [showNotRecognized, setShowNotRecognized] = useState(false);
 
   // Liveness & Blur states
@@ -100,15 +107,28 @@ function CaptureContent() {
     rollNo: "",
     count: 0,
   });
+  const [lastMatchData, setLastMatchData] = useState<{
+    descriptor: Float32Array;
+    score: number;
+    modelType: "face-api" | "ghostface";
+    rollNo: string;
+  } | null>(null);
+
   const failureBuffer = useRef<number>(0);
+  const lastScanTime = useRef<number>(0);
+  const lastLogTime = useRef<number>(0);
 
   const webcamRef = useRef<ReactWebcam>(null);
 
   const isMounted = useRef(true);
+  const lastMediaPipeResult = useRef<any>(null);
+
+  const isIOSDevice = useRef(false);
 
   // Initialize face-api cache + MediaPipe — singletons, only runs once per session
   useEffect(() => {
     isMounted.current = true;
+    isIOSDevice.current = /iPad|iPhone|iPod/.test(navigator.userAgent);
     // If already loaded in background (e.g. from Home page), skip the await chain for instant UI
     if (isAIReady() && isLandmarkerLoaded()) {
       setFaceLandmarker(getLandmarkerSync());
@@ -118,12 +138,27 @@ function CaptureContent() {
 
     const init = async () => {
       try {
-        // These return existing promises if already loading
-        await Promise.all([
-          loadFaceApiModels(),
-          loadFaceCache(),
-          getLandmarker(),
-        ]);
+        // Neural engine initialization
+        await loadBaseFaceModels();
+
+        const tf = (faceapi as any).tf;
+        if (tf) {
+          // Set safety flags AFTER registration to prevent "not registered" errors
+          try {
+            tf.env().set("WASM_HAS_SIMD_SUPPORT", false);
+            tf.env().set("WASM_HAS_MULTITHREAD_SUPPORT", false);
+          } catch (e) {
+            console.warn(
+              "[📱 MAIN] Could not set TFJS flags, continuing with defaults...",
+            );
+          }
+        }
+        await new Promise((r) => setTimeout(r, 150));
+        await loadFaceCache();
+        await new Promise((r) => setTimeout(r, 150));
+        await getLandmarker();
+        await new Promise((r) => setTimeout(r, 150));
+        await initGhostFace();
 
         if (isMounted.current) {
           setFaceLandmarker(getLandmarkerSync());
@@ -139,6 +174,603 @@ function CaptureContent() {
       isMounted.current = false;
     };
   }, []);
+
+  const handleRecognitionComplete = async (rawResult: string) => {
+    let rollNumber: string | null = null;
+
+    if (rawResult.includes("(score:")) {
+      const namePart = rawResult.split("(score:")[0].trim();
+      if (namePart.toLowerCase() !== "unknown" && namePart !== "") {
+        rollNumber = namePart;
+      }
+    } else if (
+      rawResult.toLowerCase() !== "unknown" &&
+      !rawResult.toLowerCase().includes("no face detected") &&
+      !rawResult.toLowerCase().includes("not recognized") &&
+      rawResult.trim() !== "" &&
+      !rawResult.startsWith("{")
+    ) {
+      rollNumber = rawResult.trim();
+    }
+
+    if (!rollNumber) {
+      setResultDialog({
+        title: "Recognition Error",
+        message: rawResult.toLowerCase().includes("no face detected")
+          ? "No face detected. Please ensure your face is clearly visible."
+          : "Face not recognized. Please ensure you are registered.",
+        type: "error",
+      });
+      setIsProcessing(false);
+      setIsScanning(false);
+      return;
+    }
+    try {
+      const COLL_STUDENTS = COLLECTIONS.STUDENTS;
+
+      try {
+        const student = await tablesDB.getRow({
+          databaseId: DB_ID,
+          tableId: COLL_STUDENTS,
+          rowId: rollNumber,
+        });
+        setConfirmationData({
+          rollNo: rollNumber,
+          name: (student as any).name,
+        });
+      } catch (e) {
+        setConfirmationData({ rollNo: rollNumber });
+      }
+    } catch (err: any) {
+      console.error("Confirmation prep failed", err);
+      setConfirmationData({ rollNo: rollNumber });
+    } finally {
+      setIsProcessing(false);
+      setIsScanning(false);
+    }
+  };
+
+  const confirmAndSync = async () => {
+    if (!confirmationData) return;
+
+    const rollNumber = confirmationData.rollNo;
+    setConfirmationData(null);
+    setIsProcessing(true);
+    setStatusText(`Syncing Data for ${rollNumber}...`);
+
+    try {
+      const COLL_OUTING = COLLECTIONS.OUTING;
+      const COLL_STUDENTS = COLLECTIONS.STUDENTS;
+      const COLL_ARCHIVE = COLLECTIONS.OUTING_ARCHIVE;
+
+      if (!isSystemOnline()) {
+        addToOfflineQueue(rollNumber);
+
+        // Adaptive Rolling Update (Offline compatible) - ONLY for GhostFace
+        if (
+          lastMatchData?.rollNo === rollNumber &&
+          lastMatchData?.modelType === "ghostface" &&
+          lastMatchData?.score >= BIOMETRIC_THRESHOLDS.GHOSTFACE.ADAPTIVE_UPDATE
+        ) {
+          rollingUpdateEmbedding(
+            rollNumber,
+            lastMatchData.descriptor,
+            "ghostface",
+          )
+            .then(() =>
+              serverLog(
+                "ADAPTIVE",
+                `Adaptive profile update saved for ${rollNumber} (Score: ${lastMatchData.score.toFixed(2)})`,
+              ),
+            )
+            .catch(() => {});
+        }
+
+        setResultDialog({
+          title: "Offline Capture",
+          message: `${rollNumber}\n\nSAVED LOCALLY (OFFLINE)\nWILL SYNC WHEN ONLINE`,
+          type: "success",
+        });
+        return;
+      }
+
+      const currentTime = new Date().toISOString();
+      let dbMessage = "";
+
+      if (actionType === "Leave") {
+        const COLL_LEAVE = COLLECTIONS.LEAVE;
+        const { rows: documents } = await tablesDB.listRows({
+          databaseId: DB_ID,
+          tableId: COLL_LEAVE,
+          queries: [
+            Query.equal("roll_no", rollNumber),
+            Query.orderDesc("$createdAt"),
+            Query.limit(1),
+          ],
+        });
+
+        const latestLeave = documents[0];
+
+        if (!latestLeave) {
+          setResultDialog({
+            title: "Leave Denied",
+            message: `${rollNumber}\n\nNO LEAVE REQUEST FOUND`,
+            type: "error",
+          });
+          setIsProcessing(false);
+          return;
+        }
+
+        if (latestLeave.exit_date_time && latestLeave.in_date_time) {
+          setResultDialog({
+            title: "Leave Denied",
+            message: `${rollNumber}\n\nLATEST LEAVE ALREADY COMPLETED.\nPLEASE APPLY FOR NEW LEAVE.`,
+            type: "error",
+          });
+          setIsProcessing(false);
+          return;
+        }
+
+        const isCaretakerApproved = latestLeave.caretaker_approval === true;
+        const isFacultyApproved = latestLeave.faculty_approval === true;
+        const requiresFaculty = latestLeave.requires_faculty === true;
+
+        const isFullyApproved = requiresFaculty
+          ? isCaretakerApproved && isFacultyApproved
+          : isCaretakerApproved;
+
+        if (!isFullyApproved) {
+          let msg = `${rollNumber}\n\nLEAVE NOT FULLY APPROVED.`;
+          if (!isCaretakerApproved) msg += "\nPending Caretaker Approval.";
+          else if (requiresFaculty && !isFacultyApproved)
+            msg += "\nPending Faculty Approval.";
+
+          setResultDialog({
+            title: "Leave Denied",
+            message: msg,
+            type: "error",
+          });
+          setIsProcessing(false);
+          return;
+        }
+
+        if (latestLeave.exit_date_time && !latestLeave.in_date_time) {
+          const {
+            $id,
+            $tableId,
+            $databaseId,
+            $createdAt,
+            $updatedAt,
+            $permissions,
+            ...archiveData
+          } = latestLeave as any;
+
+          archiveData.in_date_time = currentTime;
+          const COLL_LEAVE_ARCHIVE = COLLECTIONS.LEAVE_ARCHIVE;
+          await tablesDB.createRow({
+            databaseId: DB_ID,
+            tableId: COLL_LEAVE_ARCHIVE,
+            rowId: ID.unique(),
+            data: archiveData,
+          });
+          await tablesDB.deleteRow({
+            databaseId: DB_ID,
+            tableId: COLL_LEAVE,
+            rowId: latestLeave.$id,
+          });
+          await tablesDB.updateRow({
+            databaseId: DB_ID,
+            tableId: COLL_STUDENTS,
+            rowId: rollNumber,
+            data: { is_on_leave: false },
+          });
+          dbMessage = "LEAVE RETURN SUCCESSFUL & ARCHIVED";
+        } else if (!latestLeave.exit_date_time) {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const proposed = new Date(latestLeave.proposed_exit_date);
+          proposed.setHours(0, 0, 0, 0);
+
+          if (today < proposed) {
+            setResultDialog({
+              title: "Departure Denied",
+              message: `${rollNumber}\n\nTOO EARLY FOR DEPARTURE.\nPROPOSED DATE: ${new Date(latestLeave.proposed_exit_date).toLocaleDateString()}\nCURRENT DATE: ${new Date().toLocaleDateString()}`,
+              type: "error",
+            });
+            setIsProcessing(false);
+            return;
+          }
+
+          await tablesDB.updateRow({
+            databaseId: DB_ID,
+            tableId: COLL_LEAVE,
+            rowId: latestLeave.$id,
+            data: { exit_date_time: currentTime },
+          });
+          await tablesDB.updateRow({
+            databaseId: DB_ID,
+            tableId: COLL_STUDENTS,
+            rowId: rollNumber,
+            data: { is_on_leave: true },
+          });
+          dbMessage = "LEAVE DEPARTURE SUCCESSFUL";
+        }
+      } else {
+        const { rows: documents } = await tablesDB.listRows({
+          databaseId: DB_ID,
+          tableId: COLL_OUTING,
+          queries: [
+            Query.equal("roll_no", rollNumber),
+            Query.orderDesc("out_time"),
+            Query.limit(1),
+          ],
+        });
+
+        const openOuting = documents.find((doc) => !doc.in_time);
+
+        if (openOuting) {
+          await tablesDB.createRow({
+            databaseId: DB_ID,
+            tableId: COLL_ARCHIVE,
+            rowId: ID.unique(),
+            data: {
+              roll_no: rollNumber,
+              out_time: openOuting.out_time,
+              in_time: currentTime,
+            },
+          });
+          await tablesDB.deleteRow({
+            databaseId: DB_ID,
+            tableId: COLL_OUTING,
+            rowId: openOuting.$id,
+          });
+          await tablesDB.updateRow({
+            databaseId: DB_ID,
+            tableId: COLL_STUDENTS,
+            rowId: rollNumber,
+            data: { is_out: false },
+          });
+
+          dbMessage = "CHECK-IN SUCCESSFUL & ARCHIVED";
+        } else {
+          await tablesDB.createRow({
+            databaseId: DB_ID,
+            tableId: COLL_OUTING,
+            rowId: ID.unique(),
+            data: {
+              roll_no: rollNumber,
+              out_time: currentTime,
+            },
+          });
+          await tablesDB.updateRow({
+            databaseId: DB_ID,
+            tableId: COLL_STUDENTS,
+            rowId: rollNumber,
+            data: { is_out: true },
+          });
+
+          dbMessage = "CHECK-OUT SUCCESSFUL";
+        }
+      }
+
+      // [🔄 ADAPTIVE] Rolling Update after user verification & DB success - ONLY for GhostFace
+      if (
+        lastMatchData?.rollNo === rollNumber &&
+        lastMatchData?.modelType === "ghostface" &&
+        lastMatchData?.score >= BIOMETRIC_THRESHOLDS.GHOSTFACE.ADAPTIVE_UPDATE
+      ) {
+        rollingUpdateEmbedding(
+          rollNumber,
+          lastMatchData.descriptor,
+          "ghostface",
+        )
+          .then(() =>
+            serverLog(
+              "ADAPTIVE",
+              `Adaptive profile update for ${rollNumber} (Score: ${lastMatchData.score.toFixed(2)})`,
+            ),
+          )
+          .catch(() => {});
+      }
+
+      setResultDialog({
+        title: "Database Synced",
+        message: `${rollNumber}\n\n${dbMessage}`,
+        type: "success",
+      });
+    } catch (err: any) {
+      console.error("Sync failed", err);
+      setResultDialog({
+        title: "Sync Error",
+        message: "Failed to update database. Please try again.",
+        type: "error",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const processResults = (result: FaceLandmarkerResult) => {
+    if (result.faceLandmarks.length === 0) {
+      setIsFaceValid(false);
+      setLivenessScore(0);
+      setDetectionFeedback("Scanning for Face...");
+      return;
+    }
+
+    const landmarks = result.faceLandmarks[0];
+    const blendshapes = result.faceBlendshapes?.[0]?.categories || [];
+
+    // --- 1. Stability & Motion: Blur Detection ---
+    if (lastLandmarks.current) {
+      const movement =
+        landmarks.reduce((acc, curr, idx) => {
+          const last = lastLandmarks.current[idx];
+          if (!last) return acc;
+          return (
+            acc +
+            Math.sqrt(
+              Math.pow(curr.x - last.x, 2) + Math.pow(curr.y - last.y, 2),
+            )
+          );
+        }, 0) / landmarks.length;
+
+      const stable = movement < 0.05; // Increased for throttled frame rate stability
+      setIsStable(stable);
+      if (!stable) {
+        setIsFaceValid(false);
+        setDetectionFeedback("Please Hold Still");
+        lastLandmarks.current = landmarks;
+        return;
+      }
+    }
+    lastLandmarks.current = landmarks;
+
+    // --- 3. Positioning (Yaw & Pitch) ---
+    const nose = landmarks[1];
+    const leftEye = landmarks[33];
+    const rightEye = landmarks[263];
+    const forehead = landmarks[10];
+    const chin = landmarks[152];
+
+    const yaw =
+      (nose.x - (leftEye.x + rightEye.x) / 2) / (rightEye.x - leftEye.x);
+    const pitch =
+      (nose.y - (leftEye.y + rightEye.y) / 2) / (chin.y - forehead.y);
+
+    const isCentered = Math.abs(yaw) < 0.4 && Math.abs(pitch) < 0.4;
+
+    if (!isCentered) {
+      setDetectionFeedback("Look Directly at Camera");
+      setIsFaceValid(false);
+    } else {
+      setDetectionFeedback("Hold Steady...");
+      setIsFaceValid(true);
+
+      // --- 4. AUTO-TRIGGER RECOGNITION ---
+      // We only trigger if not already scanning, not processing a result,
+      // and no dialogs are open.
+      if (
+        !isScanning &&
+        !imgSrc &&
+        !isProcessing &&
+        !resultDialog &&
+        !confirmationData
+      ) {
+        // iOS Stability Fix: Throttling
+        // Only trigger recognition if at least 100ms has passed since the last attempt.
+        // This limits recognition to ~10 FPS, preventing VRAM exhaustion.
+        const now = Date.now();
+        if (!lastScanTime.current || now - lastScanTime.current > 100) {
+          lastScanTime.current = now;
+          triggerLiveScan();
+        }
+      }
+    }
+  };
+
+  const processLiveFrame = useCallback(
+    async (videoElement: HTMLVideoElement) => {
+      if (
+        typeof window === "undefined" ||
+        !isMounted.current ||
+        document.visibilityState !== "visible"
+      ) {
+        setIsScanning(false);
+        return;
+      }
+
+      setStatusText("Analyzing Biometrics...");
+      setError(null);
+
+      try {
+        // Yield to the browser for 10ms to keep UI/Animations smooth
+        await new Promise((r) => setTimeout(r, 10));
+        if (!isMounted.current) return;
+
+        // --- STABILITY GUARD: Ensure video is actually providing pixels ---
+        if (!videoElement.videoWidth || !videoElement.videoHeight) {
+          setIsScanning(false);
+          return;
+        }
+
+        const tf = (faceapi as any).tf;
+        if (tf && tf.engine) tf.engine().startScope();
+
+        let descriptor: Float32Array;
+
+        try {
+          if (modelType === "ghostface") {
+            // For GhostFaceNet, we now use MediaPipe's high-fidelity results instead of Face-API SSD
+            const mpResult = lastMediaPipeResult.current;
+
+            if (
+              !mpResult ||
+              !mpResult.faceLandmarks ||
+              mpResult.faceLandmarks.length === 0
+            ) {
+              // Fallback to Face-API ONLY if MediaPipe failed to cache a result
+              const detection = await faceapi
+                .detectSingleFace(videoElement, SSD_OPTIONS)
+                .withFaceLandmarks();
+              if (!detection) {
+                failureBuffer.current++;
+                setIsScanning(false);
+                return;
+              }
+              descriptor = await getGhostFaceDescriptor(
+                videoElement,
+                detection.detection.box,
+                detection.landmarks,
+              );
+            } else {
+              // --- HIGH PRECISION MIGRATION ---
+              // Use MediaPipe landmarks directly for GhostFace alignment
+              const landmarks = mpResult.faceLandmarks[0];
+              // Convert MP landmarks format to what GhostFace alignment expects
+              const box = mpResult.faceBoundingBoxes
+                ? mpResult.faceBoundingBoxes[0]
+                : { x: 0, y: 0, width: 0, height: 0 };
+
+              descriptor = await getGhostFaceDescriptor(
+                videoElement,
+                box,
+                landmarks, // getGhostFaceDescriptor now handles MP landmark arrays
+              );
+            }
+          } else {
+            const detection = await faceapi
+              .detectSingleFace(videoElement, SSD_OPTIONS)
+              .withFaceLandmarks()
+              .withFaceDescriptor();
+
+            // --- STABILITY GUARD: Detect "null" or invalid boxes ---
+            if (
+              !detection ||
+              !detection.detection ||
+              !detection.detection.box ||
+              detection.detection.box.width === null
+            ) {
+              failureBuffer.current++;
+              setIsScanning(false);
+              consensusBuffer.current = { rollNo: "", count: 0 };
+              return;
+            }
+            descriptor = detection.descriptor;
+          }
+        } finally {
+          if (tf && tf.engine) tf.engine().endScope();
+        }
+
+        if (!isMounted.current) return;
+
+        const match = await getBestMatch(descriptor, modelType);
+
+        // DEBUG: Verify engine output
+        if (match.rollNo !== "Unknown") {
+          console.log(
+            `[🎯 ${modelType.toUpperCase()}] Match: ${match.rollNo} | Score: ${match.score.toFixed(4)}`,
+          );
+        }
+
+        // --- TEMPORAL CONSENSUS ---
+        if (match.rollNo === "Unknown") {
+          consensusBuffer.current = { rollNo: "", count: 0 };
+          failureBuffer.current++;
+
+          // If we fail to recognize after 5 consecutive attempts (~0.7s of face being present)
+          if (failureBuffer.current >= 5) {
+            console.log(
+              `[🚫 FAILURE] Threshold reached (${failureBuffer.current}). Showing Error Popup.`,
+            );
+            failureBuffer.current = 0;
+            setIsScanning(false);
+            setResultDialog({
+              title: "Recognition Error",
+              message:
+                "Face not recognized. Please ensure you are registered and looking directly at the camera.",
+              type: "error",
+            });
+            return;
+          }
+
+          // --- CONFLICT LOGGING (Only if Failure) ---
+          // Restricted to 'Unknown' state to prevent false positives during success.
+          const now = Date.now();
+          if (match.conflictWith && now - lastLogTime.current > 2000) {
+            lastLogTime.current = now;
+            serverLog(
+              "CONFLICT",
+              `Identity conflict: ${match.potentialMatch} (${(match.score * 100).toFixed(1)}%) vs ${match.conflictWith} (${((match.conflictScore || 0) * 100).toFixed(1)}%). Gap too small.`,
+            );
+          }
+
+          setIsScanning(false);
+          setDetectionFeedback(
+            `${match.potentialMatch || "Unknown"} (${(match.score * 100).toFixed(1)}%)`,
+          );
+          return;
+        }
+
+        // Reset failure buffer if we find any non-unknown match
+        failureBuffer.current = 0;
+
+        // Track for rolling updates
+        setLastMatchData({
+          descriptor,
+          score: match.score,
+          modelType,
+          rollNo: match.rollNo,
+        });
+
+        // If we match the same person as the previous frame, increment count
+        if (consensusBuffer.current.rollNo === match.rollNo) {
+          consensusBuffer.current.count++;
+        } else {
+          consensusBuffer.current.rollNo = match.rollNo;
+          consensusBuffer.current.count = 1;
+        }
+
+        // Consensus logic
+        const targetConsensus = modelType === "ghostface" ? 1 : 2;
+
+        if (consensusBuffer.current.count < targetConsensus) {
+          setDetectionFeedback(
+            `Verifying... ${consensusBuffer.current.count}/${targetConsensus} (${(match.score * 100).toFixed(1)}%)`,
+          );
+          setIsScanning(false);
+          return;
+        }
+
+        // Success! Lock the identity
+        serverLog(
+          "RECOGNITION",
+          `Confirmed: ${match.rollNo} (${(match.score * 100).toFixed(1)}%) (${targetConsensus}-frame consensus)`,
+        );
+        console.log(
+          `[🧠 RECOGNITION] Confirmed: ${match.rollNo} (${(match.score * 100).toFixed(1)}%) (${targetConsensus}-frame)`,
+        );
+        const screenshot = webcamRef.current?.getScreenshot();
+        if (screenshot) setImgSrc(screenshot);
+
+        setIsProcessing(true);
+        handleRecognitionComplete(match.rollNo);
+      } catch (err: any) {
+        console.error("[⚠️ SCAN ERROR]", err);
+        setIsScanning(false);
+      }
+    },
+    [modelType, isProcessing, isScanning, lastMatchData],
+  );
+
+  const triggerLiveScan = useCallback(() => {
+    const video = webcamRef.current?.video;
+    if (video && video.readyState === 4) {
+      setIsScanning(true);
+      setDetectionFeedback("Scanning Database...");
+      processLiveFrame(video);
+    }
+  }, [webcamRef, processLiveFrame]);
 
   // Detection Loop
   useEffect(() => {
@@ -172,6 +804,7 @@ function CaptureContent() {
                 video,
                 performance.now(),
               );
+              lastMediaPipeResult.current = result;
               processResults(result);
             } catch (e) {
               // MediaPipe detection skipped (stream likely closed)
@@ -186,75 +819,39 @@ function CaptureContent() {
 
     detect();
     return () => cancelAnimationFrame(animationFrameId);
-  }, [faceLandmarker, imgSrc, isProcessing, resultDialog, confirmationData]);
+  }, [
+    faceLandmarker,
+    imgSrc,
+    isProcessing,
+    resultDialog,
+    confirmationData,
+    modelType,
+    triggerLiveScan,
+    isScanning,
+  ]);
 
-  const processResults = (result: FaceLandmarkerResult) => {
-    if (result.faceLandmarks.length === 0) {
-      setIsFaceValid(false);
-      setLivenessScore(0);
-      setDetectionFeedback("Scanning for Face...");
-      return;
-    }
-
-    const landmarks = result.faceLandmarks[0];
-    const blendshapes = result.faceBlendshapes?.[0]?.categories || [];
-
-    // --- 1. Stability & Motion: Blur Detection ---
-    if (lastLandmarks.current) {
-      const movement =
-        landmarks.reduce((acc, curr, idx) => {
-          const last = lastLandmarks.current[idx];
-          if (!last) return acc;
-          return (
-            acc +
-            Math.sqrt(
-              Math.pow(curr.x - last.x, 2) + Math.pow(curr.y - last.y, 2),
-            )
-          );
-        }, 0) / landmarks.length;
-
-      const stable = movement < 0.02; // Increased from 0.008 for better tolerance
-      setIsStable(stable);
-      if (!stable) {
-        setIsFaceValid(false);
-        setDetectionFeedback("Please Hold Still");
-        lastLandmarks.current = landmarks;
-        return;
-      }
-    }
-    lastLandmarks.current = landmarks;
-
-    // --- 3. Positioning (Yaw & Pitch) ---
-    const nose = landmarks[1];
-    const leftEye = landmarks[33];
-    const rightEye = landmarks[263];
-    const forehead = landmarks[10];
-    const chin = landmarks[152];
-
-    const yaw =
-      (nose.x - (leftEye.x + rightEye.x) / 2) / (rightEye.x - leftEye.x);
-    const pitch =
-      (nose.y - (leftEye.y + rightEye.y) / 2) / (chin.y - forehead.y);
-
-    const isCentered = Math.abs(yaw) < 0.4 && Math.abs(pitch) < 0.4;
-
-    if (!isCentered) {
-      setDetectionFeedback("Look Directly at Camera");
-      setIsFaceValid(false);
-    } else {
-      setDetectionFeedback("Hold Steady...");
-      setIsFaceValid(true);
-    }
+  const retake = () => {
+    setImgSrc(null);
+    setError(null);
+    setStatusText("");
+    setIsFaceValid(false);
+    setLivenessScore(0);
+    setIsScanning(false);
+    consensusBuffer.current = { rollNo: "", count: 0 };
+    failureBuffer.current = 0;
   };
 
-  const triggerLiveScan = useCallback(() => {
-    const video = webcamRef.current?.video;
-    if (video && video.readyState === 4) {
-      setIsScanning(true);
-      setDetectionFeedback("Scanning Database...");
-      processLiveFrame(video);
+  const dataURLtoBlob = (dataurl: string) => {
+    const arr = dataurl.split(",");
+    const mime = arr[0].match(/:(.*?);/)?.[1];
+    const bstr = atob(arr[arr.length - 1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
     }
-  }, [webcamRef]);
+    return new Blob([u8arr], { type: mime });
+  };
 
   // Auto-capture logic
   useEffect(() => {
@@ -294,583 +891,6 @@ function CaptureContent() {
     resultDialog,
     triggerLiveScan,
   ]);
-
-  const retake = () => {
-    setImgSrc(null);
-    setError(null);
-    setStatusText("");
-    setIsFaceValid(false);
-    setLivenessScore(0);
-    setIsScanning(false);
-    consensusBuffer.current = { rollNo: "", count: 0 };
-    failureBuffer.current = 0;
-  };
-
-  // Helper to convert base64 to Blob without fetch
-  const dataURLtoBlob = (dataurl: string) => {
-    const arr = dataurl.split(",");
-    const mime = arr[0].match(/:(.*?);/)?.[1];
-    const bstr = atob(arr[arr.length - 1]);
-    let n = bstr.length;
-    const u8arr = new Uint8Array(n);
-    while (n--) {
-      u8arr[n] = bstr.charCodeAt(n);
-    }
-    return new Blob([u8arr], { type: mime });
-  };
-
-  const lastLogTime = useRef<number>(0);
-
-  const processLiveFrame = async (videoElement: HTMLVideoElement) => {
-    if (
-      typeof window === "undefined" ||
-      !isMounted.current ||
-      document.visibilityState !== "visible"
-    ) {
-      setIsScanning(false);
-      return;
-    }
-
-    setStatusText("Analyzing Biometrics...");
-    setError(null);
-
-    try {
-      if ((faceapi as any).tf && (faceapi as any).tf.engine) {
-        (faceapi as any).tf.engine().startScope();
-      }
-
-      // Yield to the browser for 10ms to keep UI/Animations smooth
-      await new Promise((r) => setTimeout(r, 10));
-      if (!isMounted.current) return;
-
-      const detection = await faceapi
-        .detectSingleFace(videoElement, SSD_OPTIONS)
-        .withFaceLandmarks()
-        .withFaceDescriptor();
-
-      if (!isMounted.current) return;
-
-      if (!detection) {
-        setIsScanning(false);
-        consensusBuffer.current = { rollNo: "", count: 0 };
-        // We DON'T reset failureBuffer here to survive small frame flickers
-        return;
-      }
-
-      const match = getBestMatch(detection.descriptor);
-
-      // --- TEMPORAL CONSENSUS ---
-      if (match.rollNo === "Unknown") {
-        consensusBuffer.current = { rollNo: "", count: 0 };
-        failureBuffer.current++;
-
-        // If we fail to recognize after 10 consecutive attempts (~1.5s of face being present)
-        if (failureBuffer.current >= 10) {
-          console.log(
-            `[🚫 FAILURE] Threshold reached (${failureBuffer.current}). Showing Error Popup.`,
-          );
-          failureBuffer.current = 0;
-          setIsScanning(false);
-          setResultDialog({
-            title: "Recognition Error",
-            message: "Face not recognized. Please ensure you are registered and looking directly at the camera.",
-            type: "error",
-          });
-          return;
-        }
-
-        // Throttle conflict logs to once every 2 seconds to prevent network lag
-        const now = Date.now();
-        if (match.conflictWith && now - lastLogTime.current > 2000) {
-          lastLogTime.current = now;
-          serverLog(
-            "CONFLICT",
-            `Identity conflict: ${match.potentialMatch} (${(match.score * 100).toFixed(1)}%) vs ${match.conflictWith} (${((match.conflictScore || 0) * 100).toFixed(1)}%). Gap too small.`,
-          );
-        }
-
-        setIsScanning(false);
-        setDetectionFeedback(
-          `${match.potentialMatch || "Unknown"} (${(match.score * 100).toFixed(1)}%)`,
-        );
-        return;
-      }
-
-      // Reset failure buffer if we find any non-unknown match
-      failureBuffer.current = 0;
-
-      // If we match the same person as the previous frame, increment count
-      if (consensusBuffer.current.rollNo === match.rollNo) {
-        consensusBuffer.current.count++;
-      } else {
-        consensusBuffer.current.rollNo = match.rollNo;
-        consensusBuffer.current.count = 1;
-      }
-
-      // Only proceed after 2 consistent matches (approx 0.3s)
-      if (consensusBuffer.current.count < 2) {
-        setDetectionFeedback(
-          `Verifying... ${consensusBuffer.current.count}/2 (${(match.score * 100).toFixed(1)}%)`,
-        );
-        setIsScanning(false);
-        return;
-      }
-
-      // Success! Lock the identity
-      serverLog(
-        "RECOGNITION",
-        `Confirmed: ${match.rollNo} (${(match.score * 100).toFixed(1)}%) (2-frame consensus)`,
-      );
-      console.log(
-        `[🧠 RECOGNITION] Confirmed: ${match.rollNo} (${(match.score * 100).toFixed(1)}%)`,
-      );
-      const screenshot = webcamRef.current?.getScreenshot();
-      if (screenshot) setImgSrc(screenshot);
-
-      setIsProcessing(true);
-      handleRecognitionComplete(match.rollNo);
-    } catch (err: any) {
-      setIsScanning(false);
-    } finally {
-      try {
-        const tf = (faceapi as any).tf;
-        if (
-          isMounted.current &&
-          tf &&
-          tf.engine &&
-          tf.engine().state.numDataBuffers > 0
-        ) {
-          tf.engine().endScope();
-        }
-      } catch (e) {}
-    }
-  };
-
-  const handleRecognitionComplete = async (rawResult: string) => {
-    let rollNumber: string | null = null;
-
-    if (rawResult.includes("(score:")) {
-      const namePart = rawResult.split("(score:")[0].trim();
-      if (namePart.toLowerCase() !== "unknown" && namePart !== "") {
-        rollNumber = namePart;
-      }
-    } else if (
-      rawResult.toLowerCase() !== "unknown" &&
-      !rawResult.toLowerCase().includes("no face detected") &&
-      !rawResult.toLowerCase().includes("not recognized") &&
-      rawResult.trim() !== "" &&
-      !rawResult.startsWith("{")
-    ) {
-      rollNumber = rawResult.trim();
-    }
-
-    if (!rollNumber) {
-      setResultDialog({
-        title: "Recognition Error",
-        message: rawResult.toLowerCase().includes("no face detected")
-          ? "No face detected. Please ensure your face is clearly visible."
-          : "Face not recognized. Please ensure you are registered.",
-        type: "error",
-      });
-      setIsProcessing(false);
-      setIsScanning(false);
-      return;
-    }
-    try {
-      const COLL_STUDENTS = COLLECTIONS.STUDENTS;
-
-      try {
-        /*
-        const student = await databases.getDocument({
-          databaseId: DB_ID,
-          collectionId: COLL_STUDENTS,
-          documentId: rollNumber,
-        });
-        */
-        const student = await tablesDB.getRow({
-          databaseId: DB_ID,
-          tableId: COLL_STUDENTS,
-          rowId: rollNumber,
-        });
-        setConfirmationData({
-          rollNo: rollNumber,
-          name: (student as any).name,
-        });
-      } catch (e) {
-        setConfirmationData({ rollNo: rollNumber });
-      }
-    } catch (err: any) {
-      console.error("Confirmation prep failed", err);
-      setConfirmationData({ rollNo: rollNumber });
-    } finally {
-      setIsProcessing(false);
-      setIsScanning(false);
-    }
-  };
-
-  const confirmAndSync = async () => {
-    if (!confirmationData) return;
-
-    const rollNumber = confirmationData.rollNo;
-    setConfirmationData(null);
-    setIsProcessing(true);
-    setStatusText(`Syncing Data for ${rollNumber}...`);
-
-    try {
-      const COLL_OUTING = COLLECTIONS.OUTING;
-      const COLL_STUDENTS = COLLECTIONS.STUDENTS;
-      const COLL_ARCHIVE = COLLECTIONS.OUTING_ARCHIVE;
-
-      // Check if we are offline BEFORE attempting network request
-      if (!isSystemOnline()) {
-        addToOfflineQueue(rollNumber);
-        setResultDialog({
-          title: "Offline Capture",
-          message: `${rollNumber}\n\nSAVED LOCALLY (OFFLINE)\nWILL SYNC WHEN ONLINE`,
-          type: "success",
-        });
-        return;
-      }
-
-      const currentTime = new Date().toISOString();
-      let dbMessage = "";
-
-      if (actionType === "Leave") {
-        const COLL_LEAVE = COLLECTIONS.LEAVE;
-        /*
-        const searchResult = await databases.listDocuments({
-          databaseId: DB_ID,
-          collectionId: COLL_LEAVE,
-          queries: [
-            Query.equal("roll_no", rollNumber),
-            Query.orderDesc("$createdAt"),
-            Query.limit(1),
-          ]
-        });
-        */
-        const { rows: documents } = await tablesDB.listRows({
-          databaseId: DB_ID,
-          tableId: COLL_LEAVE,
-          queries: [
-            Query.equal("roll_no", rollNumber),
-            Query.orderDesc("$createdAt"),
-            Query.limit(1),
-          ],
-        });
-
-        const latestLeave = documents[0];
-
-        if (!latestLeave) {
-          setResultDialog({
-            title: "Leave Denied",
-            message: `${rollNumber}\n\nNO LEAVE REQUEST FOUND`,
-            type: "error",
-          });
-          setIsProcessing(false);
-          return;
-        }
-
-        // If the latest leave is already completed, they need to apply for a new one
-        if (latestLeave.exit_date_time && latestLeave.in_date_time) {
-          setResultDialog({
-            title: "Leave Denied",
-            message: `${rollNumber}\n\nLATEST LEAVE ALREADY COMPLETED.\nPLEASE APPLY FOR NEW LEAVE.`,
-            type: "error",
-          });
-          setIsProcessing(false);
-          return;
-        }
-
-        const isCaretakerApproved = latestLeave.caretaker_approval === true;
-        const isFacultyApproved = latestLeave.faculty_approval === true;
-        const requiresFaculty = latestLeave.requires_faculty === true;
-
-        const isFullyApproved = requiresFaculty
-          ? isCaretakerApproved && isFacultyApproved
-          : isCaretakerApproved;
-
-        if (!isFullyApproved) {
-          let msg = `${rollNumber}\n\nLEAVE NOT FULLY APPROVED.`;
-          if (!isCaretakerApproved) msg += "\nPending Caretaker Approval.";
-          else if (requiresFaculty && !isFacultyApproved)
-            msg += "\nPending Faculty Approval.";
-
-          setResultDialog({
-            title: "Leave Denied",
-            message: msg,
-            type: "error",
-          });
-          setIsProcessing(false);
-          return;
-        }
-
-        if (latestLeave.exit_date_time && !latestLeave.in_date_time) {
-          // Returning
-          const {
-            $id,
-            $tableId,
-            $databaseId,
-            $createdAt,
-            $updatedAt,
-            $permissions,
-            ...archiveData
-          } = latestLeave as any;
-
-          archiveData.in_date_time = currentTime;
-          const COLL_LEAVE_ARCHIVE = COLLECTIONS.LEAVE_ARCHIVE;
-          /*
-          await databases.createDocument({
-            databaseId: DB_ID,
-            collectionId: COLL_LEAVE_ARCHIVE,
-            documentId: ID.unique(),
-            data: archiveData,
-          });
-          await databases.deleteDocument({
-            databaseId: DB_ID,
-            collectionId: COLL_LEAVE,
-            documentId: latestLeave.$id
-          });
-          await databases.updateDocument({
-            databaseId: DB_ID,
-            collectionId: COLL_STUDENTS,
-            documentId: rollNumber,
-            data: {
-              is_on_leave: false,
-            }
-          });
-          */
-          await tablesDB.createRow({
-            databaseId: DB_ID,
-            tableId: COLL_LEAVE_ARCHIVE,
-            rowId: ID.unique(),
-            data: archiveData,
-          });
-          await tablesDB.deleteRow({
-            databaseId: DB_ID,
-            tableId: COLL_LEAVE,
-            rowId: latestLeave.$id,
-          });
-          await tablesDB.updateRow({
-            databaseId: DB_ID,
-            tableId: COLL_STUDENTS,
-            rowId: rollNumber,
-            data: { is_on_leave: false },
-          });
-          dbMessage = "LEAVE RETURN SUCCESSFUL & ARCHIVED";
-        } else if (!latestLeave.exit_date_time) {
-          // Departing
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          const proposed = new Date(latestLeave.proposed_exit_date);
-          proposed.setHours(0, 0, 0, 0);
-
-          if (today < proposed) {
-            setResultDialog({
-              title: "Departure Denied",
-              message: `${rollNumber}\n\nTOO EARLY FOR DEPARTURE.\nPROPOSED DATE: ${new Date(latestLeave.proposed_exit_date).toLocaleDateString()}\nCURRENT DATE: ${new Date().toLocaleDateString()}`,
-              type: "error",
-            });
-            setIsProcessing(false);
-            return;
-          }
-
-          /*
-          await databases.updateDocument({
-            databaseId: DB_ID,
-            collectionId: COLL_LEAVE,
-            documentId: latestLeave.$id,
-            data: {
-              exit_date_time: currentTime,
-            }
-          });
-          await databases.updateDocument({
-            databaseId: DB_ID,
-            collectionId: COLL_STUDENTS,
-            documentId: rollNumber,
-            data: {
-              is_on_leave: true,
-            }
-          });
-          */
-          await tablesDB.updateRow({
-            databaseId: DB_ID,
-            tableId: COLL_LEAVE,
-            rowId: latestLeave.$id,
-            data: { exit_date_time: currentTime },
-          });
-          await tablesDB.updateRow({
-            databaseId: DB_ID,
-            tableId: COLL_STUDENTS,
-            rowId: rollNumber,
-            data: { is_on_leave: true },
-          });
-          dbMessage = "LEAVE DEPARTURE SUCCESSFUL";
-        } else {
-          setResultDialog({
-            title: "Leave Denied",
-            message: `${rollNumber}\n\nLATEST LEAVE ALREADY COMPLETED.\nPLEASE APPLY FOR NEW LEAVE.`,
-            type: "error",
-          });
-          setIsProcessing(false);
-          return;
-        }
-      } else {
-        /*
-        const searchResult = await databases.listDocuments({
-          databaseId: DB_ID,
-          collectionId: COLL_OUTING,
-          queries: [
-            Query.equal("roll_no", rollNumber),
-            Query.orderDesc("out_time"),
-            Query.limit(1),
-          ]
-        });
-        */
-        const { rows: documents } = await tablesDB.listRows({
-          databaseId: DB_ID,
-          tableId: COLL_OUTING,
-          queries: [
-            Query.equal("roll_no", rollNumber),
-            Query.orderDesc("out_time"),
-            Query.limit(1),
-          ],
-        });
-
-        const openOuting = documents.find((doc) => !doc.in_time);
-
-        if (openOuting) {
-          // 1. Move to Archive
-          /*
-          await databases.createDocument({
-            databaseId: DB_ID,
-            collectionId: COLL_ARCHIVE,
-            documentId: ID.unique(),
-            data: {
-              roll_no: rollNumber,
-              out_time: openOuting.out_time,
-              in_time: currentTime,
-            }
-          });
-          // 2. Delete from active Outings
-          await databases.deleteDocument({
-            databaseId: DB_ID,
-            collectionId: COLL_OUTING,
-            documentId: openOuting.$id
-          });
-          await databases.updateDocument({
-            databaseId: DB_ID,
-            collectionId: COLL_STUDENTS,
-            documentId: rollNumber,
-            data: {
-              is_out: false,
-            }
-          });
-          */
-          await tablesDB.createRow({
-            databaseId: DB_ID,
-            tableId: COLL_ARCHIVE,
-            rowId: ID.unique(),
-            data: {
-              roll_no: rollNumber,
-              out_time: openOuting.out_time,
-              in_time: currentTime,
-            },
-          });
-          await tablesDB.deleteRow({
-            databaseId: DB_ID,
-            tableId: COLL_OUTING,
-            rowId: openOuting.$id,
-          });
-          await tablesDB.updateRow({
-            databaseId: DB_ID,
-            tableId: COLL_STUDENTS,
-            rowId: rollNumber,
-            data: { is_out: false },
-          });
-
-          dbMessage = "CHECK-IN SUCCESSFUL & ARCHIVED";
-        } else {
-          /*
-          await databases.createDocument({
-            databaseId: DB_ID,
-            collectionId: COLL_OUTING,
-            documentId: ID.unique(),
-            data: {
-              roll_no: rollNumber,
-              out_time: currentTime,
-            }
-          });
-          await databases.updateDocument({
-            databaseId: DB_ID,
-            collectionId: COLL_STUDENTS,
-            documentId: rollNumber,
-            data: {
-              is_out: true,
-            }
-          });
-          */
-          await tablesDB.createRow({
-            databaseId: DB_ID,
-            tableId: COLL_OUTING,
-            rowId: ID.unique(),
-            data: {
-              roll_no: rollNumber,
-              out_time: currentTime,
-            },
-          });
-          await tablesDB.updateRow({
-            databaseId: DB_ID,
-            tableId: COLL_STUDENTS,
-            rowId: rollNumber,
-            data: { is_out: true },
-          });
-
-          dbMessage = "CHECK-OUT SUCCESSFUL";
-        }
-      }
-
-      serverLog(
-        "SYNC",
-        `Database synched: Check-in/Check-out completed for ${rollNumber}`,
-      );
-
-      setResultDialog({
-        title: "Database Synced",
-        message: `${rollNumber}\n\n${dbMessage}`,
-        type: "success",
-      });
-    } catch (err: any) {
-      console.error("Sync failed", err);
-      // Only treat as offline if it's a genuine network failure
-      const isNetworkError =
-        err instanceof TypeError && err.message.toLowerCase().includes("fetch");
-      if (isNetworkError) {
-        addToOfflineQueue(rollNumber);
-        setResultDialog({
-          title: "Offline Capture",
-          message: `${rollNumber}\n\nNETWORK ERROR\nSAVED LOCALLY FOR SYNC`,
-          type: "success",
-        });
-      } else {
-        // Application/database error — show real error message
-        setResultDialog({
-          title: "Sync Error",
-          message: `${rollNumber}\n\n${err?.message || "An unexpected error occurred"}`,
-          type: "error",
-        });
-      }
-    } finally {
-      setIsProcessing(false);
-      try {
-        const tf = (faceapi as any).tf;
-        if (tf && tf.engine && tf.engine().state.numDataBuffers > 0) {
-          tf.engine().endScope();
-        }
-      } catch (e) {
-        // Silently handle if scope already closed
-      }
-    }
-  };
 
   if (authLoading)
     return (
@@ -917,24 +937,63 @@ function CaptureContent() {
       <Navigation />
 
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 pt-36 sm:pt-40 pb-12 flex flex-col">
-        <header className="mb-8 flex items-center justify-between">
-          <Link
-            href="/"
-            className="p-2 hover:bg-primary/5 rounded-full transition-all text-primary/40 hover:text-primary shrink-0"
-          >
-            <ArrowLeft size={24} />
-          </Link>
-          <h1 className="text-base sm:text-xl font-bold text-primary tracking-[0.2em] uppercase text-center flex-1 mx-4">
-            {actionType}
-          </h1>
-          <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary border border-primary/10 shrink-0">
+        <header className="mb-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center space-x-4 w-full sm:w-auto">
+            <Link
+              href="/"
+              className="p-2 hover:bg-primary/5 rounded-full transition-all text-primary/40 hover:text-primary shrink-0"
+            >
+              <ArrowLeft size={24} />
+            </Link>
+            <h1 className="text-base sm:text-xl font-bold text-primary tracking-[0.2em] uppercase flex-1 sm:flex-none">
+              {actionType}
+            </h1>
+          </div>
+
+          {/* Model Selector Toggle */}
+          <div className="flex scale-90 sm:scale-100 bg-primary/5 p-1 rounded-2xl border border-primary/10 shadow-inner">
+            <button
+              onClick={async () => {
+                if (modelType === "face-api") return;
+                setAiLoaded(false);
+                await loadFaceRecognitionModel();
+                setModelType("face-api");
+                setAiLoaded(true);
+              }}
+              className={`px-3 py-1.5 rounded-xl text-[9px] font-bold uppercase tracking-widest transition-all ${
+                modelType === "face-api"
+                  ? "bg-primary text-background shadow-md"
+                  : "text-primary/40 hover:text-primary"
+              }`}
+            >
+              Face-API
+            </button>
+            <button
+              onClick={() => setModelType("ghostface")}
+              className={`px-3 py-1.5 rounded-xl text-[9px] font-bold uppercase tracking-widest transition-all ${
+                modelType === "ghostface"
+                  ? "bg-secondary text-background shadow-md"
+                  : "text-primary/40 hover:text-primary"
+              }`}
+            >
+              GhostFaceNet (ONNX)
+            </button>
+          </div>
+
+          <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary border border-primary/10 shrink-0 hidden sm:flex">
             <ScanFace size={20} />
           </div>
         </header>
 
         <div className="flex-1 flex flex-col items-center">
           <div className="relative w-full max-w-2xl rounded-3xl overflow-hidden bg-black border border-white/5 shadow-2xl aspect-[4/3] sm:aspect-video flex items-center justify-center">
-            {!imgSrc ? (
+            {imgSrc ? (
+              <img
+                src={imgSrc}
+                className="w-full h-full object-cover block"
+                alt="Captured"
+              />
+            ) : !resultDialog ? (
               <ReactWebcam
                 audio={false}
                 ref={webcamRef}
@@ -944,17 +1003,18 @@ function CaptureContent() {
                 forceScreenshotSourceSize={true}
                 className="w-full h-full object-cover block"
                 videoConstraints={{
-                  width: 1280,
-                  height: 720,
+                  width: { ideal: 640 },
+                  height: { ideal: 480 },
                   facingMode: "user",
                 }}
               />
             ) : (
-              <img
-                src={imgSrc}
-                className="w-full h-full object-cover block"
-                alt="Captured"
-              />
+              <div className="flex flex-col items-center justify-center text-primary/20">
+                <ScanFace size={64} className="opacity-10 mb-4 animate-pulse" />
+                <p className="text-[10px] font-bold uppercase tracking-widest">
+                  Scanner Paused
+                </p>
+              </div>
             )}
 
             {!imgSrc && (

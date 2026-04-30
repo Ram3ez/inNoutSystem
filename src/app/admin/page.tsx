@@ -228,53 +228,41 @@ export default function AdminPortal() {
         }
     };
 
-    const handleDeleteFace = async (studentId: string) => {
-        if (!confirm(`Are you sure you want to remove facial data for ${studentId}?`)) {
+    const handleDeleteFace = async (studentId: string, type: "face-api" | "ghostface") => {
+        if (!confirm(`Are you sure you want to remove ${type === 'ghostface' ? 'GhostFaceNet' : 'Face-API'} data for ${studentId}?`)) {
             return;
         }
 
-        setIsDeleting(studentId);
+        setIsDeleting(studentId + type);
         try {
+            const tableId = type === "ghostface" 
+                ? COLLECTIONS.FACIAL_EMBEDDINGS_NEW 
+                : COLLECTIONS.FACIAL_EMBEDDINGS;
+            
             try {
-                /*
-                await databases.deleteDocument({
-                    databaseId: DB_ID, 
-                    collectionId: COLLECTIONS.FACIAL_EMBEDDINGS, 
-                    documentId: studentId
-                });
-                */
                 await tablesDB.deleteRow({
                     databaseId: DB_ID, 
-                    tableId: COLLECTIONS.FACIAL_EMBEDDINGS, 
+                    tableId: tableId, 
                     rowId: studentId
                 });
             } catch (dbErr: any) {
                 if (dbErr.code !== 404) {
-                    throw new Error("Failed to delete facial data from biometric database");
+                    throw new Error(`Failed to delete ${type} data`);
                 }
             }
 
-            // Update Appwrite student record
-            /*
-            await databases.updateDocument({
-                databaseId: DB_ID, 
-                collectionId: COLLECTIONS.STUDENTS, 
-                documentId: studentId, 
-                data: {
-                    faceRegistered: false
-                }
-            });
-            */
+            const updateData = type === "ghostface" 
+                ? { ghostface_registered: false } 
+                : { faceRegistered: false };
+
             await tablesDB.updateRow({
                 databaseId: DB_ID, 
                 tableId: COLLECTIONS.STUDENTS, 
                 rowId: studentId, 
-                data: {
-                    faceRegistered: false
-                }
+                data: updateData
             });
 
-            setStudents(prev => prev.map(s => s.$id === studentId ? { ...s, faceRegistered: false } : s));
+            setStudents(prev => prev.map(s => s.$id === studentId ? { ...s, ...updateData } : s));
         } catch (error: any) {
             alert(error.message || "An error occurred");
         } finally {
@@ -421,35 +409,45 @@ export default function AdminPortal() {
                                             </div>
                                         </div>
 
-                                        <div className="w-full md:w-1/4 flex justify-center">
+                                        <div className="w-full md:w-1/4 flex flex-col items-center space-y-2">
                                             {student.faceRegistered ? (
-                                                <div className="flex items-center space-x-2 text-primary bg-primary/10 px-4 py-1.5 rounded-full border border-primary/20">
-                                                    <UserCheck size={14} />
-                                                    <span className="text-[10px] font-bold uppercase tracking-widest">Enrolled</span>
+                                                <div className="flex items-center space-x-2 text-primary/60 bg-primary/5 px-3 py-1 rounded-full border border-primary/10">
+                                                    <UserCheck size={10} />
+                                                    <span className="text-[8px] font-bold uppercase tracking-widest text-primary/40">Face-API</span>
+                                                    <button 
+                                                        onClick={() => handleDeleteFace(student.$id, "face-api")}
+                                                        disabled={isDeleting === (student.$id + "face-api")}
+                                                        className="ml-2 text-secondary hover:scale-110 transition-transform"
+                                                    >
+                                                        <Trash2 size={12} />
+                                                    </button>
                                                 </div>
                                             ) : (
-                                                <div className="flex items-center space-x-2 text-primary/20 bg-primary/5 px-4 py-1.5 rounded-full border border-primary/10">
-                                                    <UserX size={14} />
-                                                    <span className="text-[10px] font-bold uppercase tracking-widest">Pending</span>
+                                                <div className="flex items-center space-x-2 text-primary/20 bg-primary/5 px-3 py-1 rounded-full border border-primary/5">
+                                                    <span className="text-[8px] font-bold uppercase tracking-widest opacity-30">Face-API Missing</span>
+                                                </div>
+                                            )}
+
+                                            {student.ghostface_registered ? (
+                                                <div className="flex items-center space-x-2 text-secondary bg-secondary/10 px-3 py-1 rounded-full border border-secondary/20">
+                                                    <ScanFace size={10} />
+                                                    <span className="text-[8px] font-bold uppercase tracking-widest">GhostFace</span>
+                                                    <button 
+                                                        onClick={() => handleDeleteFace(student.$id, "ghostface")}
+                                                        disabled={isDeleting === (student.$id + "ghostface")}
+                                                        className="ml-2 text-secondary hover:scale-110 transition-transform"
+                                                    >
+                                                        <Trash2 size={12} />
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center space-x-2 text-primary/20 bg-primary/5 px-3 py-1 rounded-full border border-primary/5">
+                                                    <span className="text-[8px] font-bold uppercase tracking-widest opacity-30">GhostFace Missing</span>
                                                 </div>
                                             )}
                                         </div>
 
                                         <div className="w-full md:w-1/4 flex justify-center md:justify-end items-center space-x-3 opacity-100 md:opacity-40 md:group-hover:opacity-100 transition-opacity">
-                                            {student.faceRegistered && (
-                                                <button 
-                                                    onClick={() => handleDeleteFace(student.$id)}
-                                                    disabled={isDeleting === student.$id}
-                                                    className="p-3 bg-secondary/10 text-secondary rounded-xl hover:bg-secondary/20 transition-all border border-secondary/10"
-                                                    title="Delete Facial Data"
-                                                >
-                                                    {isDeleting === student.$id ? (
-                                                        <RefreshCw size={18} className="animate-spin" />
-                                                    ) : (
-                                                        <Trash2 size={18} />
-                                                    )}
-                                                </button>
-                                            )}
                                             <div className="p-2 text-primary/5 hidden md:block">
                                                 <ScanFace size={20} />
                                             </div>

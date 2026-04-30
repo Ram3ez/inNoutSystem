@@ -234,7 +234,7 @@ export default function LeavePage() {
 
   return (
     <GradientBackground>
-      <main className="flex-1 max-w-2xl mx-auto w-full px-4 sm:px-6 pt-32 sm:pt-40 pb-12">
+      <main className="flex-1 max-w-2xl lg:max-w-7xl mx-auto w-full px-4 sm:px-10 lg:px-20 pt-32 sm:pt-40 pb-12">
         <header className="mb-12">
           <div className="flex items-center space-x-4 mb-6">
             <Link
@@ -258,7 +258,7 @@ export default function LeavePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           onSubmit={handleSubmit}
-          className="space-y-6 sm:space-y-8 bg-surface border border-primary/5 p-5 sm:p-10 rounded-[2rem] sm:rounded-[3rem] shadow-2xl relative overflow-hidden"
+          className="space-y-6 sm:space-y-8 bg-surface border border-primary/5 p-5 sm:p-10 lg:p-16 rounded-[2rem] sm:rounded-[3rem] shadow-2xl relative overflow-hidden"
         >
           {/* Student Info - Responsive Stacking */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">

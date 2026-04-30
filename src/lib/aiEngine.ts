@@ -1,9 +1,6 @@
 "use client";
 
-import {
-  FaceLandmarker,
-  FilesetResolver,
-} from "@mediapipe/tasks-vision";
+import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 
 let landmarkerInstance: FaceLandmarker | null = null;
 let landmarkerInitPromise: Promise<FaceLandmarker> | null = null;
@@ -18,11 +15,12 @@ export async function getLandmarker(): Promise<FaceLandmarker> {
   if (landmarkerInitPromise) return landmarkerInitPromise;
 
   landmarkerInitPromise = (async () => {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
     const vision = await FilesetResolver.forVisionTasks("/mediapipe/wasm");
     const landmarker = await FaceLandmarker.createFromOptions(vision, {
       baseOptions: {
         modelAssetPath: "/mediapipe/face_landmarker.task",
-        delegate: "GPU",
+        delegate: isIOS ? "CPU" : "GPU",
       },
       runningMode: "VIDEO",
       outputFaceBlendshapes: false,

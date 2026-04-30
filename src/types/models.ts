@@ -10,6 +10,7 @@ export interface Student extends Models.Document {
     is_out: boolean;
     is_on_leave: boolean;
     faceRegistered: boolean;
+    ghostface_registered?: boolean;
 }
 
 export interface Outing extends Models.Document {

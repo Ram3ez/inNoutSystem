@@ -13,7 +13,7 @@ const withPWA = withPWAInit({
     clientsClaim: true,
     runtimeCaching: [
       {
-        urlPattern: /\.(?:task|tflite|wasm|json|shard.*|bin)$/i,
+        urlPattern: /\.(?:task|tflite|wasm|onnx|json|shard.*|bin)$/i,
         handler: "CacheFirst",
         options: {
           cacheName: "ai-models-cache",
@@ -53,7 +53,7 @@ const nextConfig: NextConfig = {
         new webpack.IgnorePlugin({
           resourceRegExp: /^encoding$/,
           contextRegExp: /node-fetch/,
-        })
+        }),
       );
     }
     return config;
