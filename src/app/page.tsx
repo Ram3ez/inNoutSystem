@@ -98,6 +98,7 @@ export default function Dashboard() {
 
         const history = await fetchAllRows(DB_ID, COLL_OUTING, [
           Query.equal("roll_no", rollNo),
+          Query.isNull("in_time"),
           Query.orderDesc("out_time"),
         ]);
         setOutings(history);
@@ -161,6 +162,24 @@ export default function Dashboard() {
                 <span className="text-primary/60 font-bold text-[10px] uppercase tracking-widest bg-primary/5 px-3 py-1 rounded-full border border-primary/10">
                   {studentData.year}YR • {studentData.department}
                 </span>
+                {studentData.parent_verification_status && (
+                  <span className={`font-black text-[10px] uppercase tracking-widest px-3 py-1 rounded-full border ${
+                    studentData.parent_verification_status === 'pending_approval' 
+                      ? 'bg-secondary/10 text-secondary border-secondary/20' 
+                      : studentData.parent_verification_status === 'verified' 
+                      ? 'bg-green-500/10 text-green-500 border-green-500/20' 
+                      : studentData.parent_verification_status === 'rejected' 
+                      ? 'bg-red-500/10 text-red-500 border-red-500/20' 
+                      : 'bg-primary/5 text-primary/60 border-primary/10'
+                  }`}>
+                    Parents: {
+                      studentData.parent_verification_status === 'pending_approval' ? 'Pending Approval' :
+                      studentData.parent_verification_status === 'verified' ? 'Approved' :
+                      studentData.parent_verification_status === 'rejected' ? 'Rejected' :
+                      studentData.parent_verification_status
+                    }
+                  </span>
+                )}
               </div>
             )}
           </motion.div>
@@ -228,6 +247,13 @@ export default function Dashboard() {
                 delay={0.28}
                 onClick={() => router.push("/my-leaves")}
               />
+              <ActionCard
+                title="Settings"
+                subtitle="Manage Parent Details"
+                icon={<ShieldCheck className="text-primary/20" size={32} />}
+                delay={0.31}
+                onClick={() => router.push("/settings")}
+              />
             </>
           )}
           {isAdmin && (
@@ -266,11 +292,11 @@ export default function Dashboard() {
           className="space-y-6"
         >
           {/* Personal History for Students */}
-          {!isAdmin && !isKiosk && !isFaculty && !isCaretaker && (
+          {!isAdmin && !isKiosk && !isFaculty && !isCaretaker && outings.length > 0 && (
             <>
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-primary uppercase tracking-widest">
-                  Outing Log
+                  Current Outing Status
                 </h2>
                 <div className="h-px flex-1 bg-primary/5 mx-6" />
                 <Footprints className="text-primary/20" size={20} />
@@ -280,7 +306,7 @@ export default function Dashboard() {
                 <div className="flex justify-center p-12 bg-surface rounded-3xl border border-primary/5 shadow-sm">
                   <LoadingIndicator size="sm" />
                 </div>
-              ) : outings.length > 0 ? (
+              ) : (
                 <div className="grid grid-cols-1 gap-4">
                   {outings.map((outing, idx) => (
                     <motion.div
@@ -340,13 +366,6 @@ export default function Dashboard() {
                       </div>
                     </motion.div>
                   ))}
-                </div>
-              ) : (
-                <div className="bg-surface border border-primary/5 rounded-3xl p-12 text-center shadow-sm">
-                  <Footprints className="mx-auto text-primary/10 mb-4" size={48} />
-                  <p className="text-primary/60 font-bold uppercase tracking-widest text-sm">
-                    No Outing History Found
-                  </p>
                 </div>
               )}
             </>

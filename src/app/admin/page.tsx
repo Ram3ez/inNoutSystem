@@ -21,11 +21,31 @@ export default function AdminPortal() {
     const { user, isLoading: authLoading, isAdmin, isRegistrationRequired } = useAuth();
     const router = useRouter();
     
-    const [activeTab, setActiveTab] = useState<'students' | 'assignments' | 'faculty' | 'caretakers'>('students');
+    const [activeTab, setActiveTab] = useState<'students' | 'assignments' | 'faculty' | 'caretakers' | 'outings' | 'leaves'>('students');
     const [students, setStudents] = useState<Student[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
     const [isDeleting, setIsDeleting] = useState<string | null>(null);
+
+    // Outings Tab State
+    const [outingsSubTab, setOutingsSubTab] = useState<'current' | 'archived'>('current');
+    const [outingsPage, setOutingsPage] = useState(1);
+    const [outingsRollQuery, setOutingsRollQuery] = useState('');
+    const [outingsDateQuery, setOutingsDateQuery] = useState('');
+    const [outingsDateType, setOutingsDateType] = useState<'out_time' | 'in_time'>('out_time');
+    const [isOutingsDateTypeOpen, setIsOutingsDateTypeOpen] = useState(false);
+    const [outings, setOutings] = useState<any[]>([]);
+    const [isOutingsLoading, setIsOutingsLoading] = useState(false);
+
+    // Leaves Tab State
+    const [leavesSubTab, setLeavesSubTab] = useState<'current' | 'archived'>('current');
+    const [leavesPage, setLeavesPage] = useState(1);
+    const [leavesRollQuery, setLeavesRollQuery] = useState('');
+    const [leavesDateQuery, setLeavesDateQuery] = useState('');
+    const [leavesDateType, setLeavesDateType] = useState<'proposed_exit_date' | 'proposed_in_date'>('proposed_exit_date');
+    const [isLeavesDateTypeOpen, setIsLeavesDateTypeOpen] = useState(false);
+    const [leaves, setLeaves] = useState<any[]>([]);
+    const [isLeavesLoading, setIsLeavesLoading] = useState(false);
 
     // Staff Assignment State
     const [caretakerAssignments, setCaretakerAssignments] = useState<any[]>([]);
@@ -227,6 +247,148 @@ export default function AdminPortal() {
             setIsLoading(false);
         }
     };
+    const fetchOutingsData = async () => {
+        setIsOutingsLoading(true);
+        try {
+            const queries: string[] = [
+                Query.orderDesc(outingsDateType),
+                Query.limit(20),
+                Query.offset((outingsPage - 1) * 20),
+            ];
+
+            if (outingsRollQuery.trim()) {
+                queries.push(Query.startsWith('roll_no', outingsRollQuery.trim().toUpperCase()));
+            }
+
+            if (outingsDateQuery && outingsDateQuery.length === 10 && /^20\d{2}-\d{2}-\d{2}$/.test(outingsDateQuery)) {
+                const localStart = new Date(`${outingsDateQuery}T00:00:00+05:30`);
+                const localEnd = new Date(`${outingsDateQuery}T23:59:59.999+05:30`);
+
+                const utcStart = localStart.toISOString();
+                const utcEnd = localEnd.toISOString();
+
+                const testFormats = [
+                    { start: utcStart, end: utcEnd },
+                    { start: utcStart.replace('.000Z', 'Z'), end: utcEnd.replace('.999Z', 'Z') },
+                    { start: utcStart.replace('T', ' ').replace('.000Z', ''), end: utcEnd.replace('T', ' ').replace('.999Z', '') },
+                    { start: utcStart.replace('.000Z', ''), end: utcEnd.replace('.999Z', '') },
+                ];
+
+                for (const format of testFormats) {
+                    try {
+                        const tempQueries = [
+                            ...queries,
+                            Query.greaterThanEqual(outingsDateType, format.start),
+                            Query.lessThanEqual(outingsDateType, format.end),
+                        ];
+                        const tableId = outingsSubTab === 'current' ? COLLECTIONS.OUTING : COLLECTIONS.OUTING_ARCHIVE;
+                        const response = await tablesDB.listRows({
+                            databaseId: DB_ID,
+                            tableId,
+                            queries: tempQueries,
+                        });
+                        setOutings(response.rows);
+                        return;
+                    } catch (err) {
+                        // try next
+                    }
+                }
+            }
+
+            const tableId = outingsSubTab === 'current' ? COLLECTIONS.OUTING : COLLECTIONS.OUTING_ARCHIVE;
+            const response = await tablesDB.listRows({
+                databaseId: DB_ID,
+                tableId,
+                queries,
+            });
+
+            setOutings(response.rows);
+        } catch (err) {
+            console.error('Failed to fetch outings:', err);
+        } finally {
+            setIsOutingsLoading(false);
+        }
+    };
+
+    const fetchLeavesData = async () => {
+        setIsLeavesLoading(true);
+        try {
+            const queries: string[] = [
+                Query.orderDesc(leavesDateType),
+                Query.limit(20),
+                Query.offset((leavesPage - 1) * 20),
+            ];
+
+            if (leavesRollQuery.trim()) {
+                queries.push(Query.startsWith('roll_no', leavesRollQuery.trim().toUpperCase()));
+            }
+
+            if (leavesDateQuery && leavesDateQuery.length === 10 && /^20\d{2}-\d{2}-\d{2}$/.test(leavesDateQuery)) {
+                const localStart = new Date(`${leavesDateQuery}T00:00:00+05:30`);
+                const localEnd = new Date(`${leavesDateQuery}T23:59:59.999+05:30`);
+
+                const utcStart = localStart.toISOString();
+                const utcEnd = localEnd.toISOString();
+
+                const testFormats = [
+                    { start: utcStart, end: utcEnd },
+                    { start: utcStart.replace('.000Z', 'Z'), end: utcEnd.replace('.999Z', 'Z') },
+                    { start: utcStart.replace('T', ' ').replace('.000Z', ''), end: utcEnd.replace('T', ' ').replace('.999Z', '') },
+                    { start: utcStart.replace('.000Z', ''), end: utcEnd.replace('.999Z', '') },
+                ];
+
+                for (const format of testFormats) {
+                    try {
+                        const tempQueries = [
+                            ...queries,
+                            Query.greaterThanEqual(leavesDateType, format.start),
+                            Query.lessThanEqual(leavesDateType, format.end),
+                        ];
+                        const tableId = leavesSubTab === 'current' ? COLLECTIONS.LEAVE : COLLECTIONS.LEAVE_ARCHIVE;
+                        const response = await tablesDB.listRows({
+                            databaseId: DB_ID,
+                            tableId,
+                            queries: tempQueries,
+                        });
+                        setLeaves(response.rows);
+                        return;
+                    } catch (err) {
+                        // try next
+                    }
+                }
+            }
+
+            const tableId = leavesSubTab === 'current' ? COLLECTIONS.LEAVE : COLLECTIONS.LEAVE_ARCHIVE;
+            const response = await tablesDB.listRows({
+                databaseId: DB_ID,
+                tableId,
+                queries,
+            });
+
+            setLeaves(response.rows);
+        } catch (err) {
+            console.error('Failed to fetch leaves:', err);
+        } finally {
+            setIsLeavesLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (activeTab === 'outings') {
+            if (!outingsDateQuery || (outingsDateQuery.length === 10 && /^20\d{2}-\d{2}-\d{2}$/.test(outingsDateQuery))) {
+                fetchOutingsData();
+            }
+        }
+    }, [activeTab, outingsSubTab, outingsPage, outingsRollQuery, outingsDateQuery, outingsDateType]);
+
+    useEffect(() => {
+        if (activeTab === 'leaves') {
+            if (!leavesDateQuery || (leavesDateQuery.length === 10 && /^20\d{2}-\d{2}-\d{2}$/.test(leavesDateQuery))) {
+                fetchLeavesData();
+            }
+        }
+    }, [activeTab, leavesSubTab, leavesPage, leavesRollQuery, leavesDateQuery, leavesDateType]);
+
 
     const handleDeleteFace = async (studentId: string, type: "face-api" | "ghostface") => {
         if (!confirm(`Are you sure you want to remove ${type === 'ghostface' ? 'GhostFaceNet' : 'Face-API'} data for ${studentId}?`)) {
@@ -301,32 +463,44 @@ export default function AdminPortal() {
                         </div>
                     </div>
 
-                    <div className="flex flex-col sm:flex-row items-center gap-4 w-full md:w-auto">
-                        {/* Tab Switcher - Now scrollable on mobile */}
-                        <div className="flex bg-primary/5 p-1 rounded-2xl border border-primary/5 w-full sm:w-auto overflow-x-auto no-scrollbar scroll-smooth snap-x">
+                    <div className="flex flex-wrap items-center gap-4 w-full justify-center md:justify-start">
+                        {/* Tab Switcher - Now always wraps cleanly without any horizontal overflow */}
+                        <div className="flex flex-wrap gap-1 bg-primary/5 p-1 rounded-2xl border border-primary/5 justify-center md:justify-start">
                             <button 
                                 onClick={() => setActiveTab('students')}
-                                className={`flex-shrink-0 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all snap-start ${activeTab === 'students' ? 'bg-primary text-background shadow-lg shadow-primary/20' : 'text-primary/60 hover:text-primary'}`}
+                                className={`w-auto px-3 sm:px-4 py-2.5 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'students' ? 'bg-primary text-background shadow-lg shadow-primary/20' : 'text-primary/60 hover:text-primary'}`}
                             >
                                 Students
                             </button>
                             <button 
                                 onClick={() => setActiveTab('assignments')}
-                                className={`flex-shrink-0 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all snap-start ${activeTab === 'assignments' ? 'bg-primary text-background shadow-lg shadow-primary/20' : 'text-primary/60 hover:text-primary'}`}
+                                className={`w-auto px-3 sm:px-4 py-2.5 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'assignments' ? 'bg-primary text-background shadow-lg shadow-primary/20' : 'text-primary/60 hover:text-primary'}`}
                             >
                                 Assignments
                             </button>
                             <button 
                                 onClick={() => setActiveTab('faculty')}
-                                className={`flex-shrink-0 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all snap-start ${activeTab === 'faculty' ? 'bg-primary text-background shadow-lg shadow-primary/20' : 'text-primary/60 hover:text-primary'}`}
+                                className={`w-auto px-3 sm:px-4 py-2.5 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'faculty' ? 'bg-primary text-background shadow-lg shadow-primary/20' : 'text-primary/60 hover:text-primary'}`}
                             >
                                 Faculty Team
                             </button>
                             <button 
                                 onClick={() => setActiveTab('caretakers')}
-                                className={`flex-shrink-0 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all snap-start ${activeTab === 'caretakers' ? 'bg-primary text-background shadow-lg shadow-primary/20' : 'text-primary/60 hover:text-primary'}`}
+                                className={`w-auto px-3 sm:px-4 py-2.5 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'caretakers' ? 'bg-primary text-background shadow-lg shadow-primary/20' : 'text-primary/60 hover:text-primary'}`}
                             >
                                 Caretaker Team
+                            </button>
+                            <button 
+                                onClick={() => setActiveTab('outings')}
+                                className={`w-auto px-3 sm:px-4 py-2.5 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'outings' ? 'bg-primary text-background shadow-lg shadow-primary/20' : 'text-primary/60 hover:text-primary'}`}
+                            >
+                                Outings
+                            </button>
+                            <button 
+                                onClick={() => setActiveTab('leaves')}
+                                className={`w-auto px-3 sm:px-4 py-2.5 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'leaves' ? 'bg-primary text-background shadow-lg shadow-primary/20' : 'text-primary/60 hover:text-primary'}`}
+                            >
+                                Leaves
                             </button>
                         </div>
 
@@ -653,6 +827,345 @@ export default function AdminPortal() {
                                     })}
                                 </div>
                             </section>
+                        </motion.div>
+                    ) : activeTab === 'outings' ? (
+                        <motion.div 
+                            key="outings-list"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="space-y-6"
+                        >
+                            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 bg-surface border border-primary/5 p-6 rounded-[2.5rem] shadow-xl shadow-primary/5">
+                                <div className="flex bg-primary/5 p-1 rounded-2xl border border-primary/5 w-full sm:w-auto self-start">
+                                    <button 
+                                        onClick={() => { setOutingsSubTab('current'); setOutingsPage(1); }}
+                                        className={`flex-shrink-0 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${outingsSubTab === 'current' ? 'bg-primary text-background shadow-lg shadow-primary/20' : 'text-primary/60 hover:text-primary'}`}
+                                    >
+                                        Current Outings
+                                    </button>
+                                    <button 
+                                        onClick={() => { setOutingsSubTab('archived'); setOutingsPage(1); }}
+                                        className={`flex-shrink-0 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${outingsSubTab === 'archived' ? 'bg-primary text-background shadow-lg shadow-primary/20' : 'text-primary/60 hover:text-primary'}`}
+                                    >
+                                        Archived Outings
+                                    </button>
+                                </div>
+
+                                <div className="flex flex-col sm:flex-row gap-4 w-full xl:w-auto">
+                                    <div className="relative group w-full sm:w-56">
+                                        <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-primary/20 group-focus-within:text-secondary transition-colors">
+                                            <Search size={16} />
+                                        </div>
+                                        <input 
+                                            type="text"
+                                            placeholder="ROLL NUMBER..."
+                                            value={outingsRollQuery}
+                                            onChange={(e) => { setOutingsRollQuery(e.target.value); setOutingsPage(1); }}
+                                            className="w-full bg-surface border border-primary/10 rounded-2xl h-11 pl-11 pr-4 text-primary text-xs focus:outline-none focus:border-secondary/50 transition-all uppercase placeholder:text-primary/20"
+                                        />
+                                    </div>
+
+                                    <div className="relative w-full sm:w-40 z-30">
+                                        <button 
+                                            onClick={() => setIsOutingsDateTypeOpen(!isOutingsDateTypeOpen)}
+                                            className="w-full bg-surface border border-primary/10 rounded-2xl h-11 px-4 text-primary text-xs font-bold tracking-wider uppercase transition-all flex items-center justify-between hover:border-primary/30 select-none cursor-pointer"
+                                        >
+                                            <span className="truncate">{outingsDateType === 'out_time' ? 'Out Time' : 'In Time'}</span>
+                                            <ChevronDown size={14} className={`text-primary/40 transition-transform duration-200 shrink-0 ${isOutingsDateTypeOpen ? 'rotate-180' : ''}`} />
+                                        </button>
+                                        <AnimatePresence>
+                                            {isOutingsDateTypeOpen && (
+                                                <>
+                                                    <div className="fixed inset-0 z-10" onClick={() => setIsOutingsDateTypeOpen(false)} />
+                                                    <motion.div 
+                                                        initial={{ opacity: 0, y: -4 }}
+                                                        animate={{ opacity: 1, y: 0 }}
+                                                        exit={{ opacity: 0, y: -4 }}
+                                                        className="absolute top-12 left-0 w-full bg-surface border border-primary/10 rounded-xl shadow-xl z-20 py-1 overflow-hidden"
+                                                    >
+                                                        <button 
+                                                            onClick={() => { setOutingsDateType('out_time'); setIsOutingsDateTypeOpen(false); setOutingsPage(1); }}
+                                                            className={`w-full text-left px-4 py-2.5 text-xs tracking-wider uppercase transition-all ${outingsDateType === 'out_time' ? 'bg-primary/10 text-primary font-bold' : 'text-primary/60 hover:bg-primary/5 hover:text-primary'}`}
+                                                        >
+                                                            Out Time
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => { setOutingsDateType('in_time'); setIsOutingsDateTypeOpen(false); setOutingsPage(1); }}
+                                                            className={`w-full text-left px-4 py-2.5 text-xs tracking-wider uppercase transition-all ${outingsDateType === 'in_time' ? 'bg-primary/10 text-primary font-bold' : 'text-primary/60 hover:bg-primary/5 hover:text-primary'}`}
+                                                        >
+                                                            In Time
+                                                        </button>
+                                                    </motion.div>
+                                                </>
+                                            )}
+                                        </AnimatePresence>
+                                    </div>
+
+                                    <div className="relative group w-full sm:w-48">
+                                        <input 
+                                            type="date"
+                                            value={outingsDateQuery}
+                                            onChange={(e) => { setOutingsDateQuery(e.target.value); setOutingsPage(1); }}
+                                            className="w-full bg-surface border border-primary/10 rounded-2xl h-11 px-4 text-primary text-xs focus:outline-none focus:border-secondary/50 transition-all uppercase placeholder:text-primary/20"
+                                        />
+                                    </div>
+
+                                    {(outingsRollQuery || outingsDateQuery) && (
+                                        <button 
+                                            onClick={() => { setOutingsRollQuery(''); setOutingsDateQuery(''); setOutingsDateType('out_time'); setOutingsPage(1); }}
+                                            className="flex-shrink-0 px-4 h-11 bg-red-500/10 text-red-400 border border-red-500/20 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all hover:bg-red-500/20"
+                                        >
+                                            Clear
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+
+                            {isOutingsLoading ? (
+                                <div className="py-20 flex items-center justify-center">
+                                    <LoadingIndicator />
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {outings.map((outing) => (
+                                        <motion.div 
+                                            key={outing.$id}
+                                            initial={{ opacity: 0, y: 10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            className="bg-surface border border-primary/5 p-5 sm:p-6 rounded-[2rem] hover:bg-surface/50 transition-all flex flex-col md:flex-row items-center justify-between gap-4"
+                                        >
+                                            <div className="flex flex-col md:flex-row items-center gap-4 text-center md:text-left">
+                                                <div className="w-12 h-12 bg-primary/5 rounded-xl flex items-center justify-center text-primary font-bold uppercase border border-primary/10 shrink-0">
+                                                    {outing.roll_no?.[0] || 'O'}
+                                                </div>
+                                                <div>
+                                                    <h3 className="text-primary font-bold uppercase tracking-tight text-base sm:text-lg">
+                                                        {outing.roll_no}
+                                                    </h3>
+                                                    <p className="text-primary/40 text-[10px] font-bold tracking-widest uppercase">
+                                                        Out Time: {outing.out_time ? new Date(outing.out_time).toLocaleString("en-IN") : "N/A"}
+                                                    </p>
+                                                    {outing.in_time && (
+                                                        <p className="text-secondary/70 text-[10px] font-black tracking-widest uppercase mt-0.5">
+                                                            In Time: {new Date(outing.in_time).toLocaleString("en-IN")}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                {outing.in_time ? (
+                                                    <span className="text-[9px] bg-primary/5 text-primary/40 px-3 py-1 rounded-full border border-primary/10 font-black tracking-widest uppercase">Returned</span>
+                                                ) : (
+                                                    <span className="text-[9px] bg-secondary/10 text-secondary px-3 py-1 rounded-full border border-secondary/20 font-black tracking-widest uppercase animate-pulse">Active Out</span>
+                                                )}
+                                            </div>
+                                        </motion.div>
+                                    ))}
+
+                                    {outings.length === 0 && (
+                                        <div className="py-16 text-center border border-dashed border-primary/5 rounded-[2.5rem]">
+                                            <p className="text-primary/20 text-xs font-bold uppercase tracking-[0.2em]">No outings found</p>
+                                        </div>
+                                    )}
+
+                                    {/* Pagination Controls */}
+                                    <div className="flex items-center justify-between pt-4">
+                                        <button 
+                                            disabled={outingsPage === 1}
+                                            onClick={() => setOutingsPage(prev => Math.max(1, prev - 1))}
+                                            className="px-5 py-2.5 bg-surface border border-primary/5 hover:border-primary/20 text-primary/60 hover:text-primary rounded-xl font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-30 disabled:pointer-events-none"
+                                        >
+                                            Previous
+                                        </button>
+                                        <span className="text-xs font-bold text-primary/40 uppercase tracking-widest">
+                                            Page {outingsPage}
+                                        </span>
+                                        <button 
+                                            disabled={outings.length < 20}
+                                            onClick={() => setOutingsPage(prev => prev + 1)}
+                                            className="px-5 py-2.5 bg-surface border border-primary/5 hover:border-primary/20 text-primary/60 hover:text-primary rounded-xl font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-30 disabled:pointer-events-none"
+                                        >
+                                            Next
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </motion.div>
+                    ) : activeTab === 'leaves' ? (
+                        <motion.div 
+                            key="leaves-list"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="space-y-6"
+                        >
+                            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 bg-surface border border-primary/5 p-6 rounded-[2.5rem] shadow-xl shadow-primary/5">
+                                <div className="flex bg-primary/5 p-1 rounded-2xl border border-primary/5 w-full sm:w-auto self-start">
+                                    <button 
+                                        onClick={() => { setLeavesSubTab('current'); setLeavesPage(1); }}
+                                        className={`flex-shrink-0 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${leavesSubTab === 'current' ? 'bg-primary text-background shadow-lg shadow-primary/20' : 'text-primary/60 hover:text-primary'}`}
+                                    >
+                                        Current Leaves
+                                    </button>
+                                    <button 
+                                        onClick={() => { setLeavesSubTab('archived'); setLeavesPage(1); }}
+                                        className={`flex-shrink-0 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${leavesSubTab === 'archived' ? 'bg-primary text-background shadow-lg shadow-primary/20' : 'text-primary/60 hover:text-primary'}`}
+                                    >
+                                        Archived Leaves
+                                    </button>
+                                </div>
+
+                                <div className="flex flex-col sm:flex-row gap-4 w-full xl:w-auto">
+                                    <div className="relative group w-full sm:w-56">
+                                        <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-primary/20 group-focus-within:text-secondary transition-colors">
+                                            <Search size={16} />
+                                        </div>
+                                        <input 
+                                            type="text"
+                                            placeholder="ROLL NUMBER..."
+                                            value={leavesRollQuery}
+                                            onChange={(e) => { setLeavesRollQuery(e.target.value); setLeavesPage(1); }}
+                                            className="w-full bg-surface border border-primary/10 rounded-2xl h-11 pl-11 pr-4 text-primary text-xs focus:outline-none focus:border-secondary/50 transition-all uppercase placeholder:text-primary/20"
+                                        />
+                                    </div>
+
+                                    <div className="relative w-full sm:w-40 z-30">
+                                        <button 
+                                            onClick={() => setIsLeavesDateTypeOpen(!isLeavesDateTypeOpen)}
+                                            className="w-full bg-surface border border-primary/10 rounded-2xl h-11 px-4 text-primary text-xs font-bold tracking-wider uppercase transition-all flex items-center justify-between hover:border-primary/30 select-none cursor-pointer"
+                                        >
+                                            <span className="truncate">{leavesDateType === 'proposed_exit_date' ? 'Departure' : 'Return'}</span>
+                                            <ChevronDown size={14} className={`text-primary/40 transition-transform duration-200 shrink-0 ${isLeavesDateTypeOpen ? 'rotate-180' : ''}`} />
+                                        </button>
+                                        <AnimatePresence>
+                                            {isLeavesDateTypeOpen && (
+                                                <>
+                                                    <div className="fixed inset-0 z-10" onClick={() => setIsLeavesDateTypeOpen(false)} />
+                                                    <motion.div 
+                                                        initial={{ opacity: 0, y: -4 }}
+                                                        animate={{ opacity: 1, y: 0 }}
+                                                        exit={{ opacity: 0, y: -4 }}
+                                                        className="absolute top-12 left-0 w-full bg-surface border border-primary/10 rounded-xl shadow-xl z-20 py-1 overflow-hidden"
+                                                    >
+                                                        <button 
+                                                            onClick={() => { setLeavesDateType('proposed_exit_date'); setIsLeavesDateTypeOpen(false); setLeavesPage(1); }}
+                                                            className={`w-full text-left px-4 py-2.5 text-xs tracking-wider uppercase transition-all ${leavesDateType === 'proposed_exit_date' ? 'bg-primary/10 text-primary font-bold' : 'text-primary/60 hover:bg-primary/5 hover:text-primary'}`}
+                                                        >
+                                                            Departure
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => { setLeavesDateType('proposed_in_date'); setIsLeavesDateTypeOpen(false); setLeavesPage(1); }}
+                                                            className={`w-full text-left px-4 py-2.5 text-xs tracking-wider uppercase transition-all ${leavesDateType === 'proposed_in_date' ? 'bg-primary/10 text-primary font-bold' : 'text-primary/60 hover:bg-primary/5 hover:text-primary'}`}
+                                                        >
+                                                            Return
+                                                        </button>
+                                                    </motion.div>
+                                                </>
+                                            )}
+                                        </AnimatePresence>
+                                    </div>
+
+                                    <div className="relative group w-full sm:w-48">
+                                        <input 
+                                            type="date"
+                                            value={leavesDateQuery}
+                                            onChange={(e) => { setLeavesDateQuery(e.target.value); setLeavesPage(1); }}
+                                            className="w-full bg-surface border border-primary/10 rounded-2xl h-11 px-4 text-primary text-xs focus:outline-none focus:border-secondary/50 transition-all uppercase placeholder:text-primary/20"
+                                        />
+                                    </div>
+
+                                    {(leavesRollQuery || leavesDateQuery) && (
+                                        <button 
+                                            onClick={() => { setLeavesRollQuery(''); setLeavesDateQuery(''); setLeavesDateType('proposed_exit_date'); setLeavesPage(1); }}
+                                            className="flex-shrink-0 px-4 h-11 bg-red-500/10 text-red-400 border border-red-500/20 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all hover:bg-red-500/20"
+                                        >
+                                            Clear
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+
+                            {isLeavesLoading ? (
+                                <div className="py-20 flex items-center justify-center">
+                                    <LoadingIndicator />
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {leaves.map((leave) => (
+                                        <motion.div 
+                                            key={leave.$id}
+                                            initial={{ opacity: 0, y: 10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            className="bg-surface border border-primary/5 p-5 sm:p-6 rounded-[2rem] hover:bg-surface/50 transition-all flex flex-col md:flex-row items-center justify-between gap-4"
+                                        >
+                                            <div className="flex flex-col md:flex-row items-center gap-4 text-center md:text-left w-full">
+                                                <div className="w-12 h-12 bg-primary/5 rounded-xl flex items-center justify-center text-primary font-bold uppercase border border-primary/10 shrink-0">
+                                                    {leave.roll_no?.[0] || 'L'}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex flex-wrap items-center justify-center md:justify-start gap-3">
+                                                        <h3 className="text-primary font-bold uppercase tracking-tight text-base sm:text-lg">
+                                                            {leave.roll_no}
+                                                        </h3>
+                                                        <span className={`text-[8px] sm:text-[9px] px-2.5 py-0.5 rounded-full border font-black uppercase tracking-wider ${leave.status === 'approved' ? 'bg-green-500/10 text-green-600 border-green-500/10' : 'bg-orange-500/10 text-orange-600 border-orange-500/10'}`}>
+                                                            {leave.status}
+                                                        </span>
+                                                        {leave.exit_date_time && !leave.in_date_time && (
+                                                            <span className="text-[8px] sm:text-[9px] px-2.5 py-0.5 rounded-full border font-black uppercase tracking-wider bg-secondary/10 text-secondary border-secondary/10">
+                                                                Currently Out
+                                                            </span>
+                                                        )}
+                                                        {leave.exit_date_time && leave.in_date_time && (
+                                                            <span className="text-[8px] sm:text-[9px] px-2.5 py-0.5 rounded-full border font-black uppercase tracking-wider bg-primary/10 text-primary border-primary/10">
+                                                                Completed
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-primary/70 text-xs font-bold leading-relaxed mt-1 italic line-clamp-2">
+                                                        "{leave.reason}"
+                                                    </p>
+                                                    <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 mt-2">
+                                                        <p className="text-primary/40 text-[10px] font-bold tracking-widest uppercase">
+                                                            Departure: {leave.proposed_exit_date ? new Date(leave.proposed_exit_date).toLocaleString("en-IN") : "N/A"}
+                                                        </p>
+                                                        <p className="text-primary/40 text-[10px] font-bold tracking-widest uppercase">
+                                                            Return: {leave.proposed_in_date ? new Date(leave.proposed_in_date).toLocaleString("en-IN") : "N/A"}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </motion.div>
+                                    ))}
+
+                                    {leaves.length === 0 && (
+                                        <div className="py-16 text-center border border-dashed border-primary/5 rounded-[2.5rem]">
+                                            <p className="text-primary/20 text-xs font-bold uppercase tracking-[0.2em]">No leaves found</p>
+                                        </div>
+                                    )}
+
+                                    {/* Pagination Controls */}
+                                    <div className="flex items-center justify-between pt-4">
+                                        <button 
+                                            disabled={leavesPage === 1}
+                                            onClick={() => setLeavesPage(prev => Math.max(1, prev - 1))}
+                                            className="px-5 py-2.5 bg-surface border border-primary/5 hover:border-primary/20 text-primary/60 hover:text-primary rounded-xl font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-30 disabled:pointer-events-none"
+                                        >
+                                            Previous
+                                        </button>
+                                        <span className="text-xs font-bold text-primary/40 uppercase tracking-widest">
+                                            Page {leavesPage}
+                                        </span>
+                                        <button 
+                                            disabled={leaves.length < 20}
+                                            onClick={() => setLeavesPage(prev => prev + 1)}
+                                            className="px-5 py-2.5 bg-surface border border-primary/5 hover:border-primary/20 text-primary/60 hover:text-primary rounded-xl font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-30 disabled:pointer-events-none"
+                                        >
+                                            Next
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                         </motion.div>
                     ) : (
                         <motion.div 

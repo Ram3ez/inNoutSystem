@@ -19,7 +19,7 @@ import { GradientBackground } from "@/components/GradientBackground";
 import { Navigation } from "@/components/Navigation";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
 import { useRouter } from "next/navigation";
-import { databases, tablesDB, fetchAllRows, Query } from "@/lib/appwrite";
+import { databases, tablesDB, fetchAllRows, Query, ID } from "@/lib/appwrite";
 import { DB_ID, COLLECTIONS } from "@/lib/constants";
 import Link from "next/link";
 
@@ -38,6 +38,10 @@ export default function MyLeavesPage() {
   const [expandedRequests, setExpandedRequests] = useState<
     Record<string, boolean>
   >({});
+  const [extendingLeaveId, setExtendingLeaveId] = useState<string | null>(null);
+  const [newReturnDate, setNewReturnDate] = useState<string>("");
+  const [isExtendingLoading, setIsExtendingLoading] = useState<boolean>(false);
+  const [extensionStatus, setExtensionStatus] = useState<string | null>(null);
 
   useEffect(() => {
     if (authLoading) return;
@@ -61,22 +65,48 @@ export default function MyLeavesPage() {
         Query.equal("roll_no", studentData.$id)
       ]);
 
-      // Fetch archive separately — don't fail if archive has issues
-      let archiveDocs: any[] = [];
-      try {
-        archiveDocs = await fetchAllRows(DB_ID, COLLECTIONS.LEAVE_ARCHIVE, [
-          Query.equal("roll_no", studentData.$id)
-        ]);
-      } catch (archiveError) {
-        console.warn(
-          "Could not fetch leave archive (check permissions/index):",
-          archiveError
-        );
+      const now = new Date();
+      const oneDayInMs = 24 * 60 * 60 * 1000;
+      const unexpiredLeaves: any[] = [];
+
+      for (const req of activeLeaves as any[]) {
+        if (!req.exit_date_time && req.proposed_in_date) {
+          const proposedIn = new Date(req.proposed_in_date);
+          if (now.getTime() - proposedIn.getTime() > oneDayInMs) {
+            try {
+              const { $id, $createdAt, $updatedAt, $databaseId, $collectionId, $permissions, ...cleanData } = req;
+              await tablesDB.createRow({
+                databaseId: DB_ID,
+                tableId: COLLECTIONS.LEAVE_ARCHIVE,
+                rowId: ID.unique(),
+                data: {
+                  ...cleanData,
+                  status: "expired",
+                  mail_sent: req.mail_sent ?? false,
+                  faculty_approval: req.faculty_approval ?? false,
+                  caretaker_approval: req.caretaker_approval ?? false,
+                  is_extended: req.is_extended ?? false,
+                  caretaker_id: req.caretaker_id || "N/A",
+                  faculty_id: req.faculty_id || "N/A",
+                }
+              });
+              await tablesDB.deleteRow({
+                databaseId: DB_ID,
+                tableId: COLLECTIONS.LEAVE,
+                rowId: req.$id,
+              });
+            } catch (err) {
+              console.error("Auto-archiving leave failed", err);
+            }
+            continue;
+          }
+        }
+        unexpiredLeaves.push(req);
       }
 
-      const allLeaves = [...activeLeaves, ...archiveDocs];
+      const allLeaves = [...unexpiredLeaves];
       allLeaves.sort(
-        (a, b) =>
+        (a: any, b: any) =>
           new Date(b.$createdAt).getTime() - new Date(a.$createdAt).getTime(),
       );
 
@@ -92,6 +122,71 @@ export default function MyLeavesPage() {
     setExpandedRequests((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
+  const handleExtendLeave = async (leave: any) => {
+    if (!newReturnDate) return;
+    setIsExtendingLoading(true);
+    setExtensionStatus("Extending leave...");
+    try {
+      await tablesDB.updateRow({
+        databaseId: DB_ID,
+        tableId: COLLECTIONS.LEAVE,
+        rowId: leave.$id,
+        data: {
+          proposed_in_date: newReturnDate,
+          is_extended: true,
+        },
+      });
+
+      setLeaves((prev) =>
+        prev.map((l) =>
+          l.$id === leave.$id
+            ? { ...l, proposed_in_date: newReturnDate, is_extended: true }
+            : l
+        )
+      );
+
+      const facultyEmails = leave.faculty_id
+        ? leave.faculty_id.split(/[ ,]+/).map((e: string) => e.trim()).filter(Boolean)
+        : [];
+
+      if (facultyEmails.length > 0) {
+        setExtensionStatus("Notifying advisors...");
+      }
+
+      for (const fEmail of facultyEmails) {
+        try {
+          await fetch("/api/send-email", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              type: "extension",
+              advisorEmail: fEmail,
+              studentName: studentData?.name || user?.name || "Unknown",
+              studentRollNo: studentData?.$id || "N/A",
+              studentEmail: user?.email || "N/A",
+              studentPhone: studentData?.phone_no || "N/A",
+              newInDate: parseSafeDate(newReturnDate),
+            }),
+          });
+        } catch (emailErr) {
+          console.error("Failed to send extension email to advisor", emailErr);
+        }
+      }
+
+      setExtensionStatus("Leave extended successfully!");
+      setTimeout(() => {
+        setExtendingLeaveId(null);
+        setNewReturnDate("");
+        setExtensionStatus(null);
+      }, 2000);
+    } catch (err: any) {
+      console.error("Failed to extend leave:", err);
+      setExtensionStatus(err.message || "An error occurred while extending the leave");
+    } finally {
+      setIsExtendingLoading(false);
+    }
+  };
+
   const parseSafeDate = (dateString: string) => {
     if (!dateString) return "Invalid Date";
     try {
@@ -101,10 +196,12 @@ export default function MyLeavesPage() {
         date = new Date(cleanedDateString);
       }
       if (isNaN(date.getTime())) return "Invalid Date";
-      return date.toLocaleDateString("en-IN", {
+      return date.toLocaleString("en-IN", {
         day: "2-digit",
         month: "short",
         year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
       });
     } catch {
       return "Invalid Date";
@@ -424,6 +521,65 @@ export default function MyLeavesPage() {
                               </div>
                             )}
                           </div>
+
+                          {!leave.in_date_time && (
+                            <div className="border border-primary/10 rounded-2xl p-4 bg-primary/5 space-y-3 mt-4">
+                              <p className="text-[10px] font-black uppercase tracking-widest text-primary/60">
+                                Extend Leave Feature
+                              </p>
+                              {extendingLeaveId === leave.$id ? (
+                                <div className="space-y-3 animate-fadeIn">
+                                  <div>
+                                    <label className="text-[9px] font-bold text-primary/40 uppercase tracking-widest block mb-1">
+                                      New Return Date & Time
+                                    </label>
+                                    <input
+                                      type="datetime-local"
+                                      value={newReturnDate}
+                                      onChange={(e) => setNewReturnDate(e.target.value)}
+                                      className="w-full bg-background border border-primary/10 rounded-xl h-11 px-4 text-xs font-bold text-primary focus:border-secondary transition-all"
+                                    />
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={() => handleExtendLeave(leave)}
+                                      disabled={isExtendingLoading || !newReturnDate}
+                                      className="flex-1 bg-primary text-background h-11 rounded-xl text-[10px] font-black uppercase tracking-widest hover:brightness-110 active:scale-[0.98] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                                    >
+                                      {extensionStatus || "Confirm Extension"}
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        setExtendingLeaveId(null);
+                                        setNewReturnDate("");
+                                      }}
+                                      disabled={isExtendingLoading}
+                                      className="px-4 border border-primary/10 text-primary/60 h-11 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-primary/5 active:scale-[0.98] transition-all"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => {
+                                    setExtendingLeaveId(leave.$id);
+                                    const currDate = new Date(leave.proposed_in_date);
+                                    currDate.setDate(currDate.getDate() + 1);
+                                    setNewReturnDate(currDate.toISOString().slice(0, 16));
+                                  }}
+                                  className="w-full h-11 border border-secondary/40 hover:bg-secondary/5 text-secondary rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all hover:scale-[0.99]"
+                                >
+                                  + Extend Return Date
+                                </button>
+                              )}
+                              {leave.is_extended && (
+                                <p className="text-[9px] text-secondary font-bold uppercase tracking-wider italic text-center pt-1">
+                                  * This leave was extended previously.
+                                </p>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </motion.div>
                     )}

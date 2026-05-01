@@ -332,11 +332,11 @@ export default function LeavePage() {
                   <Calendar size={18} />
                 </div>
                 <input
-                  type="date"
+                  type="datetime-local"
                   required
                   value={exitDate}
                   onChange={(e) => setExitDate(e.target.value)}
-                  className="w-full h-14 bg-primary/[0.03] border border-primary/10 rounded-2xl pl-14 pr-4 text-primary font-bold focus:outline-none focus:border-secondary transition-all appearance-none"
+                  className="w-full h-14 bg-primary/[0.03] border border-primary/10 rounded-2xl pl-14 pr-4 text-primary font-bold focus:outline-none focus:border-secondary transition-all appearance-none select-none text-xs sm:text-sm"
                 />
               </div>
             </div>
@@ -349,12 +349,12 @@ export default function LeavePage() {
                   <Calendar size={18} />
                 </div>
                 <input
-                  type="date"
+                  type="datetime-local"
                   required
                   value={inDate}
                   onChange={(e) => setInDate(e.target.value)}
                   min={exitDate}
-                  className="w-full h-14 bg-primary/[0.03] border border-primary/10 rounded-2xl pl-14 pr-4 text-primary font-bold focus:outline-none focus:border-secondary transition-all appearance-none"
+                  className="w-full h-14 bg-primary/[0.03] border border-primary/10 rounded-2xl pl-14 pr-4 text-primary font-bold focus:outline-none focus:border-secondary transition-all appearance-none select-none text-xs sm:text-sm"
                 />
               </div>
             </div>

@@ -53,4 +53,32 @@ export const fetchAllRows = async <T extends any>(
   return allRows;
 };
 
+export const fetchPaginatedRows = async <T extends any>(
+  databaseId: string,
+  tableId: string,
+  queries: string[] = [],
+  page: number = 1,
+  limit: number = 10,
+  searchQuery?: string,
+  searchAttribute?: string
+): Promise<{ rows: T[]; total: number }> => {
+  const offset = (page - 1) * limit;
+  const activeQueries = [...queries, Query.limit(limit), Query.offset(offset)];
+
+  if (searchQuery && searchAttribute) {
+    activeQueries.push(Query.search(searchAttribute, searchQuery));
+  }
+
+  const response = await tablesDB.listRows({
+    databaseId,
+    tableId,
+    queries: activeQueries,
+  });
+
+  return {
+    rows: response.rows as unknown as T[],
+    total: response.total,
+  };
+};
+
 export { client, ID, OAuthProvider, Query };

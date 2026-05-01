@@ -98,8 +98,12 @@ function CaptureContent() {
     "ghostface",
   );
   const [showNotRecognized, setShowNotRecognized] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const [isBarcodeModalOpen, setIsBarcodeModalOpen] = useState(false);
+  const [barcodeInput, setBarcodeInput] = useState("");
+  const [barcodeScanFeedback, setBarcodeScanFeedback] = useState("");
 
-  // Liveness & Blur states
+
   const [livenessScore, setLivenessScore] = useState(0);
   const [isStable, setIsStable] = useState(true);
   const lastLandmarks = useRef<any>(null);
@@ -278,6 +282,63 @@ function CaptureContent() {
       let dbMessage = "";
 
       if (actionType === "Leave") {
+        const { rows: leavesForChecks } = await tablesDB.listRows({
+          databaseId: DB_ID,
+          tableId: COLLECTIONS.LEAVE,
+          queries: [Query.equal("roll_no", rollNumber)],
+        });
+
+        const latestLeaveForCheck = leavesForChecks.sort(
+          (a: any, b: any) => new Date(b.$createdAt).getTime() - new Date(a.$createdAt).getTime()
+        )[0];
+
+        if (latestLeaveForCheck && !latestLeaveForCheck.exit_date_time) {
+          const { rows: outingsForChecks } = await tablesDB.listRows({
+            databaseId: DB_ID,
+            tableId: COLLECTIONS.OUTING,
+            queries: [Query.equal("roll_no", rollNumber)],
+          });
+          const activeOuting = outingsForChecks.find((doc: any) => !doc.in_time);
+
+          if (activeOuting) {
+            setResultDialog({
+              title: "Departure Denied",
+              message: `${rollNumber}\n\n⚠️ GRAVE ERROR: CURRENTLY OUT ON AN OUTING.\nCANNOT GO ON LEAVE UNTIL YOU RETURN.`,
+              type: "error",
+            });
+            setIsProcessing(false);
+            return;
+          }
+        }
+      } else {
+        const { rows: outingsForChecks } = await tablesDB.listRows({
+          databaseId: DB_ID,
+          tableId: COLLECTIONS.OUTING,
+          queries: [Query.equal("roll_no", rollNumber)],
+        });
+        const activeOuting = outingsForChecks.find((doc: any) => !doc.in_time);
+
+        if (!activeOuting) {
+          const { rows: leavesForChecks } = await tablesDB.listRows({
+            databaseId: DB_ID,
+            tableId: COLLECTIONS.LEAVE,
+            queries: [Query.equal("roll_no", rollNumber)],
+          });
+          const activeLeave = leavesForChecks.find((doc: any) => doc.exit_date_time && !doc.in_date_time);
+
+          if (activeLeave) {
+            setResultDialog({
+              title: "Departure Denied",
+              message: `${rollNumber}\n\n⚠️ GRAVE ERROR: CURRENTLY ON AN ACTIVE LEAVE.\nCANNOT GO FOR AN OUTING.`,
+              type: "error",
+            });
+            setIsProcessing(false);
+            return;
+          }
+        }
+      }
+
+      if (actionType === "Leave") {
         const COLL_LEAVE = COLLECTIONS.LEAVE;
         const { rows: documents } = await tablesDB.listRows({
           databaseId: DB_ID,
@@ -342,10 +403,16 @@ function CaptureContent() {
             $createdAt,
             $updatedAt,
             $permissions,
+            student_name,
+            student_phone,
+            parent_name,
+            parent_phone,
+            parent_email,
             ...archiveData
           } = latestLeave as any;
 
           archiveData.in_date_time = currentTime;
+          archiveData.mail_sent = latestLeave.mail_sent;
           const COLL_LEAVE_ARCHIVE = COLLECTIONS.LEAVE_ARCHIVE;
           await tablesDB.createRow({
             databaseId: DB_ID,
@@ -367,6 +434,7 @@ function CaptureContent() {
           dbMessage = "LEAVE RETURN SUCCESSFUL & ARCHIVED";
         } else if (!latestLeave.exit_date_time) {
           const today = new Date();
+          const nowTime = new Date();
           today.setHours(0, 0, 0, 0);
           const proposed = new Date(latestLeave.proposed_exit_date);
           proposed.setHours(0, 0, 0, 0);
@@ -375,6 +443,17 @@ function CaptureContent() {
             setResultDialog({
               title: "Departure Denied",
               message: `${rollNumber}\n\nTOO EARLY FOR DEPARTURE.\nPROPOSED DATE: ${new Date(latestLeave.proposed_exit_date).toLocaleDateString()}\nCURRENT DATE: ${new Date().toLocaleDateString()}`,
+              type: "error",
+            });
+            setIsProcessing(false);
+            return;
+          }
+
+          const proposedReturn = new Date(latestLeave.proposed_in_date);
+          if (nowTime > proposedReturn) {
+            setResultDialog({
+              title: "Departure Denied",
+              message: `${rollNumber}\n\nCANNOT DEPART AFTER PROPOSED RETURN DATE.\nPROPOSED RETURN: ${new Date(latestLeave.proposed_in_date).toLocaleDateString()}`,
               type: "error",
             });
             setIsProcessing(false);
@@ -485,6 +564,33 @@ function CaptureContent() {
         message: "Failed to update database. Please try again.",
         type: "error",
       });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleBarcodeSubmit = async (e?: React.FormEvent, directInput?: string) => {
+    if (e) e.preventDefault();
+    const scanned = (directInput || barcodeInput.trim()).toUpperCase();
+    if (!scanned) return;
+
+    setBarcodeInput("");
+    setIsBarcodeModalOpen(false);
+    setIsProcessing(true);
+    setStatusText(`Verifying barcode for ${scanned}...`);
+
+    try {
+      const student = await tablesDB.getRow({
+        databaseId: DB_ID,
+        tableId: COLLECTIONS.STUDENTS,
+        rowId: scanned,
+      });
+      setConfirmationData({
+        rollNo: scanned,
+        name: (student as any).name,
+      });
+    } catch (e) {
+      setConfirmationData({ rollNo: scanned });
     } finally {
       setIsProcessing(false);
     }
@@ -783,7 +889,8 @@ function CaptureContent() {
       if (
         document.visibilityState !== "visible" ||
         resultDialog ||
-        confirmationData
+        confirmationData ||
+        isBarcodeModalOpen
       ) {
         setIsScanning(false);
         return;
@@ -871,7 +978,8 @@ function CaptureContent() {
       !isProcessing &&
       !isScanning &&
       !confirmationData &&
-      !resultDialog
+      !resultDialog &&
+      !isBarcodeModalOpen
     ) {
       // Snappy loop: trigger scan every 150ms for temporal consensus
       timerId = setTimeout(() => {
@@ -889,6 +997,7 @@ function CaptureContent() {
     isScanning,
     confirmationData,
     resultDialog,
+    isBarcodeModalOpen,
     triggerLiveScan,
   ]);
 
@@ -993,7 +1102,7 @@ function CaptureContent() {
                 className="w-full h-full object-cover block"
                 alt="Captured"
               />
-            ) : !resultDialog ? (
+            ) : !resultDialog && !isBarcodeModalOpen ? (
               <ReactWebcam
                 audio={false}
                 ref={webcamRef}
@@ -1153,20 +1262,47 @@ function CaptureContent() {
               <p className="text-foreground/60 mb-8 whitespace-pre-wrap font-medium">
                 {resultDialog.message}
               </p>
-              <button
-                onClick={() => {
-                  const type = resultDialog.type;
-                  setResultDialog(null);
-                  if (type === "success") {
+              {resultDialog.type === "success" ? (
+                <button
+                  onClick={() => {
+                    setResultDialog(null);
                     router.push("/");
-                  } else {
-                    retake();
-                  }
-                }}
-                className="w-full h-12 bg-primary text-background rounded-xl font-bold uppercase tracking-widest transition-all hover:bg-primary/90"
-              >
-                {resultDialog.type === "success" ? "Done" : "Try Again"}
-              </button>
+                  }}
+                  className="w-full h-12 bg-primary text-background rounded-xl font-bold uppercase tracking-widest transition-all hover:bg-primary/90"
+                >
+                  Done
+                </button>
+               ) : (
+                <div className="flex flex-col space-y-4">
+                  <button
+                    onClick={() => {
+                      setResultDialog(null);
+                      retake();
+                    }}
+                    className="w-full h-12 bg-primary text-background rounded-xl font-bold uppercase tracking-widest transition-all hover:bg-primary/90"
+                  >
+                    Try Again
+                  </button>
+                  <button
+                    onClick={() => {
+                      setResultDialog(null);
+                      setIsBarcodeModalOpen(true);
+                    }}
+                    className="w-full h-12 border border-secondary text-secondary hover:bg-secondary/5 rounded-xl font-bold uppercase tracking-widest transition-all text-xs"
+                  >
+                    Scan Barcode instead
+                  </button>
+                  <button
+                    onClick={() => {
+                      setResultDialog(null);
+                      router.push("/");
+                    }}
+                    className="w-full h-12 border border-primary/20 text-primary/60 hover:bg-primary/5 rounded-xl font-bold uppercase tracking-widest transition-all text-xs"
+                  >
+                    Go Back to Home
+                  </button>
+                </div>
+              )}
             </motion.div>
           </motion.div>
         )}
@@ -1204,9 +1340,10 @@ function CaptureContent() {
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4 mb-4">
                 <button
                   onClick={() => {
+                    setRetryCount((prev) => prev + 1);
                     setConfirmationData(null);
                     retake();
                   }}
@@ -1221,6 +1358,77 @@ function CaptureContent() {
                   Yes, Correct
                 </button>
               </div>
+
+              {retryCount >= 1 && (
+                <button
+                  onClick={() => {
+                    setConfirmationData(null);
+                    setIsBarcodeModalOpen(true);
+                  }}
+                  className="w-full h-12 border border-secondary text-secondary hover:bg-secondary/5 rounded-xl font-bold uppercase tracking-widest transition-all text-xs"
+                >
+                  Scan Barcode instead
+                </button>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isBarcodeModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="fixed inset-0 z-[120] flex items-center justify-center p-6 bg-primary/30 backdrop-blur-md"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              className="w-full max-w-sm bg-surface p-8 rounded-3xl border border-primary/10 text-center shadow-2xl flex flex-col justify-between"
+            >
+              <form onSubmit={handleBarcodeSubmit} className="space-y-6">
+                <div className="w-16 h-16 bg-secondary/10 rounded-full flex items-center justify-center text-secondary mx-auto mb-2">
+                  <RefreshCw size={32} className="animate-spin duration-[4000ms]" />
+                </div>
+                <h2 className="text-xl font-bold text-primary uppercase tracking-tight">
+                  Enter Roll Number
+                </h2>
+                <p className="text-primary/40 text-[10px] font-bold uppercase tracking-widest mb-4 border-b border-primary/5 pb-4">
+                  Please scan your ID card with your barcode scanner or type manually
+                </p>
+
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={barcodeInput}
+                    onChange={(e) => setBarcodeInput(e.target.value.toUpperCase())}
+                    placeholder="Enter Roll Number"
+                    autoFocus
+                    className="w-full h-12 px-4 rounded-xl border border-primary/10 bg-black/20 text-center text-lg font-bold tracking-widest text-primary focus:outline-none focus:border-secondary transition-all"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsBarcodeModalOpen(false);
+                      setBarcodeInput("");
+                      retake();
+                    }}
+                    className="h-12 border border-primary/10 text-primary/60 rounded-xl font-bold uppercase tracking-widest text-[10px] hover:bg-primary/5"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="h-12 bg-secondary text-white rounded-xl font-bold uppercase tracking-widest text-[10px] hover:brightness-110 shadow-lg shadow-secondary/20 transition-all"
+                  >
+                    Submit
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </motion.div>
         )}

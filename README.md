@@ -16,20 +16,30 @@ A premium, touchless biometric hostel management system built for **NIT Puducher
 *   **Web Worker Offloading**: High-performance face detection and search are handled in dedicated background threads (`faceSearch.worker.ts`, `ghostface.worker.ts`), ensuring a 60FPS UI even during heavy AI processing.
 *   **Precision AI Pipeline**: 
     *   **MediaPipe**: Used for real-time face landmarking, pose estimation, and "Stability" checks.
-    *   **GhostFaceNet (ONNX)**: A specialized SOTA recognition model running via `onnxruntime-web` for generating 512-d embeddings with extreme precision.
-    *   **face-api.js**: Leveraged for ultra-fast face detection and affine alignment before feature extraction.
+    *   **GhostFaceNet (ONNX)**: A specialized SOTA recognition model running via `onnxruntime-web` for generating 512-d embeddings with extreme precision, utilizing MediaPipe for direct face alignment.
+    *   **face-api.js**: Leveraged as an alternative or fallback model for standard detection and alignment.
 *   **Temporal Consensus**: Recognition isn't instant; the system requires a stable "consensus" over multiple frames to eliminate false positives.
 
-### 2. Relational Data & TablesDB (1.9.0+)
+### 2. Parent Consent & Student Leave Management
+*   **Parent Verification**: Integration for tracking parent email/contact metadata with automatic consent notifications.
+*   **Leave Extensions**: Students can request to extend active leave returns directly from their dashboard with automated advisor and parent notifications.
+*   **Automated Advisor Mails**: Faculty can instantly notify parents about students' leave approvals, movements, and unapproved delays.
+
+### 3. Advanced Admin Dashboard & Analytics
+*   **Local-to-UTC Precise Conversion**: Prevents date matching timezone bugs across outings and leaves through automated IST local-day boundary shifting.
+*   **Dynamic Custom Filtering**: Seamless filter popover dropdowns for filtering exactly by *Out Time* vs *In Time* for outings, and *Departure* vs *Return* for leaves.
+*   **Real-time Activity Status**: Shows live contextual badges (`Currently Out` / `Completed`) for active leave requests, ensuring instant visual awareness for hostel administrators.
+
+### 4. Relational Data & TablesDB (1.9.0+)
 *   **Scalable Architecture**: Migrated from standard Appwrite Databases to **TablesDB**, enabling complex relational structures and high-performance querying for 2,000+ users.
 *   **Recursive Fetching**: Built-in `fetchAllRows` utility bypasses traditional 100-record limits through automated recursive offset pagination, ensuring full visibility across all modules.
 
-### 3. Advanced PWA & Offline Resilience
+### 5. Advanced PWA & Offline Resilience
 *   **Intelligent Sync Engine**: Biometric captures and status updates are queued locally in IndexedDB when the network is unstable.
 *   **OfflineSyncManager**: A dedicated background service that monitors connectivity and automatically flushes the local queue once the system is back online.
 *   **Asset Warming**: Proactively pre-warms AI model weights and facial embedding caches, making the kiosk "instant-on" for the next student.
 
-### 4. Role-Based Access Control (RBAC)
+### 6. Role-Based Access Control (RBAC)
 *   **Institutional Intelligence**: Automatically detects user roles based on email patterns (Student vs. Staff).
 *   **Gated Environments**: Deep integration with **Appwrite Teams** for granular control:
     *   **Admin**: Total system oversight and configuration.
@@ -55,9 +65,9 @@ A premium, touchless biometric hostel management system built for **NIT Puducher
 ## 🏗 System Architecture
 
 ### Biometric Pipeline
-1.  **Detection**: face-api.js identifies a face and ensures "Stability" via MediaPipe.
-2.  **Worker Transfer**: The aligned face buffer is sent to `ghostface.worker.ts`.
-3.  **Embedding Generation**: GhostFaceNet generates a 512-dimension descriptor.
+1.  **Detection & Stability**: MediaPipe tracks real-time face landmarks, pose estimation, and face stability to ensure image quality before extraction.
+2.  **Worker Transfer**: The aligned face frame is passed to `ghostface.worker.ts`.
+3.  **Embedding Generation**: GhostFaceNet generates a 512-dimension descriptor independently using the MediaPipe-aligned image.
 4.  **Conflict Detection**: The system checks the `CONFLICT_GAP` between the best match and the runner-up to prevent identity confusion among lookalikes.
 5.  **Sync**: Successful matches update the `outing` or `leave` records via the `OfflineSyncManager`.
 

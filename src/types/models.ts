@@ -11,6 +11,13 @@ export interface Student extends Models.Document {
     is_on_leave: boolean;
     faceRegistered: boolean;
     ghostface_registered?: boolean;
+    parent_name?: string;
+    parent_phone?: number;
+    parent_email?: string;
+    pending_parent_name?: string;
+    pending_parent_phone?: number;
+    pending_parent_email?: string;
+    parent_verification_status?: 'unverified' | 'verified' | 'pending_approval' | 'rejected';
 }
 
 export interface Outing extends Models.Document {

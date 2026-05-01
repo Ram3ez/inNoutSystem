@@ -28,6 +28,9 @@ export default function CompleteProfilePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [parentName, setParentName] = useState("");
+  const [parentPhone, setParentPhone] = useState("");
+  const [parentEmail, setParentEmail] = useState("");
   const router = useRouter();
 
   const profileId = user?.email.split("@")[0].toUpperCase() || "";
@@ -128,6 +131,18 @@ export default function CompleteProfilePage() {
         setError("Academic details could not be detected. Please contact support.");
         return;
       }
+      if (parentName.trim().length < 3) {
+        setError("Parent Name must be at least 3 characters");
+        return;
+      }
+      if (!parentPhone || parentPhone.length !== 10 || !/^[6-9]\d{9}$/.test(parentPhone)) {
+        setError("Please enter a valid 10-digit Indian mobile number for your parent");
+        return;
+      }
+      if (!parentEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parentEmail)) {
+        setError("Please enter a valid email address for your parent");
+        return;
+      }
     } else {
       if (!location || location.trim().length < 5) {
         setError("Please enter a detailed campus location (e.g. Science Block, Room 204)");
@@ -170,6 +185,10 @@ export default function CompleteProfilePage() {
             course: course,
             is_out: false,
             faceRegistered: false,
+            pending_parent_name: parentName.trim(),
+            pending_parent_phone: parentPhone ? parseInt(parentPhone) : null,
+            pending_parent_email: parentEmail.trim().toLowerCase(),
+            parent_verification_status: "pending_approval",
           }
         });
       } else {
@@ -324,6 +343,54 @@ export default function CompleteProfilePage() {
                         <div className="flex justify-between items-center">
                           <p className="text-[9px] font-bold text-primary/30 uppercase tracking-widest">Course</p>
                           <p className="text-sm font-black text-secondary uppercase tracking-tight">{course || "---"}</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4 pt-4 border-t border-primary/5">
+                        <p className="text-[10px] font-black text-secondary uppercase tracking-widest ml-4">
+                          Parent / Guardian Details
+                        </p>
+                        
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-primary/40 uppercase tracking-widest ml-4">
+                            Parent's Full Name
+                          </label>
+                          <input
+                            required
+                            type="text"
+                            value={parentName}
+                            onChange={(e) => setParentName(e.target.value)}
+                            placeholder="Parent Name"
+                            className="w-full h-14 bg-primary/5 border border-primary/10 rounded-2xl px-6 text-primary placeholder:text-primary/60 focus:outline-none focus:border-secondary transition-all font-bold uppercase"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-primary/40 uppercase tracking-widest ml-4">
+                            Parent's Phone Number
+                          </label>
+                          <input
+                            required
+                            type="tel"
+                            value={parentPhone}
+                            onChange={(e) => setParentPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                            placeholder="10-digit phone number"
+                            className="w-full h-14 bg-primary/5 border border-primary/10 rounded-2xl px-6 text-primary placeholder:text-primary/60 focus:outline-none focus:border-secondary transition-all font-bold"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-primary/40 uppercase tracking-widest ml-4">
+                            Parent's Email Address
+                          </label>
+                          <input
+                            required
+                            type="email"
+                            value={parentEmail}
+                            onChange={(e) => setParentEmail(e.target.value)}
+                            placeholder="Parent email"
+                            className="w-full h-14 bg-primary/5 border border-primary/10 rounded-2xl px-6 text-primary placeholder:text-primary/60 focus:outline-none focus:border-secondary transition-all font-bold"
+                          />
                         </div>
                       </div>
                     </>

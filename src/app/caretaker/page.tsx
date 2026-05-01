@@ -38,6 +38,7 @@ interface LeaveRequest {
   faculty_approval: boolean;
   student_name?: string;
   student_phone?: number;
+  mail_sent?: boolean;
 }
 
 export default function CaretakerDashboard() {
@@ -76,10 +77,12 @@ export default function CaretakerDashboard() {
         date = new Date(cleanedDateString);
       }
       if (isNaN(date.getTime())) return "Invalid Date";
-      return date.toLocaleDateString("en-IN", {
+      return date.toLocaleString("en-IN", {
         day: "2-digit",
         month: "short",
         year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
       });
     } catch {
       return "Invalid Date";
@@ -115,7 +118,49 @@ export default function CaretakerDashboard() {
         return approvers.includes(user.email.toLowerCase().trim());
       };
 
-      const myPendingRequests = allPending.filter(isMyRequest);
+      const now = new Date();
+      const oneDayInMs = 24 * 60 * 60 * 1000;
+
+      const filterExpired = async (docs: any[]) => {
+        const kept: any[] = [];
+        for (const req of docs) {
+          if (!req.exit_date_time && req.proposed_in_date) {
+            const proposedIn = new Date(req.proposed_in_date);
+            if (now.getTime() - proposedIn.getTime() > oneDayInMs) {
+              try {
+                const { $id, $createdAt, $updatedAt, $databaseId, $collectionId, $permissions, ...cleanData } = req;
+                await tablesDB.createRow({
+                  databaseId: DB_ID,
+                  tableId: COLLECTIONS.LEAVE_ARCHIVE,
+                  rowId: ID.unique(),
+                  data: {
+                    ...cleanData,
+                    status: "expired",
+                    mail_sent: req.mail_sent ?? false,
+                    faculty_approval: req.faculty_approval ?? false,
+                    caretaker_approval: req.caretaker_approval ?? false,
+                    is_extended: req.is_extended ?? false,
+                    caretaker_id: req.caretaker_id || "N/A",
+                    faculty_id: req.faculty_id || "N/A",
+                  }
+                });
+                await tablesDB.deleteRow({
+                  databaseId: DB_ID,
+                  tableId: COLLECTIONS.LEAVE,
+                  rowId: req.$id,
+                });
+              } catch (err) {
+                console.error("Auto-archiving leave failed", err);
+              }
+              continue;
+            }
+          }
+          kept.push(req);
+        }
+        return kept;
+      };
+
+      const myPendingRequests = await filterExpired(allPending.filter(isMyRequest));
 
       // Enrich with student details using batched queries for scalability
       const rollNos = Array.from(new Set(myPendingRequests.map((r: any) => r.roll_no)));
@@ -204,12 +249,16 @@ export default function CaretakerDashboard() {
           $permissions,
           student_name,
           student_phone,
+          parent_name,
+          parent_phone,
+          parent_email,
           ...archiveData
         } = request as any;
 
         archiveData.status = nextStatus;
         archiveData.caretaker_approval = false;
         archiveData.faculty_approval = false;
+        archiveData.mail_sent = request.mail_sent ?? false;
 
         /*
         await databases.createDocument({
@@ -295,8 +344,8 @@ export default function CaretakerDashboard() {
 
   const filteredRequests = requests.filter(
     (r) =>
-      r.roll_no.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      r.student_name?.toLowerCase().includes(searchQuery.toLowerCase()),
+      (r.roll_no || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (r.student_name || "").toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   return (

@@ -12,6 +12,8 @@ import {
   ChevronLeft,
   Search,
   Phone,
+  CheckCircle2,
+  Mail,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { databases, tablesDB, fetchAllRows, Query, ID } from "@/lib/appwrite";
@@ -36,34 +38,60 @@ interface LeaveRequest {
   faculty_approval: boolean;
   student_name?: string;
   student_phone?: number;
+  parent_name?: string;
+  parent_phone?: number | string;
+  parent_email?: string;
   exit_date_time?: string;
   in_date_time?: string;
+  mail_sent?: boolean;
 }
 
 export default function FacultyDashboard() {
-    const { user, isLoading: authLoading, isFaculty, isRegistrationRequired } = useAuth();
-    const [requests, setRequests] = useState<LeaveRequest[]>([]);
-    const [activeLeaves, setActiveLeaves] = useState<LeaveRequest[]>([]);
-    const [viewMode, setViewMode] = useState<"pending" | "active">("pending");
-    const [isLoading, setIsLoading] = useState(true);
-    const [isActioning, setIsActioning] = useState<string | null>(null);
-    const [searchQuery, setSearchQuery] = useState("");
-    const [expandedRequests, setExpandedRequests] = useState<
-      Record<string, boolean>
-    >({});
-    const [revealedPhones, setRevealedPhones] = useState<Record<string, boolean>>(
-      {},
-    );
-  
-    const router = useRouter();
-  
-    useEffect(() => {
-      if (!authLoading && (!isFaculty || isRegistrationRequired)) {
-        router.push("/");
-      } else if (user) {
-        fetchRequests();
-      }
-    }, [authLoading, isFaculty, isRegistrationRequired, user]);
+  const {
+    user,
+    isLoading: authLoading,
+    isFaculty,
+    isRegistrationRequired,
+    staffData,
+  } = useAuth();
+  const [requests, setRequests] = useState<LeaveRequest[]>([]);
+  const [activeLeaves, setActiveLeaves] = useState<LeaveRequest[]>([]);
+  const [overdueLeaves, setOverdueLeaves] = useState<LeaveRequest[]>([]);
+  const [parentRequests, setParentRequests] = useState<any[]>([]);
+  const [viewMode, setViewMode] = useState<"pending" | "active" | "parents" | "overdue">(
+    "pending",
+  );
+  const [isLoading, setIsLoading] = useState(true);
+  const [isActioning, setIsActioning] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [expandedRequests, setExpandedRequests] = useState<
+    Record<string, boolean>
+  >({});
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, viewMode]);
+  const [revealedPhones, setRevealedPhones] = useState<Record<string, boolean>>(
+    {},
+  );
+  const [isSendingEmail, setIsSendingEmail] = useState<Record<string, boolean>>(
+    {},
+  );
+  const [notification, setNotification] = useState<{
+    message: string;
+    type: "success" | "error";
+  } | null>(null);
+
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!authLoading && (!isFaculty || isRegistrationRequired)) {
+      router.push("/");
+    } else if (user) {
+      fetchRequests();
+    }
+  }, [authLoading, isFaculty, isRegistrationRequired, user]);
 
   const parseSafeDate = (dateString: string) => {
     if (!dateString) return "Invalid Date";
@@ -74,13 +102,81 @@ export default function FacultyDashboard() {
         date = new Date(cleanedDateString);
       }
       if (isNaN(date.getTime())) return "Invalid Date";
-      return date.toLocaleDateString("en-IN", {
+      return date.toLocaleString("en-IN", {
         day: "2-digit",
         month: "short",
         year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
       });
     } catch {
       return "Invalid Date";
+    }
+  };
+
+  const handleEmailParent = async (req: LeaveRequest) => {
+    if (!req.parent_email) return;
+
+    setIsSendingEmail((prev) => ({ ...prev, [req.$id]: true }));
+    try {
+      const response = await fetch("/api/send-email", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          parentEmail: req.parent_email,
+          parentName: req.parent_name,
+          studentName: req.student_name,
+          reason: req.reason,
+          place: req.place_of_visit,
+          dates: `${parseSafeDate(req.proposed_exit_date)} to ${parseSafeDate(req.proposed_in_date)}`,
+          advisorName: user?.name,
+          advisorEmail: user?.email,
+          advisorPhone: staffData?.phone_no || "",
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setNotification({
+          message: "Email sent to parent successfully via Direct SMTP!",
+          type: "success",
+        });
+        try {
+          // Update the Leave row in the Appwrite database
+          await tablesDB.updateRow({
+            databaseId: DB_ID,
+            tableId: COLLECTIONS.LEAVE,
+            rowId: req.$id,
+            data: {
+              mail_sent: true,
+            },
+          });
+
+          // Update local component state
+          setRequests(prev => prev.map(r => r.$id === req.$id ? { ...r, mail_sent: true } : r));
+          setActiveLeaves(prev => prev.map(r => r.$id === req.$id ? { ...r, mail_sent: true } : r));
+        } catch (dbErr) {
+          console.error("Failed to update mail_sent in DB:", dbErr);
+        }
+      } else {
+        setNotification({
+          message:
+            data.error || data.message || "Failed to send email to parent.",
+          type: "error",
+        });
+      }
+    } catch (err: any) {
+      console.error("Error calling send-email API:", err);
+      setNotification({
+        message: "An unexpected error occurred while sending email.",
+        type: "error",
+      });
+    } finally {
+      setIsSendingEmail((prev) => ({ ...prev, [req.$id]: false }));
+      // Automatically dismiss the notification after 5 seconds
+      setTimeout(() => setNotification(null), 5000);
     }
   };
 
@@ -90,35 +186,92 @@ export default function FacultyDashboard() {
     try {
       // Fetch all pending and approved leaves for faculty
       // We filter by email in the frontend to support multiple advisors per assignment
-      const [pendingRows, activeRows] = await Promise.all([
+      const [
+        pendingRows,
+        activeRows,
+        allPendingStudents,
+        myFacultyAssignments,
+      ] = await Promise.all([
         fetchAllRows(DB_ID, COLLECTIONS.LEAVE, [
           Query.equal("status", "pending_faculty"),
         ]),
         fetchAllRows(DB_ID, COLLECTIONS.LEAVE, [
           Query.equal("status", "approved"),
         ]),
+        fetchAllRows(DB_ID, COLLECTIONS.STUDENTS, [
+          Query.equal("parent_verification_status", "pending_approval"),
+        ]),
+        fetchAllRows(DB_ID, COLLECTIONS.FACULTY, [
+          Query.equal("email", user.email),
+        ]),
       ]);
 
       const isMyRequest = (req: any) => {
         if (!req.faculty_id) return false;
-        const approvers = req.faculty_id.split(/[ ,]+/).map((e: string) => e.toLowerCase().trim());
+        const approvers = req.faculty_id
+          .split(/[ ,]+/)
+          .map((e: string) => e.toLowerCase().trim());
         return approvers.includes(user.email.toLowerCase().trim());
       };
 
-      const myPending = pendingRows.filter(isMyRequest);
-      const myActive = activeRows.filter(isMyRequest);
+      const now = new Date();
+      const oneDayInMs = 24 * 60 * 60 * 1000;
+
+      const filterExpired = async (docs: any[]) => {
+        const kept: any[] = [];
+        for (const req of docs) {
+          if (!req.exit_date_time && req.proposed_in_date) {
+            const proposedIn = new Date(req.proposed_in_date);
+            if (now.getTime() - proposedIn.getTime() > oneDayInMs) {
+              try {
+                const { $id, $createdAt, $updatedAt, $databaseId, $collectionId, $permissions, ...cleanData } = req;
+                await tablesDB.createRow({
+                  databaseId: DB_ID,
+                  tableId: COLLECTIONS.LEAVE_ARCHIVE,
+                  rowId: ID.unique(),
+                  data: {
+                    ...cleanData,
+                    status: "expired",
+                    mail_sent: req.mail_sent ?? false,
+                    faculty_approval: req.faculty_approval ?? false,
+                    caretaker_approval: req.caretaker_approval ?? false,
+                    is_extended: req.is_extended ?? false,
+                    caretaker_id: req.caretaker_id || "N/A",
+                    faculty_id: req.faculty_id || "N/A",
+                  }
+                });
+                await tablesDB.deleteRow({
+                  databaseId: DB_ID,
+                  tableId: COLLECTIONS.LEAVE,
+                  rowId: req.$id,
+                });
+              } catch (err) {
+                console.error("Auto-archiving leave failed", err);
+              }
+              continue;
+            }
+          }
+          kept.push(req);
+        }
+        return kept;
+      };
+
+      const myPending = await filterExpired(pendingRows.filter(isMyRequest));
+      const myActive = await filterExpired(activeRows.filter(isMyRequest));
 
       const enrichDocs = async (docs: any[]) => {
         const rollNos = Array.from(new Set(docs.map((r: any) => r.roll_no)));
         const studentMap = new Map<string, any>();
-        
+
         if (rollNos.length > 0) {
           for (let i = 0; i < rollNos.length; i += 100) {
             const batch = rollNos.slice(i, i + 100);
-            const students = await fetchAllRows<any>(DB_ID, COLLECTIONS.STUDENTS, [
-              Query.equal("$id", batch)
-            ]);
-            students.forEach(s => studentMap.set(s.$id, s));
+            const students = await fetchAllRows<any>(
+              DB_ID,
+              COLLECTIONS.STUDENTS,
+              [Query.equal("$id", batch)],
+            );
+            students.forEach((s) => studentMap.set(s.$id, s));
           }
         }
 
@@ -129,17 +282,46 @@ export default function FacultyDashboard() {
             ...leaveDoc,
             student_name: student?.name || "Unknown",
             student_phone: student?.phone_no,
+            parent_name: student?.parent_name,
+            parent_phone: student?.parent_phone,
+            parent_email: student?.parent_email,
           } as LeaveRequest;
         });
       };
 
       const enrichedPending = await enrichDocs(myPending);
-      const enrichedActive = await enrichDocs(
+
+      const nowTime = new Date();
+      const enrichedActiveAndOverdue = await enrichDocs(
         myActive.filter((d: any) => d.exit_date_time && !d.in_date_time),
       );
 
+      const overdue = enrichedActiveAndOverdue.filter((d: any) => {
+        if (d.proposed_in_date) {
+          return new Date(d.proposed_in_date) < nowTime;
+        }
+        return false;
+      });
+
+      const normalActive = enrichedActiveAndOverdue.filter((d: any) => {
+        if (d.proposed_in_date) {
+          return new Date(d.proposed_in_date) >= nowTime;
+        }
+        return true;
+      });
+
+      const myStudents = allPendingStudents.filter((student: any) => {
+        return myFacultyAssignments.some(
+          (f: any) =>
+            f.department === student.department &&
+            f.year === parseInt(student.year),
+        );
+      });
+
       setRequests(enrichedPending);
-      setActiveLeaves(enrichedActive);
+      setActiveLeaves(normalActive);
+      setOverdueLeaves(overdue);
+      setParentRequests(myStudents);
     } catch (error) {
       console.error("Failed to fetch requests:", error);
     } finally {
@@ -175,7 +357,7 @@ export default function FacultyDashboard() {
           data: {
             status: "approved",
             faculty_approval: true,
-          }
+          },
         });
       } else {
         const {
@@ -187,11 +369,15 @@ export default function FacultyDashboard() {
           $permissions,
           student_name,
           student_phone,
+          parent_name,
+          parent_phone,
+          parent_email,
           ...archiveData
         } = request as any;
 
         archiveData.status = "rejected_faculty";
         archiveData.faculty_approval = false;
+        archiveData.mail_sent = request.mail_sent ?? false;
 
         /*
         await databases.createDocument({
@@ -210,12 +396,12 @@ export default function FacultyDashboard() {
           databaseId: DB_ID,
           tableId: COLLECTIONS.LEAVE_ARCHIVE,
           rowId: ID.unique(),
-          data: archiveData
+          data: archiveData,
         });
         await tablesDB.deleteRow({
           databaseId: DB_ID,
           tableId: COLLECTIONS.LEAVE,
-          rowId: requestId
+          rowId: requestId,
         });
       }
 
@@ -224,6 +410,47 @@ export default function FacultyDashboard() {
     } catch (error) {
       console.error("Action failed:", error);
       alert("Failed to process request. Please try again.");
+    } finally {
+      setIsActioning(null);
+    }
+  };
+
+  const handleParentAction = async (
+    studentId: string,
+    action: "approve" | "reject",
+  ) => {
+    setIsActioning(studentId);
+    try {
+      const student = parentRequests.find((s) => s.$id === studentId);
+      if (!student) return;
+
+      if (action === "approve") {
+        await tablesDB.updateRow({
+          databaseId: DB_ID,
+          tableId: COLLECTIONS.STUDENTS,
+          rowId: studentId,
+          data: {
+            parent_name: student.pending_parent_name,
+            parent_phone: student.pending_parent_phone,
+            parent_email: student.pending_parent_email,
+            parent_verification_status: "verified",
+          },
+        });
+      } else {
+        await tablesDB.updateRow({
+          databaseId: DB_ID,
+          tableId: COLLECTIONS.STUDENTS,
+          rowId: studentId,
+          data: {
+            parent_verification_status: "rejected",
+          },
+        });
+      }
+
+      setParentRequests((prev) => prev.filter((s) => s.$id !== studentId));
+    } catch (error) {
+      console.error("Failed to approve/reject parent details:", error);
+      alert("Failed to process action. Please try again.");
     } finally {
       setIsActioning(null);
     }
@@ -247,17 +474,73 @@ export default function FacultyDashboard() {
     );
   }
 
-  const currentList = viewMode === "pending" ? requests : activeLeaves;
+  const currentList =
+    viewMode === "parents"
+      ? parentRequests
+      : viewMode === "pending"
+        ? requests
+        : viewMode === "overdue"
+          ? overdueLeaves
+          : activeLeaves;
 
   const filteredRequests = currentList.filter(
     (r) =>
-      r.roll_no.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      r.student_name?.toLowerCase().includes(searchQuery.toLowerCase()),
+      (r.roll_no || r.$id || "")
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase()) ||
+      (r.student_name || r.name || "")
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase()),
+  );
+
+  const itemsPerPage = 5;
+  const totalPages = Math.ceil(filteredRequests.length / itemsPerPage);
+  const paginatedRequests = filteredRequests.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage,
   );
 
   return (
     <GradientBackground>
       <Navigation />
+
+      {/* Sleek, Non-Blocking Toast Notification */}
+      <AnimatePresence>
+        {notification && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className={`fixed top-24 right-6 z-50 p-4 rounded-2xl border backdrop-blur-xl shadow-2xl flex items-center gap-3 min-w-[320px] max-w-md ${
+              notification.type === "success"
+                ? "bg-green-500/10 border-green-500/30 text-green-400 shadow-green-500/5"
+                : "bg-red-500/10 border-red-500/30 text-red-400 shadow-red-500/5"
+            }`}
+          >
+            <div
+              className={`p-2 rounded-xl ${notification.type === "success" ? "bg-green-500/20" : "bg-red-500/20"}`}
+            >
+              {notification.type === "success" ? (
+                <CheckCircle2 size={18} />
+              ) : (
+                <XCircle size={18} />
+              )}
+            </div>
+            <div className="flex-1">
+              <p className="text-xs font-semibold text-foreground/90">
+                {notification.message}
+              </p>
+            </div>
+            <button
+              onClick={() => setNotification(null)}
+              className="p-1 rounded-full text-foreground/40 hover:text-foreground hover:bg-white/10 transition-colors"
+            >
+              <XCircle size={16} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="w-full max-w-7xl mx-auto px-6 pt-36 sm:pt-40 pb-24 flex-1 flex flex-col">
         {/* Navigation */}
         <motion.div
@@ -352,29 +635,56 @@ export default function FacultyDashboard() {
         <div className="flex bg-surface/40 backdrop-blur-xl border border-primary/10 rounded-full p-1 mb-8 relative">
           <button
             onClick={() => setViewMode("pending")}
-            className={`flex-1 py-3 text-xs font-black uppercase tracking-widest rounded-full transition-all relative z-10 ${
+            className={`flex-1 py-3 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-full transition-all relative z-10 ${
               viewMode === "pending"
                 ? "text-background"
                 : "text-primary/60 hover:text-primary"
             }`}
           >
-            Pending Approvals
+            Pending
           </button>
           <button
             onClick={() => setViewMode("active")}
-            className={`flex-1 py-3 text-xs font-black uppercase tracking-widest rounded-full transition-all relative z-10 ${
+            className={`flex-1 py-3 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-full transition-all relative z-10 ${
               viewMode === "active"
                 ? "text-background"
                 : "text-primary/60 hover:text-primary"
             }`}
           >
-            Active Leaves (Out)
+            Active
+          </button>
+          <button
+            onClick={() => setViewMode("parents")}
+            className={`flex-1 py-3 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-full transition-all relative z-10 ${
+              viewMode === "parents"
+                ? "text-background"
+                : "text-primary/60 hover:text-primary"
+            }`}
+          >
+            Parents
+          </button>
+          <button
+            onClick={() => setViewMode("overdue")}
+            className={`flex-1 py-3 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-full transition-all relative z-10 ${
+              viewMode === "overdue"
+                ? "text-background"
+                : "text-primary/60 hover:text-primary"
+            }`}
+          >
+            Overdue
           </button>
           <motion.div
             layout
-            className="absolute top-1 bottom-1 w-[calc(50%-4px)] bg-primary rounded-full z-0"
+            className="absolute top-1 bottom-1 w-[calc(25%-4px)] bg-primary rounded-full z-0"
             animate={{
-              left: viewMode === "pending" ? "4px" : "calc(50% + 2px)",
+              left:
+                viewMode === "pending"
+                  ? "4px"
+                  : viewMode === "active"
+                    ? "calc(25% + 1px)"
+                    : viewMode === "parents"
+                      ? "calc(50% + 1px)"
+                      : "calc(75% + 1px)",
             }}
             transition={{ type: "spring", stiffness: 300, damping: 30 }}
           />
@@ -403,8 +713,132 @@ export default function FacultyDashboard() {
         {/* Queue */}
         <div className="space-y-6 flex-1">
           <AnimatePresence mode="popLayout">
-            {filteredRequests.length > 0 ? (
-              filteredRequests.map((req, idx) => {
+            {paginatedRequests.length > 0 ? (
+              paginatedRequests.map((req, idx) => {
+                if (viewMode === "parents") {
+                  return (
+                    <motion.div
+                      key={req.$id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95, y: -20 }}
+                      transition={{
+                        delay: idx * 0.05,
+                        type: "spring",
+                        stiffness: 300,
+                        damping: 25,
+                      }}
+                      className="bg-surface/80 backdrop-blur-md border border-primary/10 rounded-[2.5rem] sm:rounded-[3rem] p-6 sm:p-8 relative overflow-hidden group hover:border-primary/30 hover:shadow-2xl hover:shadow-primary/5 transition-all duration-300"
+                    >
+                      <div className="flex flex-col md:flex-row justify-between gap-6">
+                        <div className="flex gap-4">
+                          <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center text-primary font-black text-lg border border-primary/10 shadow-inner shrink-0">
+                            {req.name?.[0] || "S"}
+                          </div>
+                          <div>
+                            <h3 className="text-foreground font-black text-lg sm:text-xl">
+                              {req.name || "Student"}
+                            </h3>
+                            <div className="flex items-center gap-2 mt-1">
+                              <p className="text-primary/60 text-[10px] sm:text-xs font-black tracking-widest uppercase">
+                                {req.$id}
+                              </p>
+                              <span className="text-[9px] font-bold text-secondary uppercase tracking-widest bg-secondary/10 px-2.5 py-0.5 rounded-full border border-secondary/20">
+                                {req.course} • {req.department}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Status Label */}
+                        <div className="self-start">
+                          <div className="bg-secondary/10 border border-secondary/20 text-secondary flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest">
+                            <Clock size={12} />
+                            Pending Approval
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Parent details grid */}
+                      <div className="mt-6 border-t border-primary/10 pt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Current/Previous Data */}
+                        <div className="p-4 bg-primary/[0.02] border border-primary/5 rounded-2xl space-y-2">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-primary/40">
+                            Current Parent Details
+                          </p>
+                          {req.parent_name ? (
+                            <div className="space-y-1">
+                              <p className="text-sm font-bold text-primary/80 uppercase">
+                                {req.parent_name}
+                              </p>
+                              <p className="text-xs text-primary/60">
+                                {req.parent_phone}
+                              </p>
+                              <p className="text-xs text-primary/60">
+                                {req.parent_email}
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-primary/50 font-bold italic">
+                              No existing details found
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Proposed New Details */}
+                        <div className="p-4 bg-primary/5 border border-primary/10 rounded-2xl space-y-2">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-secondary/60">
+                            Proposed Changes
+                          </p>
+                          <div className="space-y-1">
+                            <p className="text-sm font-black text-primary uppercase">
+                              {req.pending_parent_name}
+                            </p>
+                            <p className="text-xs font-bold text-primary/70">
+                              {req.pending_parent_phone}
+                            </p>
+                            <p className="text-xs font-bold text-primary/70">
+                              {req.pending_parent_email}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="mt-6 flex flex-wrap gap-4 pt-4 border-t border-primary/5">
+                        <button
+                          disabled={isActioning === req.$id}
+                          onClick={() => handleParentAction(req.$id, "approve")}
+                          className="flex-1 min-w-[140px] h-12 sm:h-14 bg-primary text-background rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                          {isActioning === req.$id ? (
+                            <div className="w-4 h-4 border-2 border-background border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <>
+                              <CheckCircle2 size={16} />
+                              <span>Approve Details</span>
+                            </>
+                          )}
+                        </button>
+                        <button
+                          disabled={isActioning === req.$id}
+                          onClick={() => handleParentAction(req.$id, "reject")}
+                          className="flex-1 min-w-[140px] h-12 sm:h-14 bg-surface hover:bg-error/5 border border-primary/10 hover:border-error/20 text-primary hover:text-error rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                          {isActioning === req.$id ? (
+                            <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <>
+                              <XCircle size={16} />
+                              <span>Reject Changes</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </motion.div>
+                  );
+                }
+
                 return (
                   <motion.div
                     key={req.$id}
@@ -543,6 +977,11 @@ export default function FacultyDashboard() {
                                       <p className="text-xs sm:text-sm text-foreground font-bold">
                                         {parseSafeDate(req.proposed_in_date)}
                                       </p>
+                                      {req.is_extended && (
+                                        <p className="text-[9px] text-secondary font-black tracking-wider uppercase mt-1">
+                                          Extended by student
+                                        </p>
+                                      )}
                                     </div>
                                     <div className="hidden sm:flex p-2.5 bg-primary/10 rounded-xl text-primary border border-primary/10">
                                       <RefreshCw size={16} />
@@ -550,6 +989,52 @@ export default function FacultyDashboard() {
                                   </div>
                                 </div>
                               </div>
+                            </div>
+
+                            {/* Parent Details Block */}
+                            <div className="bg-primary/5 border border-primary/10 p-5 sm:p-6 rounded-2xl sm:rounded-3xl space-y-4 relative z-10">
+                              <p className="text-[10px] text-primary/60 uppercase font-black tracking-widest flex items-center gap-2">
+                                Parent / Guardian Contact Details
+                              </p>
+                              {req.parent_name ? (
+                                <div className="space-y-3">
+                                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                                    <div>
+                                      <p className="text-sm font-black text-primary uppercase">
+                                        {req.parent_name}
+                                      </p>
+                                      <p className="text-xs font-bold text-primary/60">
+                                        {req.parent_phone} • {req.parent_email}
+                                      </p>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                      <a
+                                        href={`tel:${req.parent_phone}`}
+                                        className="px-4 py-2 bg-secondary text-white rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                                      >
+                                        <Phone size={12} />
+                                        Call Parent
+                                      </a>
+                                      <button
+                                        disabled={isSendingEmail[req.$id] || req.mail_sent}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleEmailParent(req);
+                                        }}
+                                        className="px-4 py-2 bg-primary text-background disabled:bg-gray-400/20 disabled:text-gray-500/60 disabled:border disabled:border-gray-500/10 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:cursor-not-allowed disabled:hover:scale-100"
+                                      >
+                                        <Mail size={12} />
+                                        {isSendingEmail[req.$id] ? "Sending..." : (req.mail_sent ? "Email Sent" : "Email Parent")}
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <p className="text-xs font-bold text-primary/50 italic">
+                                  No parent details are registered for this
+                                  student
+                                </p>
+                              )}
                             </div>
 
                             {/* Actions */}
@@ -580,13 +1065,13 @@ export default function FacultyDashboard() {
                                 ))}
                               {viewMode === "pending" ? (
                                 <>
-                                    <button
-                                      disabled={isActioning === req.$id}
-                                      onClick={() =>
-                                        handleAction(req.$id, "reject")
-                                      }
-                                      className="flex-1 py-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-600 text-[10px] font-black uppercase tracking-[0.2em] hover:bg-red-500 hover:text-white hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:scale-100"
-                                    >
+                                  <button
+                                    disabled={isActioning === req.$id}
+                                    onClick={() =>
+                                      handleAction(req.$id, "reject")
+                                    }
+                                    className="flex-1 py-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-600 text-[10px] font-black uppercase tracking-[0.2em] hover:bg-red-500 hover:text-white hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:scale-100"
+                                  >
                                     {isActioning === req.$id ? (
                                       <RefreshCw
                                         size={14}
@@ -640,10 +1125,31 @@ export default function FacultyDashboard() {
               </div>
             )}
           </AnimatePresence>
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-8 bg-surface/40 backdrop-blur-md border border-primary/10 rounded-full p-2">
+              <button
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                className="px-6 py-3 bg-primary/10 text-primary text-[10px] font-black uppercase tracking-widest rounded-full hover:bg-primary hover:text-background disabled:opacity-50 transition-all cursor-pointer"
+              >
+                Previous
+              </button>
+              <span className="text-[10px] font-black uppercase tracking-widest text-primary/60">
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                className="px-6 py-3 bg-primary/10 text-primary text-[10px] font-black uppercase tracking-widest rounded-full hover:bg-primary hover:text-background disabled:opacity-50 transition-all cursor-pointer"
+              >
+                Next
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </GradientBackground>
   );
 }
-
-
