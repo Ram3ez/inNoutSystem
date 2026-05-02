@@ -13,7 +13,7 @@ import { format } from 'date-fns';
 import { Student } from '@/types/models';
 import Link from 'next/link';
 
-import { DB_ID, COLLECTIONS } from "@/lib/constants";
+import { DB_ID, COLLECTIONS, formatToIST, formatToISTTime } from "@/lib/constants";
 
 export default function LiveStatusPage() {
     const { user, isLoading: authLoading, isAdmin, isKiosk } = useAuth();
@@ -103,23 +103,37 @@ export default function LiveStatusPage() {
         }
     };
 
-    const isStudentLate = (gender: string) => {
-        const now = new Date();
-        const hours = now.getHours();
-        const minutes = now.getMinutes();
-        const totalMinutes = hours * 60 + minutes;
+    const isStudentLate = (gender: string, outTime?: string) => {
+        const nowInIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+        const currentHours = nowInIST.getHours();
+        const currentMinutes = nowInIST.getMinutes();
+        const currentTotalMinutes = currentHours * 60 + currentMinutes;
 
         // Reset time is 4:00 AM (240 minutes)
         const resetMinutes = 4 * 60;
 
+        if (outTime) {
+            try {
+                const outDate = new Date(outTime);
+                const outDateIST = new Date(outDate.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+                const outDateNoTime = new Date(outDateIST.getFullYear(), outDateIST.getMonth(), outDateIST.getDate());
+                const nowNoTime = new Date(nowInIST.getFullYear(), nowInIST.getMonth(), nowInIST.getDate());
+                if (outDateNoTime < nowNoTime) {
+                    return true;
+                }
+            } catch (e) {
+                console.warn("Date parse error", e);
+            }
+        }
+
         if (gender === 'FEMALE') {
-            // Late: 7:00 PM (1140 mins) to 4:00 AM
-            const startMinutes = 19 * 60;
-            return totalMinutes >= startMinutes || totalMinutes < resetMinutes;
+            // Girls till 6:30 PM is fine.
+            const startMinutes = 18 * 60 + 30;
+            return currentTotalMinutes >= startMinutes || currentTotalMinutes < resetMinutes;
         } else if (gender === 'MALE') {
-            // Late: 10:30 PM (1350 mins) to 4:00 AM
+            // Boys till 10:30 PM is fine.
             const startMinutes = 22 * 60 + 30;
-            return totalMinutes >= startMinutes || totalMinutes < resetMinutes;
+            return currentTotalMinutes >= startMinutes || currentTotalMinutes < resetMinutes;
         }
         return false;
     };
@@ -184,13 +198,13 @@ export default function LiveStatusPage() {
 
                 <div className="mb-8 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.2em] text-primary/70 px-2">
                     <p>{filteredOutings.length} Students Currently Away</p>
-                    <p>Last Sync: {format(lastUpdated, "hh:mm:ss a")}</p>
+                    <p>Last Sync: {formatToISTTime(lastUpdated)}</p>
                 </div>
 
                 <AnimatePresence mode='popLayout'>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                         {filteredOutings.map((outing, idx) => {
-                            const isLate = isStudentLate(outing.gender);
+                            const isLate = isStudentLate(outing.gender, outing.out_time);
                             return (
                                 <motion.div 
                                     key={outing.$id}
@@ -202,23 +216,23 @@ export default function LiveStatusPage() {
                                     className={`bg-surface border p-6 rounded-[2rem] flex flex-col justify-between group hover:bg-surface/80 transition-all gap-6 shadow-sm hover:shadow-xl relative overflow-hidden cursor-pointer active:scale-95 ${
                                         isLate 
                                         ? 'border-error/30 shadow-error/5 hover:shadow-error/10' 
-                                        : 'border-secondary/10 hover:shadow-secondary/5'
+                                        : 'border-primary/10 hover:shadow-primary/5'
                                     }`}
                                 >
                                     <div className="absolute -right-4 -top-4 opacity-[0.03] group-hover:opacity-[0.07] transition-opacity rotate-12">
-                                        <Footprints size={120} className={isLate ? "text-error" : "text-secondary"} />
+                                        <Footprints size={120} className={isLate ? "text-error" : "text-primary/10"} />
                                     </div>
 
                                     <div className="space-y-4 relative z-10">
                                         <div className="flex items-center justify-between">
                                             <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${
-                                                isLate ? 'bg-error/10 text-error border-error/20' : 'bg-secondary/10 text-secondary border-secondary/20'
+                                                isLate ? 'bg-error/10 text-error border-error/20' : 'bg-primary/5 text-primary border-primary/10'
                                             }`}>
                                                 <User size={20} />
                                             </div>
                                             <div className="flex flex-col items-end gap-1">
                                                 <span className={`text-[9px] font-black uppercase tracking-[0.2em] px-3 py-1 rounded-full border ${
-                                                    isLate ? 'text-error bg-error/10 border-error/20' : 'text-secondary bg-secondary/10 border-secondary/20'
+                                                    isLate ? 'text-error bg-error/10 border-error/20' : 'text-primary bg-primary/5 border-primary/10'
                                                 }`}>
                                                     {outing.gender}
                                                 </span>
@@ -237,9 +251,9 @@ export default function LiveStatusPage() {
                                                 {outing.roll_no}
                                             </h3>
                                             <div className="flex items-center space-x-2 mt-2">
-                                                <AlertCircle size={14} className={isLate ? "text-error/60" : "text-secondary/60"} />
+                                                <AlertCircle size={14} className={isLate ? "text-error/60" : "text-primary/40"} />
                                                 <p className="text-[10px] font-bold text-primary/60 uppercase tracking-widest">
-                                                    Since {format(new Date(outing.out_time), "MMM dd, hh:mm a")}
+                                                    Since {formatToIST(outing.out_time)}
                                                 </p>
                                             </div>
                                         </div>

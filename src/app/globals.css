@@ -82,3 +82,11 @@ input:-webkit-autofill:active {
     scrollbar-width: none;
   }
 }
+
+/* Invert the dark/invisible browser calendar picker icon for input[type="datetime-local"] */
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.8);
+  cursor: pointer;
+}
+
+

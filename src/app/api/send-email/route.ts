@@ -9,8 +9,18 @@ const ipv4Lookup = (hostname: string, options: any, callback: any) => {
   });
 };
 
+import { API_SECRET } from "@/lib/constants";
+
 export async function POST(req: NextRequest) {
   try {
+    const apiSecret = req.headers.get("X-API-Secret") || req.headers.get("x-api-secret");
+    if (apiSecret !== API_SECRET) {
+      return NextResponse.json(
+        { success: false, message: "Unauthorized API access denied" },
+        { status: 401 }
+      );
+    }
+
     const payload = await req.json();
     console.log("SEND-EMAIL API received payload:", payload);
     const {

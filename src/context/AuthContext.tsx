@@ -1,11 +1,17 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { account, OAuthProvider, databases, tablesDB, teams } from "@/lib/appwrite";
+import {
+  account,
+  OAuthProvider,
+  databases,
+  tablesDB,
+  teams,
+} from "@/lib/appwrite";
 import { Models } from "appwrite";
 import { useRouter, usePathname } from "next/navigation";
 import { Student } from "@/types/models";
-import { DB_ID, COLLECTIONS, TEAMS } from "@/lib/constants";
+import { DB_ID, COLLECTIONS, TEAMS, CACHE_KEYS } from "@/lib/constants";
 
 interface AuthContextType {
   user: Models.User<Models.Preferences> | null;
@@ -22,6 +28,36 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const encodeCache = (data: any) => {
+  if (data === null || data === undefined) return "";
+  try {
+    const json = JSON.stringify(data);
+    const bytes = new TextEncoder().encode(json);
+    let binString = "";
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binString += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binString);
+  } catch (e) {
+    return "";
+  }
+};
+
+const decodeCache = (encoded: string | null) => {
+  if (!encoded) return null;
+  try {
+    const binString = atob(encoded);
+    const bytes = new Uint8Array(binString.length);
+    for (let i = 0; i < binString.length; i++) {
+      bytes[i] = binString.charCodeAt(i);
+    }
+    const json = new TextDecoder().decode(bytes);
+    return JSON.parse(json);
+  } catch (e) {
+    return null;
+  }
+};
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
@@ -40,15 +76,54 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const router = useRouter();
   const pathname = usePathname();
 
-  const CACHE_KEY_USER = "nitpy_auth_user";
-  const CACHE_KEY_ADMIN = "nitpy_auth_isAdmin";
-  const CACHE_KEY_KIOSK = "nitpy_auth_isKiosk";
-  const CACHE_KEY_FACULTY = "nitpy_auth_isFaculty";
-  const CACHE_KEY_CARETAKER = "nitpy_auth_isCaretaker";
-  const CACHE_KEY_STUDENT = "nitpy_auth_studentData";
-  const CACHE_KEY_STAFF = "nitpy_auth_staffData";
+  const CACHE_KEY_USER = CACHE_KEYS.USER;
+  const CACHE_KEY_ADMIN = CACHE_KEYS.ADMIN;
+  const CACHE_KEY_KIOSK = CACHE_KEYS.KIOSK;
+  const CACHE_KEY_FACULTY = CACHE_KEYS.FACULTY;
+  const CACHE_KEY_CARETAKER = CACHE_KEYS.CARETAKER;
+  const CACHE_KEY_STUDENT = CACHE_KEYS.STUDENT;
+  const CACHE_KEY_STAFF = CACHE_KEYS.STAFF;
 
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      const cachedUser = localStorage.getItem(CACHE_KEY_USER);
+      if (cachedUser) {
+        try {
+          const decodedUser = decodeCache(cachedUser) || JSON.parse(cachedUser);
+          setUser(decodedUser);
+
+          const rawAdmin = localStorage.getItem(CACHE_KEY_ADMIN);
+          setIsAdmin(decodeCache(rawAdmin) ?? JSON.parse(rawAdmin || "false"));
+
+          const rawKiosk = localStorage.getItem(CACHE_KEY_KIOSK);
+          setIsKiosk(decodeCache(rawKiosk) ?? JSON.parse(rawKiosk || "false"));
+
+          const rawFaculty = localStorage.getItem(CACHE_KEY_FACULTY);
+          setIsFaculty(
+            decodeCache(rawFaculty) ?? JSON.parse(rawFaculty || "false"),
+          );
+
+          const rawCaretaker = localStorage.getItem(CACHE_KEY_CARETAKER);
+          setIsCaretaker(
+            decodeCache(rawCaretaker) ?? JSON.parse(rawCaretaker || "false"),
+          );
+
+          const cachedStudent = localStorage.getItem(CACHE_KEY_STUDENT);
+          if (cachedStudent)
+            setStudentData(
+              decodeCache(cachedStudent) || JSON.parse(cachedStudent),
+            );
+
+          const cachedStaff = localStorage.getItem(CACHE_KEY_STAFF);
+          if (cachedStaff)
+            setStaffData(decodeCache(cachedStaff) || JSON.parse(cachedStaff));
+
+          setIsLoading(false);
+        } catch (e) {
+          console.warn("Pre-loading cached session failed:", e);
+        }
+      }
+    }
     checkUser();
   }, []);
 
@@ -66,9 +141,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         const teamList = await teams.list();
         adminStatus = teamList.teams.some((team) => team.$id === TEAMS.ADMIN);
         kioskStatus = teamList.teams.some((team) => team.$id === TEAMS.KIOSK);
-        facultyStatus = teamList.teams.some((team) => team.$id === TEAMS.FACULTY);
-        caretakerStatus = teamList.teams.some((team) => team.$id === TEAMS.CARETAKER);
-        
+        facultyStatus = teamList.teams.some(
+          (team) => team.$id === TEAMS.FACULTY,
+        );
+        caretakerStatus = teamList.teams.some(
+          (team) => team.$id === TEAMS.CARETAKER,
+        );
+
         setIsAdmin(adminStatus);
         setIsKiosk(kioskStatus);
         setIsFaculty(facultyStatus);
@@ -84,7 +163,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       // Check if profile exists in database
       if (currentUser.email) {
         const profileId = currentUser.email.split("@")[0].toUpperCase();
-        const isStudentEmail = /^[A-Z]{2}[0-9]{2}[A-Z][0-9]{4}$/.test(profileId);
+        const isStudentEmail = /^[A-Z]{2}[0-9]{2}[A-Z][0-9]{4}$/.test(
+          profileId,
+        );
 
         try {
           if (isStudentEmail) {
@@ -103,7 +184,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
             setStudentData(data as unknown as Student);
             setStaffData(null);
             setIsRegistrationRequired(false);
-            localStorage.setItem(CACHE_KEY_STUDENT, JSON.stringify(data));
+            localStorage.setItem(CACHE_KEY_STUDENT, encodeCache(data));
           } else {
             /*
             const data = await databases.getDocument({
@@ -120,7 +201,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
             setStaffData(data);
             setStudentData(null);
             setIsRegistrationRequired(false);
-            localStorage.setItem(CACHE_KEY_STAFF, JSON.stringify(data));
+            localStorage.setItem(CACHE_KEY_STAFF, encodeCache(data));
           }
         } catch (dbError: any) {
           if (dbError.code === 404) {
@@ -131,30 +212,50 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
 
-      localStorage.setItem(CACHE_KEY_USER, JSON.stringify(currentUser));
-      localStorage.setItem(CACHE_KEY_ADMIN, JSON.stringify(adminStatus));
-      localStorage.setItem(CACHE_KEY_KIOSK, JSON.stringify(kioskStatus));
-      localStorage.setItem(CACHE_KEY_FACULTY, JSON.stringify(facultyStatus));
-      localStorage.setItem(CACHE_KEY_CARETAKER, JSON.stringify(caretakerStatus));
+      localStorage.setItem(CACHE_KEY_USER, encodeCache(currentUser));
+      localStorage.setItem(CACHE_KEY_ADMIN, encodeCache(adminStatus));
+      localStorage.setItem(CACHE_KEY_KIOSK, encodeCache(kioskStatus));
+      localStorage.setItem(CACHE_KEY_FACULTY, encodeCache(facultyStatus));
+      localStorage.setItem(CACHE_KEY_CARETAKER, encodeCache(caretakerStatus));
     } catch (error) {
-      // Check if we are offline
-      if (typeof navigator !== "undefined" && !navigator.onLine) {
-        const cachedUser = localStorage.getItem(CACHE_KEY_USER);
-        if (cachedUser) {
-          console.log("Restoring offline session from cache...");
-          setUser(JSON.parse(cachedUser));
-          setIsAdmin(JSON.parse(localStorage.getItem(CACHE_KEY_ADMIN) || "false"));
-          setIsKiosk(JSON.parse(localStorage.getItem(CACHE_KEY_KIOSK) || "false"));
-          setIsFaculty(JSON.parse(localStorage.getItem(CACHE_KEY_FACULTY) || "false"));
-          setIsCaretaker(JSON.parse(localStorage.getItem(CACHE_KEY_CARETAKER) || "false"));
+      console.warn("Auth check failed, checking cache...", error);
+      const cachedUser = localStorage.getItem(CACHE_KEY_USER);
+      if (cachedUser) {
+        console.log("Restoring cached fallback session...");
+        try {
+          const decodedUser = decodeCache(cachedUser) || JSON.parse(cachedUser);
+          setUser(decodedUser);
+
+          const rawAdmin = localStorage.getItem(CACHE_KEY_ADMIN);
+          setIsAdmin(decodeCache(rawAdmin) ?? JSON.parse(rawAdmin || "false"));
+
+          const rawKiosk = localStorage.getItem(CACHE_KEY_KIOSK);
+          setIsKiosk(decodeCache(rawKiosk) ?? JSON.parse(rawKiosk || "false"));
+
+          const rawFaculty = localStorage.getItem(CACHE_KEY_FACULTY);
+          setIsFaculty(
+            decodeCache(rawFaculty) ?? JSON.parse(rawFaculty || "false"),
+          );
+
+          const rawCaretaker = localStorage.getItem(CACHE_KEY_CARETAKER);
+          setIsCaretaker(
+            decodeCache(rawCaretaker) ?? JSON.parse(rawCaretaker || "false"),
+          );
+
           const cachedStudent = localStorage.getItem(CACHE_KEY_STUDENT);
           if (cachedStudent)
-            setStudentData(JSON.parse(cachedStudent) as unknown as Student);
+            setStudentData(
+              decodeCache(cachedStudent) || JSON.parse(cachedStudent),
+            );
+
           const cachedStaff = localStorage.getItem(CACHE_KEY_STAFF);
           if (cachedStaff)
-            setStaffData(JSON.parse(cachedStaff));
+            setStaffData(decodeCache(cachedStaff) || JSON.parse(cachedStaff));
+
           setIsLoading(false);
           return;
+        } catch (e) {
+          console.error("Failed to parse cached session:", e);
         }
       }
 

@@ -20,6 +20,7 @@ import { LoadingIndicator } from "@/components/LoadingIndicator";
 import { useRouter } from "next/navigation";
 import { databases, tablesDB, fetchAllRows, Query } from "@/lib/appwrite";
 import { format } from "date-fns";
+import { formatToIST } from "@/lib/constants";
 import { loadFaceApiModels, loadFaceCache } from "@/lib/faceCache";
 import { getLandmarker } from "@/lib/aiEngine";
 
@@ -35,6 +36,8 @@ export default function Dashboard() {
     studentData,
   } = useAuth();
   const router = useRouter();
+  const profileId = user?.email ? user.email.split("@")[0].toUpperCase() : "";
+  const isStudent = /^[A-Z]{2}[0-9]{2}[A-Z][0-9]{4}$/.test(profileId);
   const [outings, setOutings] = React.useState<any[]>([]);
   const [liveOutings, setLiveOutings] = React.useState<any[]>([]);
   const [isOutingsLoading, setIsOutingsLoading] = React.useState(false);
@@ -59,6 +62,7 @@ export default function Dashboard() {
 
   // Background "Warming" for Kiosk/Admin
   React.useEffect(() => {
+    let timeoutId: NodeJS.Timeout | undefined;
     if (typeof window !== "undefined" && (isAdmin || isKiosk)) {
       const startSync = async () => {
         try {
@@ -67,7 +71,7 @@ export default function Dashboard() {
           
           // 2. Wait 2 seconds before doing heavy AI GPU warming
           // to keep the dashboard initial load buttery smooth.
-          setTimeout(async () => {
+          timeoutId = setTimeout(async () => {
              await Promise.all([
                loadFaceApiModels(),
                getLandmarker(),
@@ -79,6 +83,9 @@ export default function Dashboard() {
       };
       startSync();
     }
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, [isAdmin, isKiosk]);
 
   const fetchOutings = async () => {
@@ -185,7 +192,7 @@ export default function Dashboard() {
           </motion.div>
         </header>
 
-        {!isAdmin && !isKiosk && !isFaculty && !isCaretaker && !(studentData as any)?.faceRegistered && (
+        {!isAdmin && !isKiosk && !isFaculty && !isCaretaker && isStudent && !(studentData as any)?.faceRegistered && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -231,7 +238,7 @@ export default function Dashboard() {
               />
             </>
           )}
-          {!isAdmin && !isKiosk && !isFaculty && !isCaretaker && (
+          {!isAdmin && !isKiosk && !isFaculty && !isCaretaker && isStudent && (
             <>
               <ActionCard
                 title="Apply for Leave"
@@ -292,7 +299,7 @@ export default function Dashboard() {
           className="space-y-6"
         >
           {/* Personal History for Students */}
-          {!isAdmin && !isKiosk && !isFaculty && !isCaretaker && outings.length > 0 && (
+          {!isAdmin && !isKiosk && !isFaculty && !isCaretaker && isStudent && outings.length > 0 && (
             <>
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-primary uppercase tracking-widest">
@@ -340,7 +347,7 @@ export default function Dashboard() {
                             Exit
                           </p>
                           <p className="text-primary/80 font-bold text-sm">
-                            {format(new Date(outing.out_time), "MMM dd, hh:mm a")}
+                            {formatToIST(outing.out_time)}
                           </p>
                         </div>
                         <div className="space-y-1">
@@ -349,10 +356,7 @@ export default function Dashboard() {
                           </p>
                           {outing.in_time ? (
                             <p className="text-primary/80 font-bold text-sm">
-                              {format(
-                                new Date(outing.in_time),
-                                "MMM dd, hh:mm a",
-                              )}
+                              {formatToIST(outing.in_time)}
                             </p>
                           ) : (
                             <div className="flex items-center space-x-2 text-secondary">

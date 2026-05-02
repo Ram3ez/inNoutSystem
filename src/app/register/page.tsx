@@ -336,6 +336,7 @@ export default function RegisterFacePage() {
 
   const extractEmbedding = useCallback(async () => {
     if (!webcamRef.current?.video || enrollmentStatus !== "scanning") return;
+    await new Promise((r) => setTimeout(r, 10));
 
     try {
       const video = webcamRef.current.video;

@@ -6,8 +6,18 @@ import { Building2, LogIn } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { GradientBackground } from '@/components/GradientBackground';
 
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+
 export default function LoginPage() {
-    const { loginWithGoogle, isLoading } = useAuth();
+    const { loginWithGoogle, isLoading, user } = useAuth();
+    const router = useRouter();
+
+    useEffect(() => {
+        if (user && !isLoading) {
+            router.push('/');
+        }
+    }, [user, isLoading, router]);
 
     return (
         <GradientBackground>

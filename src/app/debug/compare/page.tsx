@@ -90,31 +90,63 @@ export default function CompareLab() {
     try {
       // 1. Detect and Extract for BOTH
       setStatus("AI Step 1: Running Neural Engine...");
-      
-      const tf = (faceapi as any).tf;
-      if (tf && tf.engine) tf.engine().startScope();
 
-      try {
+      const tf = (faceapi as any).tf;
+      if (tf) {
+        try {
+          const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+          if (isIOS && tf.setBackend) {
+            await tf.setBackend("cpu");
+          }
+        } catch (err) {}
+        if (tf.engine) tf.engine().startScope();
+      }
+
+       try {
+        const swOriginal = video.videoWidth || 640;
+        const shOriginal = video.videoHeight || 480;
+
+        // Scale down while preserving the EXACT aspect ratio to prevent face distortion
+        const maxDim = 480;
+        let dw = swOriginal;
+        let dh = shOriginal;
+        if (swOriginal > shOriginal && swOriginal > maxDim) {
+          dw = maxDim;
+          dh = Math.round((shOriginal * maxDim) / swOriginal);
+        } else if (shOriginal > swOriginal && shOriginal > maxDim) {
+          dh = maxDim;
+          dw = Math.round((swOriginal * maxDim) / shOriginal);
+        }
+
+        // Create a lightweight static canvas using the correct aspect ratio
+        const cropCanvas = document.createElement("canvas");
+        cropCanvas.width = dw;
+        cropCanvas.height = dh;
+        const cropCtx = cropCanvas.getContext("2d", { willReadFrequently: true });
+        if (!cropCtx) throw new Error("Could not create canvas context");
+        cropCtx.drawImage(video, 0, 0, dw, dh);
+
         // --- 1a. MEDIAPIPE (GhostFace Path) ---
-        // MUST DO THIS BEFORE setImgSrc (which unmounts the video)
         const landmarker = getLandmarkerSync();
         if (!landmarker) throw new Error("Landmarker not ready");
-        const mpResult = landmarker.detectForVideo(video, performance.now());
-        
+        const mpResult = landmarker.detectForVideo(cropCanvas, performance.now());
+
         if (!mpResult.faceLandmarks || mpResult.faceLandmarks.length === 0) {
           throw new Error("MediaPipe failed to find face. Try again.");
         }
 
         const mpLandmarks = mpResult.faceLandmarks[0];
-        
+
         // Estimate a bounding box from landmarks for the crop
         const xs = mpLandmarks.map((p: any) => p.x);
         const ys = mpLandmarks.map((p: any) => p.y);
-        const minX = Math.min(...xs), maxX = Math.max(...xs);
-        const minY = Math.min(...ys), maxY = Math.max(...ys);
-        
-        const sw = video.videoWidth;
-        const sh = video.videoHeight;
+        const minX = Math.min(...xs),
+          maxX = Math.max(...xs);
+        const minY = Math.min(...ys),
+          maxY = Math.max(...ys);
+
+        const sw = dw;
+        const sh = dh;
 
         const mpBox = {
           x: minX * sw,
@@ -122,14 +154,23 @@ export default function CompareLab() {
           width: (maxX - minX) * sw,
           height: (maxY - minY) * sh,
         };
-        
+
         // Use MediaPipe landmarks for GhostFace parity!
-        const ghostDescriptor = await getGhostFaceDescriptor(video, mpBox, mpLandmarks);
+        const ghostDescriptor = await getGhostFaceDescriptor(
+          cropCanvas,
+          mpBox,
+          mpLandmarks,
+        );
+
+        // Yield to browser thread to release WASM/VRAM buffers before launching legacy path
+        await new Promise((r) => setTimeout(r, 100));
 
         // --- 1b. FACE-API (Legacy Path) ---
-        // We can do this on a canvas or the video, let's keep video for speed
         const faceApiDetection = await faceapi
-          .detectSingleFace(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.4 }))
+          .detectSingleFace(
+            cropCanvas,
+            new faceapi.SsdMobilenetv1Options({ minConfidence: 0.4 }),
+          )
           .withFaceLandmarks()
           .withFaceDescriptor();
 
@@ -192,7 +233,7 @@ export default function CompareLab() {
           setStatus(
             `AI Step 3: Scanning... ${Math.min(i + CHUNK_SIZE, allRollNos.length)}/${allRollNos.length}`,
           );
-          await new Promise((r) => setTimeout(r, 0));
+          await new Promise((r) => setTimeout(r, 10));
         }
 
         setStatus("AI Step 4: Sorting Leaderboard...");
@@ -282,6 +323,11 @@ export default function CompareLab() {
                   ref={webcamRef}
                   screenshotFormat="image/jpeg"
                   className="w-full h-full object-cover"
+                  videoConstraints={{
+                    width: { ideal: 640 },
+                    height: { ideal: 480 },
+                    facingMode: "user",
+                  }}
                   mirrored
                 />
               )}

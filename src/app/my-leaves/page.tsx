@@ -20,7 +20,7 @@ import { Navigation } from "@/components/Navigation";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
 import { useRouter } from "next/navigation";
 import { databases, tablesDB, fetchAllRows, Query, ID } from "@/lib/appwrite";
-import { DB_ID, COLLECTIONS } from "@/lib/constants";
+import { DB_ID, COLLECTIONS, API_SECRET } from "@/lib/constants";
 import Link from "next/link";
 
 export default function MyLeavesPage() {
@@ -47,6 +47,13 @@ export default function MyLeavesPage() {
     if (authLoading) return;
 
     if (!user || isAdmin || isKiosk) {
+      router.push("/");
+      return;
+    }
+
+    const profileId = user.email ? user.email.split("@")[0].toUpperCase() : "";
+    const isStudent = /^[A-Z]{2}[0-9]{2}[A-Z][0-9]{4}$/.test(profileId);
+    if (!isStudent) {
       router.push("/");
       return;
     }
@@ -157,7 +164,10 @@ export default function MyLeavesPage() {
         try {
           await fetch("/api/send-email", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { 
+              "Content-Type": "application/json",
+              "X-API-Secret": API_SECRET
+            },
             body: JSON.stringify({
               type: "extension",
               advisorEmail: fEmail,
@@ -197,6 +207,7 @@ export default function MyLeavesPage() {
       }
       if (isNaN(date.getTime())) return "Invalid Date";
       return date.toLocaleString("en-IN", {
+        timeZone: "Asia/Kolkata",
         day: "2-digit",
         month: "short",
         year: "numeric",
@@ -222,7 +233,7 @@ export default function MyLeavesPage() {
     <GradientBackground>
       <Navigation />
 
-      <main className="flex-1 max-w-4xl mx-auto w-full px-4 sm:px-6 pt-32 sm:pt-40 pb-12">
+      <main className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 pt-32 sm:pt-40 pb-12">
         <header className="mb-8 flex items-center justify-between">
           <Link
             href="/"
@@ -322,6 +333,7 @@ export default function MyLeavesPage() {
                           {new Date(leave.$createdAt).toLocaleDateString(
                             "en-IN",
                             {
+                              timeZone: "Asia/Kolkata",
                               day: "2-digit",
                               month: "short",
                               year: "numeric",

@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { databases, tablesDB, fetchAllRows, Query, ID } from "@/lib/appwrite";
-import { DB_ID, COLLECTIONS } from "@/lib/constants";
+import { DB_ID, COLLECTIONS, API_SECRET } from "@/lib/constants";
 import { GradientBackground } from "@/components/GradientBackground";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
 import { Navigation } from "@/components/Navigation";
@@ -103,6 +103,7 @@ export default function FacultyDashboard() {
       }
       if (isNaN(date.getTime())) return "Invalid Date";
       return date.toLocaleString("en-IN", {
+        timeZone: "Asia/Kolkata",
         day: "2-digit",
         month: "short",
         year: "numeric",
@@ -123,6 +124,7 @@ export default function FacultyDashboard() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-API-Secret": API_SECRET,
         },
         body: JSON.stringify({
           parentEmail: req.parent_email,
@@ -541,7 +543,7 @@ export default function FacultyDashboard() {
         )}
       </AnimatePresence>
 
-      <div className="w-full max-w-7xl mx-auto px-6 pt-36 sm:pt-40 pb-24 flex-1 flex flex-col">
+      <div className="w-full px-4 sm:px-8 xl:px-12 pt-36 sm:pt-40 pb-24 flex-1 flex flex-col">
         {/* Navigation */}
         <motion.div
           initial={{ opacity: 0, x: -20 }}

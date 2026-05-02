@@ -11,6 +11,7 @@ export const COLLECTIONS = {
   FACIAL_EMBEDDINGS: "facial_embeddings",
   FACIAL_EMBEDDINGS_NEW: "facial_embeddings_new",
   STAFF_DETAILS: "staff_details",
+  HOLIDAYS: "holidays",
 } as const;
 
 export const TEAMS = {
@@ -20,9 +21,21 @@ export const TEAMS = {
   CARETAKER: "69f10f3a002c7dd58e7a",
 } as const;
 
+export const CACHE_KEYS = {
+  USER: "_npx_u1",
+  ADMIN: "_npx_a1",
+  KIOSK: "_npx_k1",
+  FACULTY: "_npx_f1",
+  CARETAKER: "_npx_c1",
+  STUDENT: "_npx_s1",
+  STAFF: "_npx_t1",
+} as const;
+
+export const API_SECRET = "9b0f44358a9807567ecb5107e3240742f36d0a7a";
+
 export const BIOMETRIC_THRESHOLDS = {
   GHOSTFACE: {
-    MATCH: 0.55, // Recognition sensitivity (Higher = stricter)
+    MATCH: 0.58, // Recognition sensitivity (Higher = stricter)
     DIVERSITY: 0.8, // Minimum diversity between registration frames
     ADAPTIVE_UPDATE: 0.8, // Score required to auto-update profile
     CONFLICT_GAP: 0.05, // Gap between best and second best to be considered a conflict
@@ -33,3 +46,64 @@ export const BIOMETRIC_THRESHOLDS = {
     CONFLICT_GAP: 0.05,
   },
 } as const;
+
+export function formatToIST(
+  dateInput: string | Date | number | null | undefined,
+): string {
+  if (!dateInput) return "N/A";
+  try {
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return "Invalid Date";
+    return d.toLocaleString("en-US", {
+      timeZone: "Asia/Kolkata",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
+  } catch {
+    return "Invalid Date";
+  }
+}
+
+export function formatToISTTime(
+  dateInput: string | Date | number | null | undefined,
+): string {
+  if (!dateInput) return "N/A";
+  try {
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return "Invalid Date";
+    return d.toLocaleString("en-US", {
+      timeZone: "Asia/Kolkata",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
+    });
+  } catch {
+    return "Invalid Date";
+  }
+}
+
+export function formatToISTFull(
+  dateInput: string | Date | number | null | undefined,
+): string {
+  if (!dateInput) return "N/A";
+  try {
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return "Invalid Date";
+    return d.toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
+    });
+  } catch {
+    return "Invalid Date";
+  }
+}

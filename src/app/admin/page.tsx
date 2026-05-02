@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, ShieldCheck, Users, Search, Trash2, UserCheck, UserX, ScanFace, RefreshCw, ChevronDown } from 'lucide-react';
+import { ArrowLeft, ShieldCheck, Users, Search, Trash2, UserCheck, UserX, ScanFace, RefreshCw, ChevronDown, Edit2, Plus } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { databases, tablesDB, fetchAllRows, Query } from '@/lib/appwrite';
 import { GradientBackground } from '@/components/GradientBackground';
@@ -21,7 +21,7 @@ export default function AdminPortal() {
     const { user, isLoading: authLoading, isAdmin, isRegistrationRequired } = useAuth();
     const router = useRouter();
     
-    const [activeTab, setActiveTab] = useState<'students' | 'assignments' | 'faculty' | 'caretakers' | 'outings' | 'leaves'>('students');
+    const [activeTab, setActiveTab] = useState<'students' | 'assignments' | 'faculty' | 'caretakers' | 'outings' | 'leaves' | 'calendar'>('students');
     const [students, setStudents] = useState<Student[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
@@ -51,6 +51,16 @@ export default function AdminPortal() {
     const [caretakerAssignments, setCaretakerAssignments] = useState<any[]>([]);
     const [facultyAssignments, setFacultyAssignments] = useState<any[]>([]);
     const [isSavingStaff, setIsSavingStaff] = useState<string | null>(null);
+
+    // Holidays Calendar State
+    const [calendarDate, setCalendarDate] = useState(new Date());
+    const [holidays, setHolidays] = useState<any[]>([]);
+    const [isHolidaysLoading, setIsHolidaysLoading] = useState(false);
+    const [isHolidayFormOpen, setIsHolidayFormOpen] = useState(false);
+    const [selectedHolidayDate, setSelectedHolidayDate] = useState<string>('');
+    const [holidayType, setHolidayType] = useState<'GAZETTED' | 'RESTRICTED'>('GAZETTED');
+    const [holidayName, setHolidayName] = useState('');
+    const [holidayDesc, setHolidayDesc] = useState('');
 
     // Team Management State
     const [facultyMembers, setFacultyMembers] = useState<Models.Membership[]>([]);
@@ -83,9 +93,88 @@ export default function AdminPortal() {
                 fetchStudents();
                 fetchStaffAssignments();
                 fetchTeamMembers();
+                fetchHolidays();
             }
         }
     }, [authLoading, user, isAdmin, isRegistrationRequired, router]);
+
+    const fetchHolidays = async () => {
+        setIsHolidaysLoading(true);
+        try {
+            const rows = await fetchAllRows<any>(DB_ID, COLLECTIONS.HOLIDAYS);
+            setHolidays(rows);
+        } catch (err: any) {
+            console.error("Failed to fetch holidays:", err);
+        } finally {
+            setIsHolidaysLoading(false);
+        }
+    };
+
+    const handleSaveHoliday = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!holidayName.trim()) {
+            alert("Holiday Name is required");
+            return;
+        }
+        setIsHolidaysLoading(true);
+        try {
+            await tablesDB.updateRow({
+                databaseId: DB_ID,
+                tableId: COLLECTIONS.HOLIDAYS,
+                rowId: selectedHolidayDate,
+                data: {
+                    date: selectedHolidayDate,
+                    type: holidayType,
+                    name: holidayName,
+                    description: holidayDesc,
+                },
+            });
+        } catch (err: any) {
+            const is404 = err.code === 404 || err.status === 404 || (err.message && err.message.toLowerCase().includes("not found"));
+            if (is404) {
+                try {
+                    await tablesDB.createRow({
+                        databaseId: DB_ID,
+                        tableId: COLLECTIONS.HOLIDAYS,
+                        rowId: selectedHolidayDate,
+                        data: {
+                            date: selectedHolidayDate,
+                            type: holidayType,
+                            name: holidayName,
+                            description: holidayDesc,
+                        },
+                    });
+                } catch (createErr: any) {
+                    alert(createErr.message || "Failed to create holiday");
+                    setIsHolidaysLoading(false);
+                    return;
+                }
+            } else {
+                alert(err.message || "Failed to update holiday");
+                setIsHolidaysLoading(false);
+                return;
+            }
+        }
+        setIsHolidayFormOpen(false);
+        setIsHolidaysLoading(false);
+        fetchHolidays();
+    };
+
+    const handleDeleteHoliday = async (dateStr: string) => {
+        if (!confirm("Are you sure you want to delete this holiday?")) return;
+        setIsHolidaysLoading(true);
+        try {
+            await tablesDB.deleteRow({
+                databaseId: DB_ID,
+                tableId: COLLECTIONS.HOLIDAYS,
+                rowId: dateStr,
+            });
+            fetchHolidays();
+        } catch (err: any) {
+            alert(err.message || "Failed to delete holiday");
+            setIsHolidaysLoading(false);
+        }
+    };
 
     const fetchTeamMembers = async () => {
         try {
@@ -448,7 +537,7 @@ export default function AdminPortal() {
     return (
         <GradientBackground>
             <Navigation />
-            <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 pt-36 sm:pt-40 pb-12">
+            <main className="flex-1 w-full px-4 sm:px-8 xl:px-12 pt-36 sm:pt-40 pb-12">
                 <header className="mb-12 flex flex-col md:flex-row md:items-center justify-between gap-8">
                     <div className="flex items-center space-x-4">
                         <Link href="/" className="p-2 hover:bg-primary/5 rounded-full transition-all text-primary/40 hover:text-primary">
@@ -501,6 +590,12 @@ export default function AdminPortal() {
                                 className={`w-auto px-3 sm:px-4 py-2.5 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'leaves' ? 'bg-primary text-background shadow-lg shadow-primary/20' : 'text-primary/60 hover:text-primary'}`}
                             >
                                 Leaves
+                            </button>
+                            <button 
+                                onClick={() => setActiveTab('calendar')}
+                                className={`w-auto px-3 sm:px-4 py-2.5 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'calendar' ? 'bg-primary text-background shadow-lg shadow-primary/20' : 'text-primary/60 hover:text-primary'}`}
+                            >
+                                Calendar
                             </button>
                         </div>
 
@@ -944,11 +1039,11 @@ export default function AdminPortal() {
                                                         {outing.roll_no}
                                                     </h3>
                                                     <p className="text-primary/40 text-[10px] font-bold tracking-widest uppercase">
-                                                        Out Time: {outing.out_time ? new Date(outing.out_time).toLocaleString("en-IN") : "N/A"}
+                                                        Out Time: {outing.out_time ? new Date(outing.out_time).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) : "N/A"}
                                                     </p>
                                                     {outing.in_time && (
                                                         <p className="text-secondary/70 text-[10px] font-black tracking-widest uppercase mt-0.5">
-                                                            In Time: {new Date(outing.in_time).toLocaleString("en-IN")}
+                                                            In Time: {new Date(outing.in_time).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
                                                         </p>
                                                     )}
                                                 </div>
@@ -1127,10 +1222,10 @@ export default function AdminPortal() {
                                                     </p>
                                                     <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 mt-2">
                                                         <p className="text-primary/40 text-[10px] font-bold tracking-widest uppercase">
-                                                            Departure: {leave.proposed_exit_date ? new Date(leave.proposed_exit_date).toLocaleString("en-IN") : "N/A"}
+                                                            Departure: {leave.proposed_exit_date ? new Date(leave.proposed_exit_date).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) : "N/A"}
                                                         </p>
                                                         <p className="text-primary/40 text-[10px] font-bold tracking-widest uppercase">
-                                                            Return: {leave.proposed_in_date ? new Date(leave.proposed_in_date).toLocaleString("en-IN") : "N/A"}
+                                                            Return: {leave.proposed_in_date ? new Date(leave.proposed_in_date).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) : "N/A"}
                                                         </p>
                                                     </div>
                                                 </div>
@@ -1167,6 +1262,284 @@ export default function AdminPortal() {
                                 </div>
                             )}
                         </motion.div>
+                    ) : activeTab === 'calendar' ? (
+                        <motion.div 
+                            key="calendar-tab"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="space-y-6"
+                        >
+                            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 bg-surface border border-primary/5 p-6 rounded-[2.5rem] shadow-xl shadow-primary/5">
+                                <div className="flex bg-primary/5 p-1 rounded-2xl border border-primary/5 w-full sm:w-auto self-start justify-between items-center gap-1">
+                                    <button 
+                                        onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1))}
+                                        className="flex-shrink-0 px-2 sm:px-4 py-2 sm:py-2.5 rounded-xl text-[8px] sm:text-[10px] font-black uppercase tracking-widest text-primary/60 hover:text-primary transition-all"
+                                    >
+                                        Prev Month
+                                    </button>
+                                    <span className="px-2 sm:px-4 py-2 sm:py-2.5 text-[10px] sm:text-xs font-black uppercase tracking-widest text-primary min-w-[80px] sm:min-w-[120px] text-center flex items-center justify-center select-none">
+                                        {calendarDate.toLocaleString('default', { month: 'short', year: 'numeric' })}
+                                    </span>
+                                    <button 
+                                        onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1))}
+                                        className="flex-shrink-0 px-2 sm:px-4 py-2 sm:py-2.5 rounded-xl text-[8px] sm:text-[10px] font-black uppercase tracking-widest text-primary/60 hover:text-primary transition-all"
+                                    >
+                                        Next Month
+                                    </button>
+                                </div>
+
+                                <button 
+                                    onClick={fetchHolidays}
+                                    className="px-6 py-3.5 bg-primary/5 border border-primary/5 hover:border-primary/20 text-primary hover:text-secondary rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2"
+                                >
+                                    <RefreshCw className={`h-4 w-4 ${isHolidaysLoading ? 'animate-spin' : ''}`} />
+                                    <span>Sync</span>
+                                </button>
+                            </div>
+
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                                <div className="lg:col-span-2 bg-surface border border-primary/5 rounded-[2.5rem] p-6 shadow-xl shadow-primary/5">
+                                    <div className="grid grid-cols-7 gap-2 text-center text-[10px] font-black tracking-wider text-primary/40 uppercase border-b border-primary/5 pb-2 mb-4">
+                                        <span>Sun</span>
+                                        <span>Mon</span>
+                                        <span>Tue</span>
+                                        <span>Wed</span>
+                                        <span>Thu</span>
+                                        <span>Fri</span>
+                                        <span>Sat</span>
+                                    </div>
+
+                                    <div className="grid grid-cols-7 gap-2">
+                                        {(() => {
+                                            const daysInMonth = new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 0).getDate();
+                                            const firstDayOfMonth = new Date(calendarDate.getFullYear(), calendarDate.getMonth(), 1).getDay();
+                                            const days: (Date | null)[] = [];
+                                            for (let i = 0; i < firstDayOfMonth; i++) {
+                                                days.push(null);
+                                            }
+                                            for (let d = 1; d <= daysInMonth; d++) {
+                                                days.push(new Date(calendarDate.getFullYear(), calendarDate.getMonth(), d));
+                                            }
+
+                                            return days.map((day, idx) => {
+                                                if (!day) return <div key={`empty-${idx}`} className="aspect-square sm:aspect-auto sm:min-h-[110px] w-full bg-transparent rounded-2xl select-none" />;
+
+                                                const y = day.getFullYear();
+                                                const m = String(day.getMonth() + 1).padStart(2, '0');
+                                                const d = String(day.getDate()).padStart(2, '0');
+                                                const dStr = `${y}-${m}-${d}`;
+                                                const hol = holidays.find(h => h.date === dStr);
+                                                const isToday = day.toDateString() === new Date().toDateString();
+
+                                                return (
+                                                    <div 
+                                                        key={day.toISOString()}
+                                                        onClick={() => {
+                                                            setSelectedHolidayDate(dStr);
+                                                            if (hol) {
+                                                                setHolidayType(hol.type);
+                                                                setHolidayName(hol.name);
+                                                                setHolidayDesc(hol.description || '');
+                                                            } else {
+                                                                setHolidayType('GAZETTED');
+                                                                setHolidayName('');
+                                                                setHolidayDesc('');
+                                                            }
+                                                            setIsHolidayFormOpen(true);
+                                                        }}
+                                                        className={`aspect-square sm:aspect-auto sm:min-h-[110px] w-full border border-primary/5 hover:border-primary/20 rounded-2xl flex flex-col justify-between p-1 sm:p-3 cursor-pointer transition-all relative select-none ${isToday ? 'bg-secondary/10 border-secondary/40' : 'bg-primary/5'}`}
+                                                    >
+                                                        <span className={`text-xs font-black self-end ${isToday ? 'text-secondary font-black' : 'text-primary/60'}`}>
+                                                            {day.getDate()}
+                                                        </span>
+
+                                                        {hol && (
+                                                            <div 
+                                                                className={`text-[7px] sm:text-[9px] font-black leading-none p-1 sm:p-1.5 rounded-lg sm:rounded-xl mt-auto w-full text-center tracking-wide line-clamp-2 ${hol.type === 'GAZETTED' ? 'bg-secondary/20 text-secondary border border-secondary/20' : 'bg-orange-500/20 text-orange-400 border border-orange-500/20'}`}
+                                                                title={`${hol.name}: ${hol.description || 'No Description'}`}
+                                                            >
+                                                                {hol.name}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            });
+                                        })()}
+                                    </div>
+                                </div>
+
+                                <div className="bg-surface border border-primary/5 rounded-[2.5rem] p-6 shadow-xl shadow-primary/5 flex flex-col justify-between">
+                                    <div className="space-y-6">
+                                        <div className="space-y-1">
+                                            <h3 className="text-sm font-black tracking-tight text-primary uppercase italic">Legend & Selected Month</h3>
+                                            <p className="text-primary/40 text-[10px] font-bold uppercase tracking-wider">Configure specific holidays directly</p>
+                                        </div>
+
+                                        <div className="flex flex-col gap-3">
+                                            <div className="flex items-center gap-3 bg-primary/5 p-3 rounded-2xl border border-primary/5">
+                                                <div className="h-3 w-3 rounded-full bg-secondary" />
+                                                <div>
+                                                    <h4 className="text-[10px] font-black uppercase text-primary">GAZETTED</h4>
+                                                    <p className="text-[9px] text-primary/40">Mandatory institutional leaves</p>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-center gap-3 bg-primary/5 p-3 rounded-2xl border border-primary/5">
+                                                <div className="h-3 w-3 rounded-full bg-orange-500" />
+                                                <div>
+                                                    <h4 className="text-[10px] font-black uppercase text-primary">RESTRICTED</h4>
+                                                    <p className="text-[9px] text-primary/40">Special optional leaves</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                                            <h4 className="text-[10px] font-black tracking-widest text-primary/30 uppercase">Month Overview</h4>
+                                            {holidays.filter(h => {
+                                                const d = new Date(h.date);
+                                                return d.getFullYear() === calendarDate.getFullYear() && d.getMonth() === calendarDate.getMonth();
+                                            }).map(h => (
+                                                <div 
+                                                    key={h.$id}
+                                                    className="flex items-center justify-between bg-primary/5 border border-primary/5 hover:border-primary/10 rounded-2xl p-3.5 transition-all"
+                                                >
+                                                    <div className="flex flex-col max-w-[70%]">
+                                                        <span className="text-[9px] font-black text-secondary tracking-widest">{h.date}</span>
+                                                        <span className="text-xs font-black text-primary truncate">{h.name}</span>
+                                                        {h.description && <span className="text-[9px] text-primary/40 truncate mt-0.5">{h.description}</span>}
+                                                    </div>
+
+                                                    <div className="flex items-center gap-1">
+                                                        <button 
+                                                            onClick={() => {
+                                                                setSelectedHolidayDate(h.date);
+                                                                setHolidayType(h.type);
+                                                                setHolidayName(h.name);
+                                                                setHolidayDesc(h.description || '');
+                                                                setIsHolidayFormOpen(true);
+                                                            }}
+                                                            className="p-2 text-primary/30 hover:text-primary hover:bg-primary/5 rounded-xl transition-all"
+                                                        >
+                                                            <Edit2 size={14} />
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleDeleteHoliday(h.date)}
+                                                            className="p-2 text-primary/30 hover:text-secondary hover:bg-secondary/5 rounded-xl transition-all"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            {holidays.filter(h => {
+                                                const d = new Date(h.date);
+                                                return d.getFullYear() === calendarDate.getFullYear() && d.getMonth() === calendarDate.getMonth();
+                                            }).length === 0 && (
+                                                <p className="text-[10px] font-bold text-primary/20 py-2 text-center uppercase tracking-widest">No holidays listed</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Popup Slider modal directly above the main panel */}
+                            <AnimatePresence>
+                                {isHolidayFormOpen && (
+                                    <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/60 backdrop-blur-sm select-none">
+                                        <motion.div 
+                                            initial={{ x: '100%' }}
+                                            animate={{ x: 0 }}
+                                            exit={{ x: '100%' }}
+                                            transition={{ type: 'spring', damping: 24, stiffness: 200 }}
+                                            className="w-full max-w-md h-full bg-surface border-l border-primary/10 p-8 flex flex-col justify-between shadow-2xl relative"
+                                        >
+                                            <div>
+                                                <div className="flex justify-between items-center mb-8">
+                                                    <div>
+                                                        <h3 className="text-xl font-black text-primary tracking-tight uppercase italic flex items-center gap-2">
+                                                            <Plus size={22} className="text-secondary" />
+                                                            <span>Holiday Config</span>
+                                                        </h3>
+                                                        <p className="text-[10px] font-bold text-primary/40 uppercase tracking-widest mt-1">
+                                                            Date: <span className="text-secondary font-black">{selectedHolidayDate}</span>
+                                                        </p>
+                                                    </div>
+                                                    <button 
+                                                        onClick={() => setIsHolidayFormOpen(false)}
+                                                        className="h-10 w-10 bg-primary/5 hover:bg-primary/10 border border-primary/10 rounded-2xl flex items-center justify-center transition-all text-primary/60 hover:text-primary text-xl"
+                                                    >
+                                                        &times;
+                                                    </button>
+                                                </div>
+
+                                                <form onSubmit={handleSaveHoliday} className="space-y-6">
+                                                    <div className="space-y-2">
+                                                        <label className="text-[10px] font-black tracking-widest uppercase text-primary/40 ml-2">Type</label>
+                                                        <div className="grid grid-cols-2 gap-4">
+                                                            <button 
+                                                                type="button"
+                                                                onClick={() => setHolidayType('GAZETTED')}
+                                                                className={`p-3.5 rounded-2xl border font-black text-xs uppercase tracking-wider transition-all flex flex-col items-center justify-center gap-1 ${holidayType === 'GAZETTED' ? 'bg-secondary/20 border-secondary text-secondary shadow-lg shadow-secondary/10' : 'bg-primary/5 border-primary/5 hover:border-primary/10 text-primary/60'}`}
+                                                            >
+                                                                GAZETTED
+                                                            </button>
+                                                            <button 
+                                                                type="button"
+                                                                onClick={() => setHolidayType('RESTRICTED')}
+                                                                className={`p-3.5 rounded-2xl border font-black text-xs uppercase tracking-wider transition-all flex flex-col items-center justify-center gap-1 ${holidayType === 'RESTRICTED' ? 'bg-orange-500/20 border-orange-500 text-orange-400 shadow-lg shadow-orange-500/10' : 'bg-primary/5 border-primary/5 hover:border-primary/10 text-primary/60'}`}
+                                                            >
+                                                                RESTRICTED
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="space-y-2">
+                                                        <label className="text-[10px] font-black tracking-widest uppercase text-primary/40 ml-2">Holiday Name</label>
+                                                        <input 
+                                                            type="text"
+                                                            value={holidayName}
+                                                            onChange={(e) => setHolidayName(e.target.value)}
+                                                            placeholder="e.g. Diwali"
+                                                            className="w-full bg-primary/5 border border-primary/10 focus:border-secondary rounded-2xl px-5 py-4 text-xs font-bold text-primary focus:outline-none focus:ring-1 focus:ring-secondary transition duration-200"
+                                                        />
+                                                    </div>
+
+                                                    <div className="space-y-2">
+                                                        <label className="text-[10px] font-black tracking-widest uppercase text-primary/40 ml-2">Notes / Description (Optional)</label>
+                                                        <textarea 
+                                                            value={holidayDesc}
+                                                            onChange={(e) => setHolidayDesc(e.target.value)}
+                                                            rows={3}
+                                                            placeholder="Add specific details..."
+                                                            className="w-full bg-primary/5 border border-primary/10 focus:border-secondary rounded-2xl px-5 py-4 text-xs font-bold text-primary focus:outline-none focus:ring-1 focus:ring-secondary transition duration-200 font-medium resize-none"
+                                                        />
+                                                    </div>
+                                                </form>
+                                            </div>
+
+                                            <div className="flex gap-4 border-t border-primary/5 pt-6">
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => setIsHolidayFormOpen(false)}
+                                                    className="flex-1 bg-primary/5 hover:bg-primary/10 border border-primary/5 rounded-2xl px-5 py-4 text-xs font-black uppercase tracking-widest text-primary/60 hover:text-primary transition duration-200 text-center"
+                                                >
+                                                    Cancel
+                                                </button>
+                                                <button 
+                                                    type="button"
+                                                    onClick={handleSaveHoliday}
+                                                    disabled={isHolidaysLoading}
+                                                    className="flex-1 bg-primary hover:bg-primary/90 text-background rounded-2xl px-5 py-4 text-xs font-black uppercase tracking-widest transition duration-200 text-center shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
+                                                >
+                                                    {isHolidaysLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : 'Save'}
+                                                </button>
+                                            </div>
+                                        </motion.div>
+                                    </div>
+                                )}
+                            </AnimatePresence>
+                        </motion.div>
                     ) : (
                         <motion.div 
                             key="team-management"
@@ -1175,7 +1548,7 @@ export default function AdminPortal() {
                             exit={{ opacity: 0 }}
                             className="space-y-12"
                         >
-                            <section className="max-w-2xl mx-auto bg-surface border border-primary/5 p-8 rounded-[3rem] space-y-8 shadow-xl shadow-primary/5">
+                            <section className="max-w-5xl mx-auto bg-surface border border-primary/5 p-8 rounded-[3rem] space-y-8 shadow-xl shadow-primary/5">
                                 <div className="text-center space-y-2">
                                     <h2 className="text-2xl font-black text-primary uppercase tracking-tight italic">
                                         Add to {activeTab === 'faculty' ? 'Faculty' : 'Caretaker'} Team

@@ -246,7 +246,7 @@ export default function CompleteProfilePage() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="w-full max-w-md bg-surface p-6 sm:p-8 rounded-3xl border border-primary/10 shadow-2xl"
+          className="w-full max-w-2xl bg-surface p-6 sm:p-12 rounded-3xl border border-primary/10 shadow-2xl"
         >
           <AnimatePresence mode="wait">
             {!isSuccess ? (

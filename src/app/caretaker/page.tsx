@@ -78,6 +78,7 @@ export default function CaretakerDashboard() {
       }
       if (isNaN(date.getTime())) return "Invalid Date";
       return date.toLocaleString("en-IN", {
+        timeZone: "Asia/Kolkata",
         day: "2-digit",
         month: "short",
         year: "numeric",

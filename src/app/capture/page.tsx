@@ -120,6 +120,7 @@ function CaptureContent() {
 
   const failureBuffer = useRef<number>(0);
   const lastScanTime = useRef<number>(0);
+  const lastDetectTime = useRef<number>(0);
   const lastLogTime = useRef<number>(0);
 
   const webcamRef = useRef<ReactWebcam>(null);
@@ -442,7 +443,7 @@ function CaptureContent() {
           if (today < proposed) {
             setResultDialog({
               title: "Departure Denied",
-              message: `${rollNumber}\n\nTOO EARLY FOR DEPARTURE.\nPROPOSED DATE: ${new Date(latestLeave.proposed_exit_date).toLocaleDateString()}\nCURRENT DATE: ${new Date().toLocaleDateString()}`,
+              message: `${rollNumber}\n\nTOO EARLY FOR DEPARTURE.\nPROPOSED DATE: ${new Date(latestLeave.proposed_exit_date).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" })}\nCURRENT DATE: ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" })}`,
               type: "error",
             });
             setIsProcessing(false);
@@ -453,7 +454,7 @@ function CaptureContent() {
           if (nowTime > proposedReturn) {
             setResultDialog({
               title: "Departure Denied",
-              message: `${rollNumber}\n\nCANNOT DEPART AFTER PROPOSED RETURN DATE.\nPROPOSED RETURN: ${new Date(latestLeave.proposed_in_date).toLocaleDateString()}`,
+              message: `${rollNumber}\n\nCANNOT DEPART AFTER PROPOSED RETURN DATE.\nPROPOSED RETURN: ${new Date(latestLeave.proposed_in_date).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" })}`,
               type: "error",
             });
             setIsProcessing(false);
@@ -512,6 +513,44 @@ function CaptureContent() {
 
           dbMessage = "CHECK-IN SUCCESSFUL & ARCHIVED";
         } else {
+          // Fetch student to retrieve gender
+          const student = await tablesDB.getRow({
+            databaseId: DB_ID,
+            tableId: COLL_STUDENTS,
+            rowId: rollNumber,
+          }).catch(() => null);
+
+          const gender = student?.gender ? student.gender.toUpperCase() : "MALE";
+          const nowInIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+          const hours = nowInIST.getHours();
+          const minutes = nowInIST.getMinutes();
+          const totalMinutes = hours * 60 + minutes;
+
+          let isDisabled = false;
+          let restrictedMsg = "";
+
+          if (gender === "FEMALE") {
+            if (totalMinutes >= 1110 || totalMinutes < 180) {
+              isDisabled = true;
+              restrictedMsg = "Outing for girls is disabled starting from 6:30 PM to 3:00 AM.";
+            }
+          } else {
+            if (totalMinutes >= 1350 || totalMinutes < 180) {
+              isDisabled = true;
+              restrictedMsg = "Outing for boys is disabled starting from 10:30 PM to 3:00 AM.";
+            }
+          }
+
+          if (isDisabled) {
+            setResultDialog({
+              title: "Outing Disabled",
+              message: `${rollNumber}\n\n⚠️ ${restrictedMsg}`,
+              type: "error",
+            });
+            setIsProcessing(false);
+            return;
+          }
+
           await tablesDB.createRow({
             databaseId: DB_ID,
             tableId: COLL_OUTING,
@@ -883,6 +922,14 @@ function CaptureContent() {
     let animationFrameId: number;
 
     const detect = async () => {
+      const now = performance.now();
+      const throttleMs = isIOSDevice.current ? 200 : 100;
+      if (now - lastDetectTime.current < throttleMs) {
+        animationFrameId = requestAnimationFrame(detect);
+        return;
+      }
+      lastDetectTime.current = now;
+
       if (typeof window === "undefined" || !isMounted.current) return;
 
       // Safety: Stop if tab is hidden or a dialog is open

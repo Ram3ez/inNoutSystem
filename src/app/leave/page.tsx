@@ -12,7 +12,7 @@ import {
   MapPin,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { databases, tablesDB, ID } from "@/lib/appwrite";
+import { databases, tablesDB, fetchAllRows, ID } from "@/lib/appwrite";
 import { Query } from "appwrite";
 import { GradientBackground } from "@/components/GradientBackground";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
@@ -36,10 +36,37 @@ export default function LeavePage() {
 
   const [requiresFaculty, setRequiresFaculty] = useState(false);
   const [isManualOverride, setIsManualOverride] = useState(false);
+  const [holidaysList, setHolidaysList] = useState<any[]>([]);
 
   const [caretakerEmail, setCaretakerEmail] = useState("");
   const [facultyEmail, setFacultyEmail] = useState("");
   const [isAssignmentsLoading, setIsAssignmentsLoading] = useState(true);
+
+  React.useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      router.push("/login");
+      return;
+    }
+    const profileId = user.email ? user.email.split("@")[0].toUpperCase() : "";
+    const isStudent = /^[A-Z]{2}[0-9]{2}[A-Z][0-9]{4}$/.test(profileId);
+    if (!isStudent) {
+      router.push("/");
+    }
+  }, [authLoading, user, router]);
+
+  // Load holidays independently as soon as the page loads
+  React.useEffect(() => {
+    const loadHolidays = async () => {
+      try {
+        const hResp = await fetchAllRows<any>(DB_ID, COLLECTIONS.HOLIDAYS);
+        setHolidaysList(hResp);
+      } catch (err) {
+        console.error("Failed to load holidays list:", err);
+      }
+    };
+    loadHolidays();
+  }, []);
 
   // Dynamic Approver Lookup from Database
   React.useEffect(() => {
@@ -101,21 +128,35 @@ export default function LeavePage() {
   React.useEffect(() => {
     if (!exitDate || !inDate || isManualOverride) return;
 
-    const departure = new Date(exitDate);
-    const returnDate = new Date(inDate);
+    const start = new Date(exitDate);
+    const end = new Date(inDate);
+
+    // Normalize both to start of day to completely eliminate any time-of-day offsets
+    start.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+
     let hasWorkingDay = false;
 
-    const tempDate = new Date(departure);
-    while (tempDate <= returnDate) {
+    const tempDate = new Date(start);
+    while (tempDate <= end) {
       const day = tempDate.getDay();
-      if (day !== 0 && day !== 6) {
+      const y = tempDate.getFullYear();
+      const m = String(tempDate.getMonth() + 1).padStart(2, "0");
+      const d = String(tempDate.getDate()).padStart(2, "0");
+      const dateStr = `${y}-${m}-${d}`;
+
+      const isGazetted = holidaysList.some(
+        (h) => h.date && h.date.trim() === dateStr && h.type === "GAZETTED"
+      );
+
+      if (day !== 0 && day !== 6 && !isGazetted) {
         hasWorkingDay = true;
         break;
       }
       tempDate.setDate(tempDate.getDate() + 1);
     }
     setRequiresFaculty(hasWorkingDay);
-  }, [exitDate, inDate, isManualOverride]);
+  }, [exitDate, inDate, isManualOverride, holidaysList]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
