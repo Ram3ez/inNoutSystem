@@ -5,7 +5,7 @@ A premium, touchless biometric hostel management system built for **NIT Puducher
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Next.js](https://img.shields.io/badge/Next.js-15-black)
 ![Appwrite](https://img.shields.io/badge/Backend-Appwrite%201.9-red)
-![AI](https://img.shields.io/badge/AI-GhostFace%20(ONNX)%20%2B%20MediaPipe-green)
+![AI](https://img.shields.io/badge/AI-GhostFace%20(ONNX)%20%2B%20EdgeFace%20%2B%20MediaPipe-green)
 ![PWA](https://img.shields.io/badge/PWA-Offline%20First-orange)
 
 ---
@@ -13,10 +13,11 @@ A premium, touchless biometric hostel management system built for **NIT Puducher
 ## 🚀 Key Features
 
 ### 1. Hybrid AI Biometric Engine
-*   **Web Worker Offloading**: High-performance face detection and search are handled in dedicated background threads (`faceSearch.worker.ts`, `ghostface.worker.ts`), ensuring a 60FPS UI even during heavy AI processing.
+*   **Web Worker Offloading**: High-performance face detection and search are handled in dedicated background threads (`faceSearch.worker.ts`, `ghostface.worker.ts`, and `edgeface.worker.ts`), ensuring a 60FPS UI even during heavy AI processing.
 *   **Precision AI Pipeline**: 
     *   **MediaPipe**: Used for real-time face landmarking, pose estimation, and "Stability" checks.
     *   **GhostFaceNet (ONNX)**: A specialized SOTA recognition model running via `onnxruntime-web` for generating 512-d embeddings with extreme precision, utilizing MediaPipe for direct face alignment.
+    *   **EdgeFace (ONNX)**: An optimized lightweight model running via `onnxruntime-web` for low-latency facial embedding generation on the edge.
     *   **face-api.js**: Leveraged as an alternative or fallback model for standard detection and alignment.
 *   **Temporal Consensus**: Recognition isn't instant; the system requires a stable "consensus" over multiple frames to eliminate false positives.
 
@@ -68,7 +69,7 @@ A premium, touchless biometric hostel management system built for **NIT Puducher
 | :--- | :--- |
 | **Framework** | Next.js 15 (App Router) |
 | **Runtime** | React 19 + TypeScript |
-| **AI Processing** | GhostFaceNet (ONNX) + MediaPipe + face-api.js |
+| **AI Processing** | GhostFaceNet (ONNX) + EdgeFace (ONNX) + MediaPipe + face-api.js |
 | **Backend** | Appwrite (Auth, TablesDB, Teams, Storage) |
 | **Offline Sync** | Service Workers + IndexedDB |
 | **Styling** | Tailwind CSS 4 + Framer Motion |
@@ -80,13 +81,13 @@ A premium, touchless biometric hostel management system built for **NIT Puducher
 
 ### Biometric Pipeline
 1.  **Detection & Stability**: MediaPipe tracks real-time face landmarks, pose estimation, and face stability to ensure image quality before extraction.
-2.  **Worker Transfer**: The aligned face frame is passed to `ghostface.worker.ts`.
-3.  **Embedding Generation**: GhostFaceNet generates a 512-dimension descriptor independently using the MediaPipe-aligned image.
+2.  **Worker Transfer**: The aligned face frame is passed to either `ghostface.worker.ts` or `edgeface.worker.ts` depending on the active model.
+3.  **Embedding Generation**: GhostFaceNet or EdgeFace generates a 512-dimension descriptor independently using the aligned image.
 4.  **Conflict Detection**: The system checks the `CONFLICT_GAP` between the best match and the runner-up to prevent identity confusion among lookalikes.
 5.  **Sync**: Successful matches update the `outing` or `leave` records via the `OfflineSyncManager`.
 
 ### Centralized Calibration
-All AI sensitivities are centralized in `src/lib/constants.ts`, allowing for instant adjustment of matching thresholds, registration diversity requirements, and adaptive profile update scores.
+All AI sensitivities are centralized in `src/lib/constants.ts`, allowing for instant adjustment of matching thresholds, registration diversity requirements, and adaptive profile update scores for all three models (**GhostFaceNet**, **EdgeFace**, **Face-API**).
 
 ---
 
@@ -94,7 +95,9 @@ All AI sensitivities are centralized in `src/lib/constants.ts`, allowing for ins
 
 ### Relational Tables
 *   `student_details`: Metadata for students (Roll Number as Primary Key).
-*   `facial_embeddings`: High-dimensional AI vectors for each student.
+*   `facial_embeddings`: High-dimensional vectors for the standard Face-API model.
+*   `facial_embeddings_new`: High-dimensional vectors for the GhostFaceNet model.
+*   `facial_embeddings_edge`: High-dimensional vectors for the EdgeFace model.
 *   `outing` / `leave`: Real-time tracking of student movement.
 *   `staff_details`: Building/Room assignments for faculty and caretakers.
 

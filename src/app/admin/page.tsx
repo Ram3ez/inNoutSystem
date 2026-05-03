@@ -714,6 +714,8 @@ export default function AdminPortal() {
                                                     <span className="text-[8px] font-bold uppercase tracking-widest opacity-30">GhostFace Missing</span>
                                                 </div>
                                             )}
+
+
                                         </div>
 
                                         <div className="w-full md:w-1/4 flex justify-center md:justify-end items-center space-x-3 opacity-100 md:opacity-40 md:group-hover:opacity-100 transition-opacity">

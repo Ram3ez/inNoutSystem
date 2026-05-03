@@ -12,32 +12,25 @@ ort.env.wasm.proxy = false;
 };
 
 let session: ort.InferenceSession | null = null;
-let loadingPromise: Promise<void> | null = null;
-let isInitializing = false;
-let isProcessing = false;
+let loadingPromise: Promise<ort.InferenceSession> | null = null;
 
-async function initSession() {
-  if (session) return;
-  if (isInitializing && loadingPromise) return loadingPromise;
+async function initSessionV1(): Promise<ort.InferenceSession> {
+  if (session) return session;
+  if (loadingPromise) return loadingPromise;
 
-  isInitializing = true;
   loadingPromise = (async () => {
     try {
-      console.log(
-        "[👷 WORKER] Initializing GhostFaceNet ONNX Session (Stability Mode)...",
-      );
-
-      // On mobile, WASM is significantly more stable than experimental WebGPU
-      session = await ort.InferenceSession.create("/models/ghostfacenet.onnx", {
+      console.log("[👷 WORKER] Lazily Initializing GhostFaceNet v1 ONNX Session...");
+      const s = await ort.InferenceSession.create("/models/ghostfacenet.onnx", {
         executionProviders: ["wasm"],
         graphOptimizationLevel: "all",
       });
-      console.log("[👷 WORKER] GhostFaceNet Engine Ready (WASM).");
+      session = s;
+      console.log("[👷 WORKER] GhostFaceNet v1 Engine Ready (WASM).");
+      return s;
     } catch (e) {
-      console.error("[👷 WORKER] ONNX init failed", e);
-      session = null;
-    } finally {
-      isInitializing = false;
+      console.error("[👷 WORKER] ONNX init v1 failed", e);
+      throw e;
     }
   })();
 
@@ -65,43 +58,25 @@ self.onmessage = async (e: MessageEvent) => {
   const { type, imageData, id } = e.data;
 
   if (type === "INIT") {
-    await initSession();
+    try {
+      await initSessionV1();
+    } catch (e) {
+      console.error("[👷 WORKER] Preload failed:", e);
+    }
     self.postMessage({ type: "INIT_DONE" });
     return;
   }
 
   if (type === "INFERENCE") {
-    if (isProcessing || isInitializing) {
-      // Send a zeroed embedding to resolve the promise without blocking the main thread
-      const empty = new Float32Array(512);
-      (self as any).postMessage(
-        { type: "INFERENCE_DONE", embedding: empty, id },
-        [empty.buffer],
-      );
-      return;
-    }
-
-    if (!session) {
-      await initSession();
-    }
-
-    if (!session) {
-      (self as any).postMessage({
-        type: "ERROR",
-        error: "Session not initialized",
-        id,
-      });
-      return;
-    }
-
-    isProcessing = true;
     try {
+      const activeSession = await initSessionV1();
+
       const inputTensor = await preprocess(imageData);
       const feeds: any = {};
-      feeds[session.inputNames[0]] = inputTensor;
+      feeds[activeSession.inputNames[0]] = inputTensor;
 
-      const outputMap = await session.run(feeds);
-      const outputTensor = outputMap[session.outputNames[0]];
+      const outputMap = await activeSession.run(feeds);
+      const outputTensor = outputMap[activeSession.outputNames[0]];
 
       const embedding = outputTensor.data as Float32Array;
 
@@ -127,8 +102,6 @@ self.onmessage = async (e: MessageEvent) => {
         { type: "INFERENCE_DONE", embedding: empty, id },
         [empty.buffer],
       );
-    } finally {
-      isProcessing = false;
     }
   }
 };

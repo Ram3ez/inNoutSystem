@@ -73,7 +73,6 @@ export async function extractGhostFaceEmbedding(
 let sharedCropCanvas: HTMLCanvasElement | null = null;
 
 /**
- * Helper to crop, ALIGN, and resize a face from a video/canvas element.
  * Uses eye landmarks to rotate the face so eyes are level.
  */
 export async function getGhostFaceDescriptor(

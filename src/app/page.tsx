@@ -261,6 +261,17 @@ export default function Dashboard() {
                 delay={0.31}
                 onClick={() => router.push("/settings")}
               />
+              <ActionCard
+                title="Register Face"
+                subtitle={
+                  (studentData as any)?.edgeface_registered && (studentData as any)?.ghostface_registered
+                    ? "Face fully registered (Locked)"
+                    : "Register Face Data"
+                }
+                icon={<ScanFace className="text-primary/20" size={32} />}
+                delay={0.33}
+                onClick={() => router.push("/register-face")}
+              />
             </>
           )}
           {isAdmin && (

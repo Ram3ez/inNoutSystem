@@ -47,6 +47,10 @@ import {
 import * as faceapi from "face-api.js";
 import { addToOfflineQueue, isSystemOnline } from "@/lib/offlineQueue";
 import { initGhostFace, getGhostFaceDescriptor } from "@/lib/ghostfaceEngine";
+import {
+  initEdgeFace,
+  getEdgeFaceDescriptor as getEdgeFaceDescriptorFn,
+} from "@/lib/edgefaceEngine";
 
 const SSD_OPTIONS = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.2 });
 
@@ -94,15 +98,14 @@ function CaptureContent() {
   const [aiLoaded, setAiLoaded] = useState(
     typeof window !== "undefined" ? isAIReady() && isLandmarkerLoaded() : false,
   );
-  const [modelType, setModelType] = useState<"face-api" | "ghostface">(
-    "ghostface",
-  );
+  const [modelType, setModelType] = useState<
+    "face-api" | "ghostface" | "edgeface"
+  >("edgeface");
   const [showNotRecognized, setShowNotRecognized] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const [isBarcodeModalOpen, setIsBarcodeModalOpen] = useState(false);
   const [barcodeInput, setBarcodeInput] = useState("");
   const [barcodeScanFeedback, setBarcodeScanFeedback] = useState("");
-
 
   const [livenessScore, setLivenessScore] = useState(0);
   const [isStable, setIsStable] = useState(true);
@@ -114,7 +117,7 @@ function CaptureContent() {
   const [lastMatchData, setLastMatchData] = useState<{
     descriptor: Float32Array;
     score: number;
-    modelType: "face-api" | "ghostface";
+    modelType: "face-api" | "ghostface" | "edgeface";
     rollNo: string;
   } | null>(null);
 
@@ -251,16 +254,20 @@ function CaptureContent() {
       if (!isSystemOnline()) {
         addToOfflineQueue(rollNumber);
 
-        // Adaptive Rolling Update (Offline compatible) - ONLY for GhostFace
+        // Adaptive Rolling Update (Offline compatible) - ONLY for GhostFace & EdgeFace
         if (
           lastMatchData?.rollNo === rollNumber &&
-          lastMatchData?.modelType === "ghostface" &&
-          lastMatchData?.score >= BIOMETRIC_THRESHOLDS.GHOSTFACE.ADAPTIVE_UPDATE
+          (lastMatchData?.modelType === "ghostface" ||
+            lastMatchData?.modelType === "edgeface") &&
+          lastMatchData?.score >=
+            (lastMatchData?.modelType === "ghostface"
+              ? BIOMETRIC_THRESHOLDS.GHOSTFACE.ADAPTIVE_UPDATE
+              : BIOMETRIC_THRESHOLDS.EDGEFACE.ADAPTIVE_UPDATE)
         ) {
           rollingUpdateEmbedding(
             rollNumber,
             lastMatchData.descriptor,
-            "ghostface",
+            lastMatchData.modelType,
           )
             .then(() =>
               serverLog(
@@ -290,7 +297,8 @@ function CaptureContent() {
         });
 
         const latestLeaveForCheck = leavesForChecks.sort(
-          (a: any, b: any) => new Date(b.$createdAt).getTime() - new Date(a.$createdAt).getTime()
+          (a: any, b: any) =>
+            new Date(b.$createdAt).getTime() - new Date(a.$createdAt).getTime(),
         )[0];
 
         if (latestLeaveForCheck && !latestLeaveForCheck.exit_date_time) {
@@ -299,7 +307,9 @@ function CaptureContent() {
             tableId: COLLECTIONS.OUTING,
             queries: [Query.equal("roll_no", rollNumber)],
           });
-          const activeOuting = outingsForChecks.find((doc: any) => !doc.in_time);
+          const activeOuting = outingsForChecks.find(
+            (doc: any) => !doc.in_time,
+          );
 
           if (activeOuting) {
             setResultDialog({
@@ -325,7 +335,9 @@ function CaptureContent() {
             tableId: COLLECTIONS.LEAVE,
             queries: [Query.equal("roll_no", rollNumber)],
           });
-          const activeLeave = leavesForChecks.find((doc: any) => doc.exit_date_time && !doc.in_date_time);
+          const activeLeave = leavesForChecks.find(
+            (doc: any) => doc.exit_date_time && !doc.in_date_time,
+          );
 
           if (activeLeave) {
             setResultDialog({
@@ -514,14 +526,20 @@ function CaptureContent() {
           dbMessage = "CHECK-IN SUCCESSFUL & ARCHIVED";
         } else {
           // Fetch student to retrieve gender
-          const student = await tablesDB.getRow({
-            databaseId: DB_ID,
-            tableId: COLL_STUDENTS,
-            rowId: rollNumber,
-          }).catch(() => null);
+          const student = await tablesDB
+            .getRow({
+              databaseId: DB_ID,
+              tableId: COLL_STUDENTS,
+              rowId: rollNumber,
+            })
+            .catch(() => null);
 
-          const gender = student?.gender ? student.gender.toUpperCase() : "MALE";
-          const nowInIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+          const gender = student?.gender
+            ? student.gender.toUpperCase()
+            : "MALE";
+          const nowInIST = new Date(
+            new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }),
+          );
           const hours = nowInIST.getHours();
           const minutes = nowInIST.getMinutes();
           const totalMinutes = hours * 60 + minutes;
@@ -532,12 +550,14 @@ function CaptureContent() {
           if (gender === "FEMALE") {
             if (totalMinutes >= 1110 || totalMinutes < 180) {
               isDisabled = true;
-              restrictedMsg = "Outing for girls is disabled starting from 6:30 PM to 3:00 AM.";
+              restrictedMsg =
+                "Outing for girls is disabled starting from 6:30 PM to 3:00 AM.";
             }
           } else {
             if (totalMinutes >= 1350 || totalMinutes < 180) {
               isDisabled = true;
-              restrictedMsg = "Outing for boys is disabled starting from 10:30 PM to 3:00 AM.";
+              restrictedMsg =
+                "Outing for boys is disabled starting from 10:30 PM to 3:00 AM.";
             }
           }
 
@@ -571,16 +591,20 @@ function CaptureContent() {
         }
       }
 
-      // [🔄 ADAPTIVE] Rolling Update after user verification & DB success - ONLY for GhostFace
+      // [🔄 ADAPTIVE] Rolling Update after user verification & DB success - ONLY for GhostFace & EdgeFace
       if (
         lastMatchData?.rollNo === rollNumber &&
-        lastMatchData?.modelType === "ghostface" &&
-        lastMatchData?.score >= BIOMETRIC_THRESHOLDS.GHOSTFACE.ADAPTIVE_UPDATE
+        (lastMatchData?.modelType === "ghostface" ||
+          lastMatchData?.modelType === "edgeface") &&
+        lastMatchData?.score >=
+          (lastMatchData?.modelType === "ghostface"
+            ? BIOMETRIC_THRESHOLDS.GHOSTFACE.ADAPTIVE_UPDATE
+            : BIOMETRIC_THRESHOLDS.EDGEFACE.ADAPTIVE_UPDATE)
       ) {
         rollingUpdateEmbedding(
           rollNumber,
           lastMatchData.descriptor,
-          "ghostface",
+          lastMatchData.modelType,
         )
           .then(() =>
             serverLog(
@@ -608,7 +632,10 @@ function CaptureContent() {
     }
   };
 
-  const handleBarcodeSubmit = async (e?: React.FormEvent, directInput?: string) => {
+  const handleBarcodeSubmit = async (
+    e?: React.FormEvent,
+    directInput?: string,
+  ) => {
     if (e) e.preventDefault();
     const scanned = (directInput || barcodeInput.trim()).toUpperCase();
     if (!scanned) return;
@@ -745,8 +772,8 @@ function CaptureContent() {
         let descriptor: Float32Array;
 
         try {
-          if (modelType === "ghostface") {
-            // For GhostFaceNet, we now use MediaPipe's high-fidelity results instead of Face-API SSD
+          if (modelType === "ghostface" || modelType === "edgeface") {
+            // For GhostFaceNet and EdgeFace, we use MediaPipe's high-fidelity results
             const mpResult = lastMediaPipeResult.current;
 
             if (
@@ -763,25 +790,41 @@ function CaptureContent() {
                 setIsScanning(false);
                 return;
               }
-              descriptor = await getGhostFaceDescriptor(
-                videoElement,
-                detection.detection.box,
-                detection.landmarks,
-              );
+              descriptor =
+                modelType === "ghostface"
+                  ? await getGhostFaceDescriptor(
+                      videoElement,
+                      detection.detection.box,
+                      detection.landmarks,
+                      false,
+                    )
+                  : await getEdgeFaceDescriptorFn(
+                      videoElement,
+                      detection.detection.box,
+                      detection.landmarks,
+                      false,
+                    );
             } else {
               // --- HIGH PRECISION MIGRATION ---
-              // Use MediaPipe landmarks directly for GhostFace alignment
               const landmarks = mpResult.faceLandmarks[0];
-              // Convert MP landmarks format to what GhostFace alignment expects
               const box = mpResult.faceBoundingBoxes
                 ? mpResult.faceBoundingBoxes[0]
                 : { x: 0, y: 0, width: 0, height: 0 };
 
-              descriptor = await getGhostFaceDescriptor(
-                videoElement,
-                box,
-                landmarks, // getGhostFaceDescriptor now handles MP landmark arrays
-              );
+              descriptor =
+                modelType === "ghostface"
+                  ? await getGhostFaceDescriptor(
+                      videoElement,
+                      box,
+                      landmarks,
+                      false,
+                    )
+                  : await getEdgeFaceDescriptorFn(
+                      videoElement,
+                      box,
+                      landmarks,
+                      false,
+                    );
             }
           } else {
             const detection = await faceapi
@@ -877,7 +920,7 @@ function CaptureContent() {
         }
 
         // Consensus logic
-        const targetConsensus = modelType === "ghostface" ? 1 : 2;
+        const targetConsensus = 1;
 
         if (consensusBuffer.current.count < targetConsensus) {
           setDetectionFeedback(
@@ -1107,7 +1150,7 @@ function CaptureContent() {
           </div>
 
           {/* Model Selector Toggle */}
-          <div className="flex scale-90 sm:scale-100 bg-primary/5 p-1 rounded-2xl border border-primary/10 shadow-inner">
+          <div className="flex bg-primary/5 p-1 rounded-2xl border border-primary/10 shadow-inner">
             <button
               onClick={async () => {
                 if (modelType === "face-api") return;
@@ -1116,23 +1159,39 @@ function CaptureContent() {
                 setModelType("face-api");
                 setAiLoaded(true);
               }}
-              className={`px-3 py-1.5 rounded-xl text-[9px] font-bold uppercase tracking-widest transition-all ${
+              className={`px-3 sm:px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all duration-300 ${
                 modelType === "face-api"
-                  ? "bg-primary text-background shadow-md"
-                  : "text-primary/40 hover:text-primary"
+                  ? "bg-primary text-background shadow-lg scale-105"
+                  : "text-primary/40 hover:text-primary hover:bg-primary/5"
               }`}
             >
               Face-API
             </button>
             <button
               onClick={() => setModelType("ghostface")}
-              className={`px-3 py-1.5 rounded-xl text-[9px] font-bold uppercase tracking-widest transition-all ${
+              className={`px-3 sm:px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all duration-300 ${
                 modelType === "ghostface"
-                  ? "bg-secondary text-background shadow-md"
-                  : "text-primary/40 hover:text-primary"
+                  ? "bg-secondary text-background shadow-lg scale-105"
+                  : "text-primary/40 hover:text-primary hover:bg-primary/5"
               }`}
             >
-              GhostFaceNet (ONNX)
+              GhostFaceNet
+            </button>
+            <button
+              onClick={async () => {
+                if (modelType === "edgeface") return;
+                setAiLoaded(false);
+                await initEdgeFace();
+                setModelType("edgeface");
+                setAiLoaded(true);
+              }}
+              className={`px-3 sm:px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all duration-300 ${
+                modelType === "edgeface"
+                  ? "bg-secondary text-background shadow-lg scale-105"
+                  : "text-primary/40 hover:text-primary hover:bg-primary/5"
+              }`}
+            >
+              EdgeFace
             </button>
           </div>
 
@@ -1319,7 +1378,7 @@ function CaptureContent() {
                 >
                   Done
                 </button>
-               ) : (
+              ) : (
                 <div className="flex flex-col space-y-4">
                   <button
                     onClick={() => {
@@ -1436,20 +1495,26 @@ function CaptureContent() {
             >
               <form onSubmit={handleBarcodeSubmit} className="space-y-6">
                 <div className="w-16 h-16 bg-secondary/10 rounded-full flex items-center justify-center text-secondary mx-auto mb-2">
-                  <RefreshCw size={32} className="animate-spin duration-[4000ms]" />
+                  <RefreshCw
+                    size={32}
+                    className="animate-spin duration-[4000ms]"
+                  />
                 </div>
                 <h2 className="text-xl font-bold text-primary uppercase tracking-tight">
                   Enter Roll Number
                 </h2>
                 <p className="text-primary/40 text-[10px] font-bold uppercase tracking-widest mb-4 border-b border-primary/5 pb-4">
-                  Please scan your ID card with your barcode scanner or type manually
+                  Please scan your ID card with your barcode scanner or type
+                  manually
                 </p>
 
                 <div className="relative">
                   <input
                     type="text"
                     value={barcodeInput}
-                    onChange={(e) => setBarcodeInput(e.target.value.toUpperCase())}
+                    onChange={(e) =>
+                      setBarcodeInput(e.target.value.toUpperCase())
+                    }
                     placeholder="Enter Roll Number"
                     autoFocus
                     className="w-full h-12 px-4 rounded-xl border border-primary/10 bg-black/20 text-center text-lg font-bold tracking-widest text-primary focus:outline-none focus:border-secondary transition-all"

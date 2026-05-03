@@ -18,16 +18,19 @@ import {
   isAIReady,
   getMemoryCache,
   getMemoryCacheGhost,
+  getMemoryCacheEdge,
 } from "@/lib/faceCache";
 import { BIOMETRIC_THRESHOLDS } from "@/lib/constants";
 import { getLandmarker, getLandmarkerSync } from "@/lib/aiEngine";
 import { initGhostFace, getGhostFaceDescriptor } from "@/lib/ghostfaceEngine";
+import { initEdgeFace, getEdgeFaceDescriptor as getEdgeFaceDescriptorFn } from "@/lib/edgefaceEngine";
 import { GradientBackground } from "@/components/GradientBackground";
 
 interface CompareResult {
   rollNo: string;
   ghostScore: number;
   faceApiScore: number;
+  edgeScore: number;
 }
 
 export default function CompareLab() {
@@ -49,6 +52,8 @@ export default function CompareLab() {
       await getLandmarker();
       setStatus("Initializing GhostFace Engine...");
       await initGhostFace();
+      setStatus("Initializing EdgeFace Engine...");
+      await initEdgeFace();
       setIsReady(true);
       setStatus("");
     };
@@ -155,11 +160,18 @@ export default function CompareLab() {
           height: (maxY - minY) * sh,
         };
 
-        // Use MediaPipe landmarks for GhostFace parity!
         const ghostDescriptor = await getGhostFaceDescriptor(
           cropCanvas,
           mpBox,
           mpLandmarks,
+          false,
+        );
+
+        const edgeDescriptor = await getEdgeFaceDescriptorFn(
+          cropCanvas,
+          mpBox,
+          mpLandmarks,
+          false,
         );
 
         // Yield to browser thread to release WASM/VRAM buffers before launching legacy path
@@ -177,6 +189,7 @@ export default function CompareLab() {
         const faceApiDescriptor = faceApiDetection?.descriptor;
 
         if (!ghostDescriptor) throw new Error("GhostFace engine failed");
+        if (!edgeDescriptor) throw new Error("EdgeFace engine failed");
 
         // NOW WE CAN FREEZE
         setImgSrc(screenshot);
@@ -186,8 +199,13 @@ export default function CompareLab() {
 
         const ghostCache = getMemoryCacheGhost();
         const faceApiCache = getMemoryCache();
+        const edgeCache = getMemoryCacheEdge();
         const allRollNos = Array.from(
-          new Set([...Object.keys(ghostCache), ...Object.keys(faceApiCache)]),
+          new Set([
+            ...Object.keys(ghostCache),
+            ...Object.keys(faceApiCache),
+            ...Object.keys(edgeCache),
+          ]),
         );
 
         const comparison: CompareResult[] = [];
@@ -209,6 +227,18 @@ export default function CompareLab() {
               });
             }
 
+            // EdgeFace (Cosine Similarity)
+            let edgeMax = 0;
+            if (edgeCache[rollNo]) {
+              edgeCache[rollNo].forEach((saved) => {
+                let score = 0;
+                for (let j = 0; j < saved.length; j++) {
+                  score += edgeDescriptor[j] * saved[j];
+                }
+                if (score > edgeMax) edgeMax = score;
+              });
+            }
+
             // Face-API (Euclidean converted to score)
             let faceApiMax = 0;
             if (faceApiCache[rollNo] && faceApiDescriptor) {
@@ -226,6 +256,7 @@ export default function CompareLab() {
               rollNo,
               ghostScore: ghostMax,
               faceApiScore: faceApiMax,
+              edgeScore: edgeMax,
             });
           });
 
@@ -237,8 +268,8 @@ export default function CompareLab() {
         }
 
         setStatus("AI Step 4: Sorting Leaderboard...");
-        // Sort by best ghost score
-        comparison.sort((a, b) => b.ghostScore - a.ghostScore);
+        // Sort by best ghost score or best edge score
+        comparison.sort((a, b) => b.edgeScore - a.edgeScore || b.ghostScore - a.ghostScore);
         setResults(comparison);
         setStatus("");
       } finally {
@@ -387,6 +418,9 @@ export default function CompareLab() {
                       Student ID
                     </th>
                     <th className="p-4 text-[9px] font-black uppercase tracking-widest text-secondary">
+                      EdgeFace (Sim)
+                    </th>
+                    <th className="p-4 text-[9px] font-black uppercase tracking-widest text-secondary">
                       GhostFace (Sim)
                     </th>
                     <th className="p-4 text-[9px] font-black uppercase tracking-widest text-primary">
@@ -398,7 +432,7 @@ export default function CompareLab() {
                   {results.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={3}
+                        colSpan={4}
                         className="p-12 text-center text-primary/20 text-[10px] font-bold uppercase tracking-widest"
                       >
                         Scan your face to see scores
@@ -412,6 +446,21 @@ export default function CompareLab() {
                       >
                         <td className="p-4 font-black text-primary text-sm tracking-tight">
                           {res.rollNo}
+                        </td>
+                        <td className="p-4">
+                          <div className="flex flex-col">
+                            <span
+                              className={`text-sm font-black ${res.edgeScore >= BIOMETRIC_THRESHOLDS.EDGEFACE.MATCH ? "text-secondary" : "text-primary/40"}`}
+                            >
+                              {(res.edgeScore * 100).toFixed(1)}%
+                            </span>
+                            <div className="w-full h-1 bg-primary/5 rounded-full mt-1 overflow-hidden">
+                              <div
+                                className={`h-full transition-all duration-1000 ${res.edgeScore >= BIOMETRIC_THRESHOLDS.EDGEFACE.MATCH ? "bg-secondary" : "bg-primary/20"}`}
+                                style={{ width: `${res.edgeScore * 100}%` }}
+                              />
+                            </div>
+                          </div>
                         </td>
                         <td className="p-4">
                           <div className="flex flex-col">

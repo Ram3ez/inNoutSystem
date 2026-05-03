@@ -45,6 +45,7 @@ import {
   getLandmarkerSync,
 } from "@/lib/aiEngine";
 import { initGhostFace, getGhostFaceDescriptor } from "@/lib/ghostfaceEngine";
+import { initEdgeFace, getEdgeFaceDescriptor as getEdgeFaceDescriptorFn } from "@/lib/edgefaceEngine";
 import * as faceapi from "face-api.js";
 
 
@@ -68,8 +69,8 @@ export default function RegisterFacePage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [showDropdown, setShowDropdown] = useState(false);
   const [aiLoaded, setAiLoaded] = useState(false);
-  const [modelType, setModelType] = useState<"face-api" | "ghostface">(
-    "ghostface",
+  const [modelType, setModelType] = useState<"face-api" | "ghostface" | "edgeface">(
+    "edgeface",
   );
 
   // Unified Enrollment Pipeline States
@@ -189,7 +190,9 @@ export default function RegisterFacePage() {
       // For GhostFace migration, we also allow null/missing values if the user hasn't initialized the column
       const baseQueries =
         modelType === "ghostface"
-          ? [Query.notEqual("ghostface_registered", true)] // Matches false or null
+          ? [Query.notEqual("ghostface_registered", true)]
+          : modelType === "edgeface"
+          ? [Query.notEqual("edgeface_registered", true)]
           : [Query.equal("faceRegistered", false)];
 
       if (!q) {
@@ -310,7 +313,11 @@ export default function RegisterFacePage() {
 
       try {
         const regFlag =
-          modelType === "ghostface" ? "ghostface_registered" : "faceRegistered";
+          modelType === "ghostface"
+            ? "ghostface_registered"
+            : modelType === "edgeface"
+            ? "edgeface_registered"
+            : "faceRegistered";
         await tablesDB.updateRow({
           databaseId: DB_ID,
           tableId: COLLECTIONS.STUDENTS,
@@ -338,61 +345,59 @@ export default function RegisterFacePage() {
     if (!webcamRef.current?.video || enrollmentStatus !== "scanning") return;
     await new Promise((r) => setTimeout(r, 10));
 
+    const tf = (faceapi as any).tf;
+    if (tf && tf.engine) tf.engine().startScope();
+
     try {
       const video = webcamRef.current.video;
       let descriptor: Float32Array | null = null;
 
-      const tf = (faceapi as any).tf;
-      if (tf && tf.engine) tf.engine().startScope();
+      if (modelType === "ghostface" || modelType === "edgeface") {
+        // Use the high-fidelity MediaPipe landmarks already cached by the live loop
+        const landmarks = lastLandmarks.current;
+        if (!landmarks || landmarks.length === 0) return;
 
-      try {
-        if (modelType === "ghostface") {
-          // Use the high-fidelity MediaPipe landmarks already cached by the live loop
-          const landmarks = lastLandmarks.current;
-          if (!landmarks || landmarks.length === 0) return;
+        // Estimate a bounding box from landmarks for the crop
+        const xs = landmarks.map((p: any) => p.x);
+        const ys = landmarks.map((p: any) => p.y);
+        const minX = Math.min(...xs),
+          maxX = Math.max(...xs);
+        const minY = Math.min(...ys),
+          maxY = Math.max(...ys);
 
-          // Estimate a bounding box from landmarks for the crop
-          const xs = landmarks.map((p: any) => p.x);
-          const ys = landmarks.map((p: any) => p.y);
-          const minX = Math.min(...xs),
-            maxX = Math.max(...xs);
-          const minY = Math.min(...ys),
-            maxY = Math.max(...ys);
+        // sw/sh are needed for getGhostFaceDescriptor (pixel conversion)
+        const sw = video.videoWidth;
+        const sh = video.videoHeight;
 
-          // sw/sh are needed for getGhostFaceDescriptor (pixel conversion)
-          const sw = video.videoWidth;
-          const sh = video.videoHeight;
+        const box = {
+          x: minX * sw,
+          y: minY * sh,
+          width: (maxX - minX) * sw,
+          height: (maxY - minY) * sh,
+        };
 
-          const box = {
-            x: minX * sw,
-            y: minY * sh,
-            width: (maxX - minX) * sw,
-            height: (maxY - minY) * sh,
-          };
+        descriptor = modelType === "ghostface"
+          ? await getGhostFaceDescriptor(video, box, landmarks, false)
+          : await getEdgeFaceDescriptorFn(video, box, landmarks, false);
 
-          descriptor = await getGhostFaceDescriptor(video, box, landmarks);
-
-          let isAllZeros = true;
-          for (let i = 0; i < descriptor.length; i++) {
-            if (descriptor[i] !== 0) {
-              isAllZeros = false;
-              break;
-            }
+        let isAllZeros = true;
+        for (let i = 0; i < descriptor.length; i++) {
+          if (descriptor[i] !== 0) {
+            isAllZeros = false;
+            break;
           }
-          if (isAllZeros) return;
-        } else {
-          const detectConfig = new faceapi.SsdMobilenetv1Options({
-            minConfidence: 0.6,
-          });
-          const detection = await faceapi
-            .detectSingleFace(video, detectConfig)
-            .withFaceLandmarks()
-            .withFaceDescriptor();
-          if (!detection) return;
-          descriptor = detection.descriptor;
         }
-      } finally {
-        if (tf && tf.engine) tf.engine().endScope();
+        if (isAllZeros) return;
+      } else {
+        const detectConfig = new faceapi.SsdMobilenetv1Options({
+          minConfidence: 0.6,
+        });
+        const detection = await faceapi
+          .detectSingleFace(video, detectConfig)
+          .withFaceLandmarks()
+          .withFaceDescriptor();
+        if (!detection) return;
+        descriptor = detection.descriptor;
       }
 
       if (!descriptor) return;
@@ -404,8 +409,10 @@ export default function RegisterFacePage() {
         const DIVERSITY_THRESHOLD =
           modelType === "ghostface"
             ? BIOMETRIC_THRESHOLDS.GHOSTFACE.DIVERSITY
+            : modelType === "edgeface"
+            ? BIOMETRIC_THRESHOLDS.EDGEFACE.DIVERSITY
             : BIOMETRIC_THRESHOLDS.FACE_API.DIVERSITY;
-        const isDuplicate = prev.some((existing) => {
+        const isDuplicate = prev.slice(-2).some((existing) => {
           let dot = 0,
             normA = 0,
             normB = 0;
@@ -437,8 +444,7 @@ export default function RegisterFacePage() {
       console.error("Embedding extraction failed:", err);
     } finally {
       try {
-        const tf = (faceapi as any).tf;
-        if (tf && tf.engine && tf.engine().state.numDataBuffers > 0) {
+        if (tf && tf.engine) {
           tf.engine().endScope();
         }
       } catch (e) {}
@@ -518,7 +524,7 @@ export default function RegisterFacePage() {
       if (count < Math.floor(total * 0.25)) {
         // Phase 1: center baseline (looking straight)
         isPoseValidForPhase =
-          Math.abs(relYaw) < 0.2 && Math.abs(relPitch) < 0.2;
+          Math.abs(relYaw) < 0.15 && Math.abs(relPitch) < 0.15;
         setDetectionFeedback(
           isPoseValidForPhase
             ? "HOLD STILL — CAPTURING"
@@ -526,7 +532,7 @@ export default function RegisterFacePage() {
         );
       } else if (count < Math.floor(total * 0.5)) {
         // Phase 2: want a left turn (Swapped for Mirror Fix)
-        isPoseValidForPhase = relYaw > 0.2;
+        isPoseValidForPhase = relYaw > 0.12;
         setDetectionFeedback(
           isPoseValidForPhase
             ? "HOLD STILL — CAPTURING LEFT"
@@ -534,7 +540,7 @@ export default function RegisterFacePage() {
         );
       } else if (count < Math.floor(total * 0.75)) {
         // Phase 3: want a right turn (Swapped for Mirror Fix)
-        isPoseValidForPhase = relYaw < -0.2;
+        isPoseValidForPhase = relYaw < -0.12;
         setDetectionFeedback(
           isPoseValidForPhase
             ? "HOLD STILL — CAPTURING RIGHT"
@@ -543,14 +549,14 @@ export default function RegisterFacePage() {
       } else {
         // Phase 4: Down & Up tilts
         if (count < total - 1) {
-          isPoseValidForPhase = relPitch > 0.1;
+          isPoseValidForPhase = relPitch > 0.08;
           setDetectionFeedback(
             isPoseValidForPhase
               ? "HOLD STILL — CAPTURING DOWN"
               : "TILT HEAD DOWN (CHIN TO CHEST)",
           );
         } else {
-          isPoseValidForPhase = relPitch < -0.08;
+          isPoseValidForPhase = relPitch < -0.06;
           setDetectionFeedback(
             isPoseValidForPhase
               ? "HOLD STILL — CAPTURING UP"
@@ -713,7 +719,7 @@ export default function RegisterFacePage() {
           </div>
           <div className="flex items-center space-x-6">
             {/* Model Selector */}
-            <div className="flex scale-90 sm:scale-100 bg-primary/5 p-1 rounded-2xl border border-primary/10 shadow-inner">
+            <div className="flex bg-primary/5 p-1 rounded-2xl border border-primary/10 shadow-inner">
               <button
                 type="button"
                 onClick={async () => {
@@ -723,10 +729,10 @@ export default function RegisterFacePage() {
                   setModelType("face-api");
                   setAiLoaded(true);
                 }}
-                className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${
+                className={`px-3 sm:px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all duration-300 ${
                   modelType === "face-api"
-                    ? "bg-primary text-background shadow-lg"
-                    : "text-primary/40 hover:text-primary"
+                    ? "bg-primary text-background shadow-lg scale-105"
+                    : "text-primary/40 hover:text-primary hover:bg-primary/5"
                 }`}
               >
                 Face-API
@@ -734,13 +740,30 @@ export default function RegisterFacePage() {
               <button
                 type="button"
                 onClick={() => setModelType("ghostface")}
-                className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${
+                className={`px-3 sm:px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all duration-300 ${
                   modelType === "ghostface"
-                    ? "bg-secondary text-background shadow-lg"
-                    : "text-primary/40 hover:text-primary"
+                    ? "bg-secondary text-background shadow-lg scale-105"
+                    : "text-primary/40 hover:text-primary hover:bg-primary/5"
                 }`}
               >
                 GhostFaceNet
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (modelType === "edgeface") return;
+                  setAiLoaded(false);
+                  await initEdgeFace();
+                  setModelType("edgeface");
+                  setAiLoaded(true);
+                }}
+                className={`px-3 sm:px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all duration-300 ${
+                  modelType === "edgeface"
+                    ? "bg-secondary text-background shadow-lg scale-105"
+                    : "text-primary/40 hover:text-primary hover:bg-primary/5"
+                }`}
+              >
+                EdgeFace
               </button>
             </div>
 
@@ -783,7 +806,7 @@ export default function RegisterFacePage() {
                   <span className="text-[10px] font-bold uppercase tracking-widest text-primary/60">
                     Showing students pending{" "}
                     <span className="text-secondary">
-                      {modelType === "ghostface" ? "GhostFaceNet" : "Face-API"}
+                      {modelType === "ghostface" ? "GhostFaceNet" : modelType === "edgeface" ? "EdgeFace" : "Face-API"}
                     </span>{" "}
                     enrollment
                   </span>

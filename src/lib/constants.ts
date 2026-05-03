@@ -10,6 +10,7 @@ export const COLLECTIONS = {
   FACULTY: "coll_faculty",
   FACIAL_EMBEDDINGS: "facial_embeddings",
   FACIAL_EMBEDDINGS_NEW: "facial_embeddings_new",
+  FACIAL_EMBEDDINGS_EDGE: "facial_embeddings_edge",
   STAFF_DETAILS: "staff_details",
   HOLIDAYS: "holidays",
 } as const;
@@ -43,6 +44,12 @@ export const BIOMETRIC_THRESHOLDS = {
   FACE_API: {
     MATCH: 0.969,
     DIVERSITY: 0.97,
+    CONFLICT_GAP: 0.05,
+  },
+  EDGEFACE: {
+    MATCH: 0.53, // Recognition sensitivity for EdgeFace
+    DIVERSITY: 0.89, // Minimum diversity between registration frames
+    ADAPTIVE_UPDATE: 0.72, // Score required to auto-update profile
     CONFLICT_GAP: 0.05,
   },
 } as const;

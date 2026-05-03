@@ -22,11 +22,19 @@ import * as faceapi from "face-api.js";
 // In-Memory State
 let memoryCache: Record<string, Float32Array[]> = {};
 let memoryCacheGhost: Record<string, Float32Array[]> = {};
+let memoryCacheEdge: Record<string, Float32Array[]> = {};
 let isLoaded = false;
 let isLoading = false;
 
-export function getMemoryCache() { return memoryCache; }
-export function getMemoryCacheGhost() { return memoryCacheGhost; }
+export function getMemoryCache() {
+  return memoryCache;
+}
+export function getMemoryCacheGhost() {
+  return memoryCacheGhost;
+}
+export function getMemoryCacheEdge() {
+  return memoryCacheEdge;
+}
 
 // Worker State
 let searchWorker: Worker | null = null;
@@ -71,15 +79,19 @@ function initSearchWorker() {
 }
 
 function syncWorkerFull(
-  modelType: "face-api" | "ghostface",
+  modelType: "face-api" | "ghostface" | "edgeface",
   data: Record<string, Float32Array[]>,
 ) {
   if (!searchWorker) initSearchWorker();
-  const dim = modelType === "ghostface" ? 512 : 128;
+  const dim = modelType === "face-api" ? 128 : 512;
 
-  // Calculate total size for allocation
+  // Calculate total size for allocation by only counting valid-length embeddings
   let totalCount = 0;
-  for (const id in data) totalCount += data[id].length;
+  for (const id in data) {
+    for (const emb of data[id]) {
+      if (emb && emb.length === dim) totalCount++;
+    }
+  }
 
   const flattened = new Float32Array(totalCount * dim);
   const mapping: { id: string; count: number }[] = [];
@@ -87,10 +99,16 @@ function syncWorkerFull(
   let offset = 0;
   for (const id in data) {
     const embs = data[id];
-    mapping.push({ id, count: embs.length });
+    let validCount = 0;
     for (const emb of embs) {
-      flattened.set(emb, offset);
-      offset += dim;
+      if (emb && emb.length === dim) {
+        flattened.set(emb, offset);
+        offset += dim;
+        validCount++;
+      }
+    }
+    if (validCount > 0) {
+      mapping.push({ id, count: validCount });
     }
   }
 
@@ -104,7 +122,7 @@ function syncWorkerFull(
 }
 
 function syncWorkerSingle(
-  modelType: "face-api" | "ghostface",
+  modelType: "face-api" | "ghostface" | "edgeface",
   studentId: string,
   embeddings: Float32Array[],
 ) {
@@ -249,6 +267,12 @@ export async function performIncrementalSync() {
         "last_sync_time_ghost",
         "embeddings_ghost",
       ),
+      syncModel(
+        COLLECTIONS.FACIAL_EMBEDDINGS_EDGE,
+        memoryCacheEdge,
+        "last_sync_time_edge",
+        "embeddings_edge",
+      ),
     ]);
   } finally {
     syncInProgress = false;
@@ -305,6 +329,8 @@ function initSyncListeners() {
             syncWorkerSingle(
               coll === COLLECTIONS.FACIAL_EMBEDDINGS_NEW
                 ? "ghostface"
+                : coll === COLLECTIONS.FACIAL_EMBEDDINGS_EDGE
+                ? "edgeface"
                 : "face-api",
               docId,
               floatArrays,
@@ -321,7 +347,11 @@ function initSyncListeners() {
       } else if (events.some((e: string) => e.includes(".delete"))) {
         delete cache[docId];
         syncWorkerSingle(
-          coll === COLLECTIONS.FACIAL_EMBEDDINGS_NEW ? "ghostface" : "face-api",
+          coll === COLLECTIONS.FACIAL_EMBEDDINGS_NEW
+            ? "ghostface"
+            : coll === COLLECTIONS.FACIAL_EMBEDDINGS_EDGE
+            ? "edgeface"
+            : "face-api",
           docId,
           [],
         );
@@ -346,6 +376,12 @@ function initSyncListeners() {
     memoryCacheGhost,
     "embeddings_ghost",
     "last_sync_time_ghost",
+  );
+  setupRealtime(
+    COLLECTIONS.FACIAL_EMBEDDINGS_EDGE,
+    memoryCacheEdge,
+    "embeddings_edge",
+    "last_sync_time_edge",
   );
 }
 
@@ -381,11 +417,13 @@ export async function loadFaceCache() {
       await Promise.all([
         loadFromDisk("embeddings", memoryCache),
         loadFromDisk("embeddings_ghost", memoryCacheGhost),
+        loadFromDisk("embeddings_edge", memoryCacheEdge),
       ]);
 
       // Seed worker
       syncWorkerFull("face-api", memoryCache);
       syncWorkerFull("ghostface", memoryCacheGhost);
+      syncWorkerFull("edgeface", memoryCacheEdge);
 
       // Final catch-up
       await performIncrementalSync();
@@ -407,17 +445,26 @@ export async function loadFaceCache() {
 
 export async function getBestMatch(
   queryDescriptor: Float32Array,
-  modelType: "face-api" | "ghostface" = "face-api",
+  modelType: "face-api" | "ghostface" | "edgeface" = "face-api",
 ): Promise<RecognitionResult> {
   if (!isLoaded) {
     console.warn("Face cache not loaded yet!");
     return { rollNo: "Unknown", score: 0 };
   }
 
-  // GHOSTFACE: Background Worker (Scalable)
-  if (modelType === "ghostface") {
+  // GHOSTFACE & EDGEFACE: Background Worker (Scalable)
+  if (modelType === "ghostface" || modelType === "edgeface") {
     if (!searchWorker) initSearchWorker();
     const requestId = searchRequestIdCounter++;
+    const matchThreshold =
+      modelType === "ghostface"
+        ? BIOMETRIC_THRESHOLDS.GHOSTFACE.MATCH
+        : BIOMETRIC_THRESHOLDS.EDGEFACE.MATCH;
+    const gapThreshold =
+      modelType === "ghostface"
+        ? BIOMETRIC_THRESHOLDS.GHOSTFACE.CONFLICT_GAP
+        : BIOMETRIC_THRESHOLDS.EDGEFACE.CONFLICT_GAP;
+
     return new Promise((resolve) => {
       searchRequests.set(requestId, resolve);
       searchWorker?.postMessage({
@@ -425,8 +472,8 @@ export async function getBestMatch(
         payload: {
           query: queryDescriptor,
           modelType,
-          threshold: BIOMETRIC_THRESHOLDS.GHOSTFACE.MATCH,
-          conflictGap: BIOMETRIC_THRESHOLDS.GHOSTFACE.CONFLICT_GAP,
+          threshold: matchThreshold,
+          conflictGap: gapThreshold,
           requestId,
         },
       });
@@ -497,12 +544,14 @@ function cosineSimilarity(xs: Float32Array, ys: Float32Array): number {
 export async function uploadEmbeddings(
   rollNo: string,
   embeddings: Float32Array[],
-  modelType: "face-api" | "ghostface",
+  modelType: "face-api" | "ghostface" | "edgeface",
 ) {
   const jsonString = JSON.stringify(embeddings.map((a) => Array.from(a)));
   const collId =
     modelType === "ghostface"
       ? COLLECTIONS.FACIAL_EMBEDDINGS_NEW
+      : modelType === "edgeface"
+      ? COLLECTIONS.FACIAL_EMBEDDINGS_EDGE
       : COLLECTIONS.FACIAL_EMBEDDINGS;
 
   try {
@@ -532,7 +581,12 @@ export async function uploadEmbeddings(
   }
 
   // Immediate local update
-  const cache = modelType === "ghostface" ? memoryCacheGhost : memoryCache;
+  const cache =
+    modelType === "ghostface"
+      ? memoryCacheGhost
+      : modelType === "edgeface"
+      ? memoryCacheEdge
+      : memoryCache;
   cache[rollNo] = embeddings;
   syncWorkerSingle(modelType, rollNo, embeddings);
 
@@ -540,7 +594,11 @@ export async function uploadEmbeddings(
   try {
     const { getCache, setCache } = await import("./idb");
     const storageKey =
-      modelType === "ghostface" ? "embeddings_ghost" : "embeddings";
+      modelType === "ghostface"
+        ? "embeddings_ghost"
+        : modelType === "edgeface"
+        ? "embeddings_edge"
+        : "embeddings";
     const disk = (await getCache<Record<string, number[][]>>(storageKey)) || {};
     disk[rollNo] = embeddings.map((a) => Array.from(a));
     await setCache(storageKey, disk);
@@ -552,10 +610,13 @@ export async function uploadEmbeddings(
 export async function rollingUpdateEmbedding(
   rollNo: string,
   newEmbedding: Float32Array,
-  modelType: "face-api" | "ghostface",
+  modelType: "face-api" | "ghostface" | "edgeface",
 ) {
-  if (modelType !== "ghostface") return;
-  const current = memoryCacheGhost[rollNo];
+  if (modelType === "face-api") return;
+  const current =
+    modelType === "ghostface"
+      ? memoryCacheGhost[rollNo]
+      : memoryCacheEdge[rollNo];
   if (!current || current.length === 0) return;
   const updated = [...current];
 
@@ -563,14 +624,10 @@ export async function rollingUpdateEmbedding(
     // Fill up to 13 slots total (8 Registration + 5 Adaptive)
     updated.push(newEmbedding);
   } else {
-    // PROTECTED: updated[0] through updated[7] (8 Registration slots)
-    // ROTATING: updated[8] through updated[12] (5 Adaptive slots)
-
-    // Shift indices 9-12 into 8-11 (FIFO shift for the adaptive slots)
+    // FIFO shift for the adaptive slots
     for (let i = 8; i < 12; i++) {
       updated[i] = updated[i + 1];
     }
-    // Place newest scan in the last adaptive slot
     updated[12] = newEmbedding;
   }
 
@@ -579,58 +636,90 @@ export async function rollingUpdateEmbedding(
 
 export function isUserRegisteredFor(
   rollNo: string,
-  modelType: "face-api" | "ghostface",
+  modelType: "face-api" | "ghostface" | "edgeface",
 ): boolean {
-  const cache = modelType === "ghostface" ? memoryCacheGhost : memoryCache;
+  const cache =
+    modelType === "ghostface"
+      ? memoryCacheGhost
+      : modelType === "edgeface"
+      ? memoryCacheEdge
+      : memoryCache;
   return !!cache[rollNo] && cache[rollNo].length > 0;
 }
 
 export async function purgeAndFullSync(onProgress?: (msg: string) => void) {
   if (syncInProgress) return;
   syncInProgress = true;
-  
+
   try {
     if (onProgress) onProgress("Wiping local biometric database...");
     const { clearAllCache } = await import("./idb");
     await clearAllCache();
 
     // Clear memory
-    Object.keys(memoryCache).forEach(k => delete memoryCache[k]);
-    Object.keys(memoryCacheGhost).forEach(k => delete memoryCacheGhost[k]);
+    Object.keys(memoryCache).forEach((k) => delete memoryCache[k]);
+    Object.keys(memoryCacheGhost).forEach((k) => delete memoryCacheGhost[k]);
+    Object.keys(memoryCacheEdge).forEach((k) => delete memoryCacheEdge[k]);
 
     // Clear Workers
-    searchWorker?.postMessage({ type: 'CLEAR' });
+    searchWorker?.postMessage({ type: "CLEAR" });
 
-    const syncCollection = async (coll: string, type: 'face-api' | 'ghostface', storageKey: string, syncKey: string) => {
-        if (onProgress) onProgress(`Fetching ${type} profiles...`);
-        const all = await fetchAllRows<any>(DB_ID, coll);
-        
-        if (onProgress) onProgress(`Indexing ${all.length} ${type} records...`);
-        const disk: Record<string, number[][]> = {};
-        const cache = type === 'ghostface' ? memoryCacheGhost : memoryCache;
-        
-        let latest = "1970-01-01T00:00:00.000Z";
-        
-        for (const doc of all) {
-            if (doc.embeddings) {
-                try {
-                    const p = JSON.parse(doc.embeddings);
-                    const floatArrays = p.map((a: any) => new Float32Array(a));
-                    cache[doc.$id] = floatArrays;
-                    disk[doc.$id] = p;
-                    if (doc.$updatedAt > latest) latest = doc.$updatedAt;
-                    syncWorkerSingle(type, doc.$id, floatArrays);
-                } catch(e) {}
-            }
+    const syncCollection = async (
+      coll: string,
+      type: "face-api" | "ghostface" | "edgeface",
+      storageKey: string,
+      syncKey: string,
+    ) => {
+      if (onProgress) onProgress(`Fetching ${type} profiles...`);
+      const all = await fetchAllRows<any>(DB_ID, coll);
+
+      if (onProgress) onProgress(`Indexing ${all.length} ${type} records...`);
+      const disk: Record<string, number[][]> = {};
+      const cache =
+        type === "ghostface"
+          ? memoryCacheGhost
+          : type === "edgeface"
+          ? memoryCacheEdge
+          : memoryCache;
+
+      let latest = "1970-01-01T00:00:00.000Z";
+
+      for (const doc of all) {
+        if (doc.embeddings) {
+          try {
+            const p = JSON.parse(doc.embeddings);
+            const floatArrays = p.map((a: any) => new Float32Array(a));
+            cache[doc.$id] = floatArrays;
+            disk[doc.$id] = p;
+            if (doc.$updatedAt > latest) latest = doc.$updatedAt;
+            syncWorkerSingle(type, doc.$id, floatArrays);
+          } catch (e) {}
         }
-        
-        const { setCache } = await import("./idb");
-        await setCache(storageKey, disk);
-        await setCache(syncKey, latest);
+      }
+
+      const { setCache } = await import("./idb");
+      await setCache(storageKey, disk);
+      await setCache(syncKey, latest);
     };
 
-    await syncCollection(COLLECTIONS.FACIAL_EMBEDDINGS, 'face-api', 'embeddings', 'last_sync_time');
-    await syncCollection(COLLECTIONS.FACIAL_EMBEDDINGS_NEW, 'ghostface', 'embeddings_ghost', 'last_sync_time_ghost');
+    await syncCollection(
+      COLLECTIONS.FACIAL_EMBEDDINGS,
+      "face-api",
+      "embeddings",
+      "last_sync_time",
+    );
+    await syncCollection(
+      COLLECTIONS.FACIAL_EMBEDDINGS_NEW,
+      "ghostface",
+      "embeddings_ghost",
+      "last_sync_time_ghost",
+    );
+    await syncCollection(
+      COLLECTIONS.FACIAL_EMBEDDINGS_EDGE,
+      "edgeface",
+      "embeddings_edge",
+      "last_sync_time_edge",
+    );
 
     if (onProgress) onProgress("Sync Complete! System Optimized.");
   } catch (err) {

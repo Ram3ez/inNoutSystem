@@ -11,6 +11,7 @@ export interface Student extends Models.Document {
     is_on_leave: boolean;
     faceRegistered: boolean;
     ghostface_registered?: boolean;
+    edgeface_registered?: boolean;
     parent_name?: string;
     parent_phone?: number;
     parent_email?: string;
