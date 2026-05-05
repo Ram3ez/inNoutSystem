@@ -718,7 +718,7 @@ export default function MyLeavesPage() {
                             </div>
                           )}
 
-                          {activeTab === "active" && (isPending || isApproved) && (
+                          {activeTab === "active" && isApproved && (
                             <div className="border border-red-500/10 rounded-2xl p-4 bg-red-500/5 space-y-3 mt-4">
                               <p className="text-[10px] font-black uppercase tracking-widest text-red-600/60">
                                 Danger Zone
@@ -728,7 +728,7 @@ export default function MyLeavesPage() {
                                 className="w-full h-11 border border-red-500/40 hover:bg-red-500/10 text-red-600 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all hover:scale-[0.99] flex items-center justify-center gap-2"
                               >
                                 <Trash2 size={14} />
-                                {isPending ? "Cancel Application" : "Archive Leave"}
+                                Archive Approved Leave
                               </button>
                             </div>
                           )}
@@ -780,7 +780,7 @@ export default function MyLeavesPage() {
                     Confirm Action
                   </h3>
                   <p className="text-primary/60 font-bold text-xs uppercase tracking-widest leading-relaxed">
-                    Are you sure you want to {leaveToArchive?.status === "approved" ? "archive" : "cancel"} this leave application? This action cannot be undone.
+                    Are you sure you want to archive this approved leave application? This action cannot be undone and will move it to your past history.
                   </p>
                 </div>
                 
