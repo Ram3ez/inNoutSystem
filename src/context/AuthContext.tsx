@@ -309,10 +309,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     if (user && !isLoading) {
       // Start pre-loading AI engine in the background for a seamless experience
       import("@/lib/faceCache").then((m) => {
-        m.loadFaceApiModels();
-        // For Kiosks and Admins, also pre-load the student face database (IndexedDB)
+        // Only Admins and Kiosks need the heavy Face-API models and the student database
         if (isKiosk || isAdmin) {
+          m.loadFaceApiModels();
           m.loadFaceCache();
+        } else {
+          // Regular users only need MediaPipe (Landmarker) and ONNX (GhostFace/EdgeFace)
+          // for their own registration or profile verification.
+          import("@/lib/aiEngine").then((ai) => ai.getLandmarker());
+          import("@/lib/ghostfaceEngine").then((gf) => gf.initGhostFace());
+          import("@/lib/edgefaceEngine").then((ef) => ef.initEdgeFace());
         }
       });
     }
