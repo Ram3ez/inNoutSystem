@@ -214,7 +214,7 @@ export default function RegisterFacePage() {
             tableId: COLLECTIONS.STUDENTS,
             queries: [
               ...baseQueries,
-              Query.startsWith("name", query.trim()),
+              Query.contains("name", query.trim()),
               Query.limit(50),
             ],
           }),
@@ -223,7 +223,7 @@ export default function RegisterFacePage() {
             tableId: COLLECTIONS.STUDENTS,
             queries: [
               ...baseQueries,
-              Query.startsWith("$id", q),
+              Query.contains("$id", q),
               Query.limit(50),
             ],
           }),

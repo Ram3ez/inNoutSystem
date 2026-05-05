@@ -317,12 +317,12 @@ export default function AdminPortal() {
                     tablesDB.listRows({
                         databaseId: DB_ID,
                         tableId: COLLECTIONS.STUDENTS,
-                        queries: [Query.startsWith("name", q), Query.limit(100)]
+                        queries: [Query.contains("name", q), Query.limit(100)]
                     }),
                     tablesDB.listRows({
                         databaseId: DB_ID,
                         tableId: COLLECTIONS.STUDENTS,
-                        queries: [Query.startsWith("$id", q.toUpperCase()), Query.limit(100)]
+                        queries: [Query.contains("$id", q.toUpperCase()), Query.limit(100)]
                     })
                 ]);
 
@@ -346,7 +346,7 @@ export default function AdminPortal() {
             ];
 
             if (outingsRollQuery.trim()) {
-                queries.push(Query.startsWith('roll_no', outingsRollQuery.trim().toUpperCase()));
+                queries.push(Query.contains('roll_no', outingsRollQuery.trim().toUpperCase()));
             }
 
             if (outingsDateQuery && outingsDateQuery.length === 10 && /^20\d{2}-\d{2}-\d{2}$/.test(outingsDateQuery)) {
@@ -409,7 +409,7 @@ export default function AdminPortal() {
             ];
 
             if (leavesRollQuery.trim()) {
-                queries.push(Query.startsWith('roll_no', leavesRollQuery.trim().toUpperCase()));
+                queries.push(Query.contains('roll_no', leavesRollQuery.trim().toUpperCase()));
             }
 
             if (leavesDateQuery && leavesDateQuery.length === 10 && /^20\d{2}-\d{2}-\d{2}$/.test(leavesDateQuery)) {
