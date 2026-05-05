@@ -595,7 +595,7 @@ export default function MyLeavesPage() {
                             )}
                           </div>
 
-                          {!leave.in_date_time && !isExpired && (
+                          {activeTab === "active" && !leave.in_date_time && !isExpired && !isRejected && (
                             <div className="border border-primary/10 rounded-2xl p-4 bg-primary/5 space-y-3 mt-4">
                               <p className="text-[10px] font-black uppercase tracking-widest text-primary/60">
                                 Extend Leave Feature
