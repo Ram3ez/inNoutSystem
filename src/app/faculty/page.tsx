@@ -646,7 +646,7 @@ export default function FacultyDashboard() {
           >
             Pending
             {requests.length > 0 && (
-              <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] ${viewMode === "pending" ? "bg-background text-primary" : "bg-primary text-background"}`}>
+              <span className={`min-w-[1.1rem] h-4 px-1.5 rounded-full flex items-center justify-center text-[8px] font-bold leading-none ${viewMode === "pending" ? "bg-background text-primary" : "bg-primary text-background"}`}>
                 {requests.length}
               </span>
             )}
@@ -671,7 +671,7 @@ export default function FacultyDashboard() {
           >
             Parents
             {parentRequests.length > 0 && (
-              <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] ${viewMode === "parents" ? "bg-background text-primary" : "bg-primary text-background"}`}>
+              <span className={`min-w-[1.1rem] h-4 px-1.5 rounded-full flex items-center justify-center text-[8px] font-bold leading-none ${viewMode === "parents" ? "bg-background text-primary" : "bg-primary text-background"}`}>
                 {parentRequests.length}
               </span>
             )}

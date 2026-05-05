@@ -187,14 +187,14 @@ export default function LeavePage() {
     }
 
     try {
-      // Check for existing active leave
+      // Check for existing active leave (limit increased to 3)
       const existingLeaves = await fetchAllRows(DB_ID, COLLECTIONS.LEAVE, [
         Query.equal("roll_no", studentData.$id),
-        Query.limit(1)
+        Query.limit(3)
       ]);
 
-      if (existingLeaves.length > 0) {
-        setError("You already have an active leave request. You cannot apply for a new one until your current leave is completed or archived.");
+      if (existingLeaves.length >= 3) {
+        setError("You already have 3 active leave requests. You cannot apply for a new one until your current leaves are completed or archived.");
         setIsSubmitting(false);
         return;
       }
