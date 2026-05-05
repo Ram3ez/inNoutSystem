@@ -44,6 +44,7 @@ interface LeaveRequest {
   exit_date_time?: string;
   in_date_time?: string;
   mail_sent?: boolean;
+  is_extended?: boolean;
 }
 
 export default function FacultyDashboard() {
@@ -609,7 +610,7 @@ export default function FacultyDashboard() {
                 Action Required
               </p>
               <p className="text-4xl sm:text-5xl font-black text-foreground">
-                {requests.length}
+                {requests.length + parentRequests.length}
               </p>
             </div>
           </motion.div>
@@ -637,13 +638,18 @@ export default function FacultyDashboard() {
         <div className="flex bg-surface/40 backdrop-blur-xl border border-primary/10 rounded-full p-1 mb-8 relative">
           <button
             onClick={() => setViewMode("pending")}
-            className={`flex-1 py-3 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-full transition-all relative z-10 ${
+            className={`flex-1 py-3 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-full transition-all relative z-10 flex items-center justify-center gap-2 ${
               viewMode === "pending"
                 ? "text-background"
                 : "text-primary/60 hover:text-primary"
             }`}
           >
             Pending
+            {requests.length > 0 && (
+              <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] ${viewMode === "pending" ? "bg-background text-primary" : "bg-primary text-background"}`}>
+                {requests.length}
+              </span>
+            )}
           </button>
           <button
             onClick={() => setViewMode("active")}
@@ -657,13 +663,18 @@ export default function FacultyDashboard() {
           </button>
           <button
             onClick={() => setViewMode("parents")}
-            className={`flex-1 py-3 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-full transition-all relative z-10 ${
+            className={`flex-1 py-3 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-full transition-all relative z-10 flex items-center justify-center gap-2 ${
               viewMode === "parents"
                 ? "text-background"
                 : "text-primary/60 hover:text-primary"
             }`}
           >
             Parents
+            {parentRequests.length > 0 && (
+              <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] ${viewMode === "parents" ? "bg-background text-primary" : "bg-primary text-background"}`}>
+                {parentRequests.length}
+              </span>
+            )}
           </button>
           <button
             onClick={() => setViewMode("overdue")}
@@ -877,26 +888,34 @@ export default function FacultyDashboard() {
                           </div>
                         </div>
                       </div>
-                      <div className="flex flex-col items-end gap-2">
-                        <div
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[9px] sm:text-[10px] font-black uppercase tracking-widest ${
-                            viewMode === "pending"
-                              ? "bg-primary/5 border-primary/10 text-primary"
-                              : "bg-green-500/10 border-green-500/20 text-green-500"
-                          }`}
-                        >
-                          {viewMode === "pending"
-                            ? "Pending Faculty Review"
-                            : req.faculty_approval
-                              ? "Approved by You & Out"
-                              : "Approved (Not Required) & Out"}
+                        <div className="flex flex-col items-end gap-2">
+                          <div className="flex items-center gap-2">
+                            {req.is_extended && (
+                              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary/10 border border-secondary/20 text-secondary text-[9px] sm:text-[10px] font-black uppercase tracking-widest">
+                                <Clock size={12} />
+                                Extended
+                              </div>
+                            )}
+                            <div
+                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[9px] sm:text-[10px] font-black uppercase tracking-widest ${
+                                viewMode === "pending"
+                                  ? "bg-primary/5 border-primary/10 text-primary"
+                                  : "bg-green-500/10 border-green-500/20 text-green-500"
+                              }`}
+                            >
+                              {viewMode === "pending"
+                                ? "Pending Faculty Review"
+                                : req.faculty_approval
+                                  ? "Approved by You & Out"
+                                  : "Approved (Not Required) & Out"}
+                            </div>
+                          </div>
+                          <p className="text-[9px] text-primary/60 font-black tracking-widest uppercase">
+                            {expandedRequests[req.$id]
+                              ? "Click to collapse"
+                              : "Click to view details"}
+                          </p>
                         </div>
-                        <p className="text-[9px] text-primary/60 font-black tracking-widest uppercase">
-                          {expandedRequests[req.$id]
-                            ? "Click to collapse"
-                            : "Click to view details"}
-                        </p>
-                      </div>
                     </div>
 
                     <AnimatePresence>

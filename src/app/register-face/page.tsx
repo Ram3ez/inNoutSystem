@@ -173,15 +173,6 @@ export default function StudentRegisterFace() {
             : "edgeface_registered"]: true,
         };
 
-        const currentOther =
-          modelType === "ghostface"
-            ? (studentData as any)?.edgeface_registered
-            : (studentData as any)?.ghostface_registered;
-
-        if (currentOther) {
-          updateData.faceRegistered = true;
-        }
-
         await tablesDB.updateRow({
           databaseId: DB_ID,
           tableId: COLLECTIONS.STUDENTS,
