@@ -18,12 +18,7 @@ import { LoadingIndicator } from "@/components/LoadingIndicator";
 import { useRouter } from "next/navigation";
 import { tablesDB } from "@/lib/appwrite";
 import { DB_ID, COLLECTIONS, BIOMETRIC_THRESHOLDS } from "@/lib/constants";
-import {
-  areModelsLoaded,
-  loadFaceApiModels,
-  loadFaceCache,
-  uploadEmbeddings,
-} from "@/lib/faceCache";
+import { loadFaceApiModels, loadFaceCache, areModelsLoaded, uploadEmbeddings } from "@/lib/faceCache";
 import {
   getLandmarker,
   getLandmarkerSync,
