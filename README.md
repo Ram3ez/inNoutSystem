@@ -33,7 +33,7 @@ A premium, touchless biometric hostel management system built for **NIT Puducher
 *   **Leave Extensions**: Students can request to extend active leave returns directly from their dashboard with automated advisor and parent notifications.
 *   **Flexible Leave Lifecycle**: 
     *   **Max Active Leaves**: Students can now have up to **3 active leave requests** simultaneously.
-    *   **Self-Archive & Cancel**: Students can cancel pending applications or archive approved ones directly from their dashboard via a custom, premium confirmation modal.
+    *   **Self-Archive**: Students can archive approved leave applications directly from their dashboard via a custom, premium confirmation modal, moving them to past history.
 *   **Automated Advisor Mails**: Faculty can instantly notify parents about students' leave approvals, movements, and unapproved delays.
 
 ### 4. Advanced Admin Dashboard & Analytics
