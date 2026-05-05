@@ -479,8 +479,9 @@ export default function AdminPortal() {
     }, [activeTab, leavesSubTab, leavesPage, leavesRollQuery, leavesDateQuery, leavesDateType]);
 
 
-    const handleDeleteFace = async (studentId: string, type: "face-api" | "ghostface") => {
-        if (!confirm(`Are you sure you want to remove ${type === 'ghostface' ? 'GhostFaceNet' : 'Face-API'} data for ${studentId}?`)) {
+    const handleDeleteFace = async (studentId: string, type: "face-api" | "ghostface" | "edgeface") => {
+        const typeName = type === 'ghostface' ? 'GhostFace' : type === 'edgeface' ? 'EdgeFace' : 'Face-API';
+        if (!confirm(`Are you sure you want to remove ${typeName} data for ${studentId}?`)) {
             return;
         }
 
@@ -488,6 +489,8 @@ export default function AdminPortal() {
         try {
             const tableId = type === "ghostface" 
                 ? COLLECTIONS.FACIAL_EMBEDDINGS_NEW 
+                : type === "edgeface"
+                ? COLLECTIONS.FACIAL_EMBEDDINGS_EDGE
                 : COLLECTIONS.FACIAL_EMBEDDINGS;
             
             try {
@@ -504,6 +507,8 @@ export default function AdminPortal() {
 
             const updateData = type === "ghostface" 
                 ? { ghostface_registered: false } 
+                : type === "edgeface"
+                ? { edgeface_registered: false }
                 : { faceRegistered: false };
 
             await tablesDB.updateRow({
@@ -712,6 +717,24 @@ export default function AdminPortal() {
                                             ) : (
                                                 <div className="flex items-center space-x-2 text-primary/20 bg-primary/5 px-3 py-1 rounded-full border border-primary/5">
                                                     <span className="text-[8px] font-bold uppercase tracking-widest opacity-30">GhostFace Missing</span>
+                                                </div>
+                                            )}
+
+                                            {student.edgeface_registered ? (
+                                                <div className="flex items-center space-x-2 text-indigo-400 bg-indigo-500/10 px-3 py-1 rounded-full border border-indigo-500/20">
+                                                    <ScanFace size={10} />
+                                                    <span className="text-[8px] font-bold uppercase tracking-widest">EdgeFace</span>
+                                                    <button 
+                                                        onClick={() => handleDeleteFace(student.$id, "edgeface")}
+                                                        disabled={isDeleting === (student.$id + "edgeface")}
+                                                        className="ml-2 text-indigo-400 hover:scale-110 transition-transform"
+                                                    >
+                                                        <Trash2 size={12} />
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center space-x-2 text-primary/20 bg-primary/5 px-3 py-1 rounded-full border border-primary/5">
+                                                    <span className="text-[8px] font-bold uppercase tracking-widest opacity-30">EdgeFace Missing</span>
                                                 </div>
                                             )}
 
