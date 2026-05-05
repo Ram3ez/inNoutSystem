@@ -13,6 +13,8 @@ import {
   ChevronDown,
   UserCheck,
   ShieldCheck,
+  Trash2,
+  AlertTriangle,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { GradientBackground } from "@/components/GradientBackground";
@@ -45,6 +47,11 @@ export default function MyLeavesPage() {
   const [newReturnDate, setNewReturnDate] = useState<string>("");
   const [isExtendingLoading, setIsExtendingLoading] = useState<boolean>(false);
   const [extensionStatus, setExtensionStatus] = useState<string | null>(null);
+
+  // Archive Modal State
+  const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
+  const [leaveToArchive, setLeaveToArchive] = useState<any>(null);
+  const [isArchiving, setIsArchiving] = useState(false);
 
   useEffect(() => {
     if (authLoading) return;
@@ -209,6 +216,61 @@ export default function MyLeavesPage() {
       setExtensionStatus(err.message || "An error occurred while extending the leave");
     } finally {
       setIsExtendingLoading(false);
+    }
+  };
+
+  const handleArchiveLeave = (leave: any) => {
+    setLeaveToArchive(leave);
+    setIsArchiveModalOpen(true);
+  };
+
+  const confirmArchive = async () => {
+    if (!leaveToArchive) return;
+    setIsArchiving(true);
+    try {
+      const {
+        $id,
+        $createdAt,
+        $updatedAt,
+        $databaseId,
+        $collectionId,
+        $permissions,
+        ...cleanData
+      } = leaveToArchive;
+      
+      await tablesDB.createRow({
+        databaseId: DB_ID,
+        tableId: COLLECTIONS.LEAVE_ARCHIVE,
+        rowId: ID.unique(),
+        data: {
+          ...cleanData,
+          status: "archived",
+          mail_sent: leaveToArchive.mail_sent ?? false,
+          faculty_approval: leaveToArchive.faculty_approval ?? false,
+          caretaker_approval: leaveToArchive.caretaker_approval ?? false,
+          is_extended: leaveToArchive.is_extended ?? false,
+          caretaker_id: leaveToArchive.caretaker_id || "N/A",
+          faculty_id: leaveToArchive.faculty_id || "N/A",
+        },
+      });
+
+      await tablesDB.deleteRow({
+        databaseId: DB_ID,
+        tableId: COLLECTIONS.LEAVE,
+        rowId: leaveToArchive.$id,
+      });
+
+      setLeaves((prev) => prev.filter((l) => l.$id !== leaveToArchive.$id));
+      setIsArchiveModalOpen(false);
+      setLeaveToArchive(null);
+      
+      // Refresh archived leaves
+      fetchLeaves();
+    } catch (err) {
+      console.error("Failed to archive leave:", err);
+      alert("Failed to archive leave. Please try again.");
+    } finally {
+      setIsArchiving(false);
     }
   };
 
@@ -655,6 +717,21 @@ export default function MyLeavesPage() {
                               )}
                             </div>
                           )}
+
+                          {activeTab === "active" && (isPending || isApproved) && (
+                            <div className="border border-red-500/10 rounded-2xl p-4 bg-red-500/5 space-y-3 mt-4">
+                              <p className="text-[10px] font-black uppercase tracking-widest text-red-600/60">
+                                Danger Zone
+                              </p>
+                              <button
+                                onClick={() => handleArchiveLeave(leave)}
+                                className="w-full h-11 border border-red-500/40 hover:bg-red-500/10 text-red-600 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all hover:scale-[0.99] flex items-center justify-center gap-2"
+                              >
+                                <Trash2 size={14} />
+                                {isPending ? "Cancel Application" : "Archive Leave"}
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </motion.div>
                     )}
@@ -667,6 +744,74 @@ export default function MyLeavesPage() {
           </AnimatePresence>
         </div>
       </main>
+
+      {/* Archive Confirmation Modal */}
+      <AnimatePresence>
+        {isArchiveModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6"
+          >
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsArchiveModalOpen(false)}
+              className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+            />
+            
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-md bg-surface border border-primary/10 rounded-[3rem] p-8 shadow-2xl overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-red-500/50 via-red-500 to-red-500/50" />
+              
+              <div className="flex flex-col items-center text-center space-y-6">
+                <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center text-red-600 border border-red-500/20">
+                  <AlertTriangle size={40} />
+                </div>
+                
+                <div className="space-y-2">
+                  <h3 className="text-2xl font-black text-primary uppercase tracking-tight">
+                    Confirm Action
+                  </h3>
+                  <p className="text-primary/60 font-bold text-xs uppercase tracking-widest leading-relaxed">
+                    Are you sure you want to {leaveToArchive?.status === "approved" ? "archive" : "cancel"} this leave application? This action cannot be undone.
+                  </p>
+                </div>
+                
+                <div className="flex flex-col w-full gap-3">
+                  <button
+                    onClick={confirmArchive}
+                    disabled={isArchiving}
+                    className="w-full h-14 bg-red-600 text-white rounded-2xl font-black uppercase tracking-[0.2em] shadow-lg shadow-red-500/20 hover:shadow-red-500/40 active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+                  >
+                    {isArchiving ? (
+                      <LoadingIndicator size="sm" />
+                    ) : (
+                      <>
+                        <span>{leaveToArchive?.status === "approved" ? "Archive Leave" : "Cancel Application"}</span>
+                        <Trash2 size={18} />
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setIsArchiveModalOpen(false)}
+                    disabled={isArchiving}
+                    className="w-full h-14 bg-primary/5 text-primary/60 rounded-2xl font-black uppercase tracking-[0.2em] hover:bg-primary/10 transition-all active:scale-[0.98]"
+                  >
+                    Keep Application
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </GradientBackground>
   );
 }
