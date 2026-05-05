@@ -34,7 +34,10 @@ export default function MyLeavesPage() {
   const router = useRouter();
 
   const [leaves, setLeaves] = useState<any[]>([]);
+  const [archivedLeaves, setArchivedLeaves] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<"active" | "past">("active");
   const [isLoading, setIsLoading] = useState(true);
+  const [isArchivedLoading, setIsArchivedLoading] = useState(false);
   const [expandedRequests, setExpandedRequests] = useState<
     Record<string, boolean>
   >({});
@@ -68,15 +71,17 @@ export default function MyLeavesPage() {
     setIsLoading(true);
     try {
       // Fetch active leaves
-      const activeLeaves = await fetchAllRows(DB_ID, COLLECTIONS.LEAVE, [
+      const activeLeavesResponse = await fetchAllRows(DB_ID, COLLECTIONS.LEAVE, [
         Query.equal("roll_no", studentData.$id)
       ]);
+      
+      const activeLeaves = activeLeavesResponse as any[];
 
       const now = new Date();
       const oneDayInMs = 24 * 60 * 60 * 1000;
       const unexpiredLeaves: any[] = [];
 
-      for (const req of activeLeaves as any[]) {
+      for (const req of activeLeaves) {
         if (!req.exit_date_time && req.proposed_in_date) {
           const proposedIn = new Date(req.proposed_in_date);
           if (now.getTime() - proposedIn.getTime() > oneDayInMs) {
@@ -111,17 +116,27 @@ export default function MyLeavesPage() {
         unexpiredLeaves.push(req);
       }
 
-      const allLeaves = [...unexpiredLeaves];
-      allLeaves.sort(
+      const allActive = [...unexpiredLeaves];
+      allActive.sort(
         (a: any, b: any) =>
           new Date(b.$createdAt).getTime() - new Date(a.$createdAt).getTime(),
       );
 
-      setLeaves(allLeaves);
+      setLeaves(allActive);
+
+      // Fetch archived leaves
+      setIsArchivedLoading(true);
+      const archivedResponse = await fetchAllRows(DB_ID, COLLECTIONS.LEAVE_ARCHIVE, [
+        Query.equal("roll_no", studentData.$id),
+        Query.limit(50), // Limit for history
+        Query.orderDesc("$createdAt")
+      ]);
+      setArchivedLeaves(archivedResponse as any[]);
     } catch (error) {
       console.error("Failed to fetch leaves:", error);
     } finally {
       setIsLoading(false);
+      setIsArchivedLoading(false);
     }
   };
 
@@ -254,22 +269,62 @@ export default function MyLeavesPage() {
           </div>
         </header>
 
+        <div className="flex bg-primary/5 p-1.5 rounded-[2rem] border border-primary/5 mb-8 w-full sm:w-fit mx-auto sm:mx-0 shadow-inner">
+          <button
+            onClick={() => setActiveTab("active")}
+            className={`flex-1 sm:flex-none px-8 py-3 rounded-[1.5rem] text-[10px] font-black uppercase tracking-[0.2em] transition-all duration-300 ${
+              activeTab === "active"
+                ? "bg-primary text-background shadow-lg shadow-primary/20 scale-[1.02]"
+                : "text-primary/40 hover:text-primary"
+            }`}
+          >
+            Active Applications
+          </button>
+          <button
+            onClick={() => setActiveTab("past")}
+            className={`flex-1 sm:flex-none px-8 py-3 rounded-[1.5rem] text-[10px] font-black uppercase tracking-[0.2em] transition-all duration-300 ${
+              activeTab === "past"
+                ? "bg-primary text-background shadow-lg shadow-primary/20 scale-[1.02]"
+                : "text-primary/40 hover:text-primary"
+            }`}
+          >
+            Past History
+          </button>
+        </div>
+
         <div className="space-y-6">
-          {leaves.length === 0 ? (
-            <div className="bg-surface/50 border border-primary/5 rounded-[3rem] p-12 text-center shadow-inner">
-              <Home className="mx-auto text-primary/10 mb-4" size={48} />
-              <p className="text-primary/40 font-bold uppercase tracking-widest text-sm">
-                No Leave History Found
-              </p>
-            </div>
-          ) : (
-            leaves.map((leave, idx) => {
-              const isApproved = leave.status === "approved";
-              const isRejected =
-                leave.status === "rejected" ||
-                leave.status === "rejected_caretaker" ||
-                leave.status === "rejected_faculty";
-              const isPending = !isApproved && !isRejected;
+          <AnimatePresence mode="wait">
+            {(activeTab === "active" ? leaves : archivedLeaves).length === 0 ? (
+              <motion.div
+                key={activeTab + "-empty"}
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-surface/50 border border-primary/5 rounded-[3rem] p-12 text-center shadow-inner"
+              >
+                <Home className="mx-auto text-primary/10 mb-4" size={48} />
+                <p className="text-primary/40 font-bold uppercase tracking-widest text-sm">
+                  {activeTab === "active"
+                    ? "No Active Leave Requests"
+                    : "No Leave History Found"}
+                </p>
+              </motion.div>
+            ) : (
+              <motion.div
+                key={activeTab + "-list"}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="space-y-6"
+              >
+                {(activeTab === "active" ? leaves : archivedLeaves).map((leave, idx) => {
+                  const isApproved = leave.status === "approved";
+                  const isRejected =
+                    leave.status === "rejected" ||
+                    leave.status === "rejected_caretaker" ||
+                    leave.status === "rejected_faculty";
+                  const isExpired = leave.status === "expired";
+                  const isPending = !isApproved && !isRejected && !isExpired;
 
               const caretakerStatusStr =
                 leave.caretaker_approval === true
@@ -309,13 +364,17 @@ export default function MyLeavesPage() {
                             ? "bg-success/10 text-success border-success/20"
                             : isRejected
                               ? "bg-red-500/10 text-red-600 border-red-500/20"
-                              : "bg-secondary/10 text-secondary border-secondary/20"
+                              : isExpired
+                                ? "bg-primary/5 text-primary/40 border-primary/10"
+                                : "bg-secondary/10 text-secondary border-secondary/20"
                         }`}
                       >
                         {isApproved ? (
                           <CheckCircle2 size={24} />
                         ) : isRejected ? (
                           <XCircle size={24} />
+                        ) : isExpired ? (
+                          <Clock size={24} className="opacity-20" />
                         ) : (
                           <Clock size={24} />
                         )}
@@ -326,7 +385,9 @@ export default function MyLeavesPage() {
                             ? "Approved"
                             : isRejected
                               ? "Rejected"
-                              : "Pending Review"}
+                              : isExpired
+                                ? "Expired"
+                                : "Pending Review"}
                         </p>
                         <p className="text-primary/60 text-[9px] sm:text-[10px] font-black tracking-widest uppercase mt-1">
                           Applied:{" "}
@@ -534,7 +595,7 @@ export default function MyLeavesPage() {
                             )}
                           </div>
 
-                          {!leave.in_date_time && (
+                          {!leave.in_date_time && !isExpired && (
                             <div className="border border-primary/10 rounded-2xl p-4 bg-primary/5 space-y-3 mt-4">
                               <p className="text-[10px] font-black uppercase tracking-widest text-primary/60">
                                 Extend Leave Feature
@@ -573,17 +634,19 @@ export default function MyLeavesPage() {
                                   </div>
                                 </div>
                               ) : (
-                                <button
-                                  onClick={() => {
-                                    setExtendingLeaveId(leave.$id);
-                                    const currDate = new Date(leave.proposed_in_date);
-                                    currDate.setDate(currDate.getDate() + 1);
-                                    setNewReturnDate(currDate.toISOString().slice(0, 16));
-                                  }}
-                                  className="w-full h-11 border border-secondary/40 hover:bg-secondary/5 text-secondary rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all hover:scale-[0.99]"
-                                >
-                                  + Extend Return Date
-                                </button>
+                                !leave.is_extended && (
+                                  <button
+                                    onClick={() => {
+                                      setExtendingLeaveId(leave.$id);
+                                      const currDate = new Date(leave.proposed_in_date);
+                                      currDate.setDate(currDate.getDate() + 1);
+                                      setNewReturnDate(currDate.toISOString().slice(0, 16));
+                                    }}
+                                    className="w-full h-11 border border-secondary/40 hover:bg-secondary/5 text-secondary rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all hover:scale-[0.99]"
+                                  >
+                                    + Extend Return Date
+                                  </button>
+                                )
                               )}
                               {leave.is_extended && (
                                 <p className="text-[9px] text-secondary font-bold uppercase tracking-wider italic text-center pt-1">
@@ -597,9 +660,11 @@ export default function MyLeavesPage() {
                     )}
                   </AnimatePresence>
                 </motion.div>
-              );
-            })
-          )}
+                  );
+                })}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </main>
     </GradientBackground>

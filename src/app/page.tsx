@@ -192,7 +192,7 @@ export default function Dashboard() {
           </motion.div>
         </header>
 
-        {!isAdmin && !isKiosk && !isFaculty && !isCaretaker && isStudent && !(studentData as any)?.faceRegistered && (
+        {!isAdmin && !isKiosk && !isFaculty && !isCaretaker && isStudent && !((studentData as any)?.edgeface_registered || (studentData as any)?.ghostface_registered) && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}

@@ -187,6 +187,18 @@ export default function LeavePage() {
     }
 
     try {
+      // Check for existing active leave
+      const existingLeaves = await fetchAllRows(DB_ID, COLLECTIONS.LEAVE, [
+        Query.equal("roll_no", studentData.$id),
+        Query.limit(1)
+      ]);
+
+      if (existingLeaves.length > 0) {
+        setError("You already have an active leave request. You cannot apply for a new one until your current leave is completed or archived.");
+        setIsSubmitting(false);
+        return;
+      }
+
       // Use dynamically fetched emails with safety fallbacks
       const finalCaretakerId =
         caretakerEmail || "general_caretaker@nitpy.ac.in";
