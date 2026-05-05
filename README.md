@@ -31,12 +31,16 @@ A premium, touchless biometric hostel management system built for **NIT Puducher
 ### 3. Parent Consent & Student Leave Management
 *   **Parent Verification**: Integration for tracking parent email/contact metadata with automatic consent notifications.
 *   **Leave Extensions**: Students can request to extend active leave returns directly from their dashboard with automated advisor and parent notifications.
+*   **Flexible Leave Lifecycle**: 
+    *   **Max Active Leaves**: Students can now have up to **3 active leave requests** simultaneously.
+    *   **Self-Archive & Cancel**: Students can cancel pending applications or archive approved ones directly from their dashboard via a custom, premium confirmation modal.
 *   **Automated Advisor Mails**: Faculty can instantly notify parents about students' leave approvals, movements, and unapproved delays.
 
 ### 4. Advanced Admin Dashboard & Analytics
 *   **Local-to-UTC Precise Conversion**: Prevents date matching timezone bugs across outings and leaves through automated IST local-day boundary shifting.
 *   **Dynamic Custom Filtering**: Seamless filter popover dropdowns for filtering exactly by *Out Time* vs *In Time* for outings, and *Departure* vs *Return* for leaves.
 *   **Real-time Activity Status**: Shows live contextual badges (`Currently Out` / `Completed`) for active leave requests, ensuring instant visual awareness for hostel administrators.
+*   **Standardized "Contains" Search**: All administrative and registration search modules utilize "contains" matching instead of "starts with," ensuring reliable retrieval of student records across all portals.
 *   **Holidays & Academic Calendar Management**: Integrated administrative controls to mark Gazetted and Restricted holidays. Prevents scheduling issues, aids leave evaluations, and visualizes important institutional dates.
 
 ### 5. Relational Data & TablesDB (1.9.0+)
@@ -46,7 +50,8 @@ A premium, touchless biometric hostel management system built for **NIT Puducher
 ### 6. Advanced PWA & Offline Resilience
 *   **Intelligent Sync Engine**: Biometric captures and status updates are queued locally in IndexedDB when the network is unstable.
 *   **OfflineSyncManager**: A dedicated background service that monitors connectivity and automatically flushes the local queue once the system is back online.
-*   **Asset Warming**: Proactively pre-warms AI model weights and facial embedding caches, making the kiosk "instant-on" for the next student.
+*   **Authenticated Asset Warming**: Optimizes PWA performance by loading heavy AI models and biometric caches only for authenticated Administrative or Kiosk users, reducing data overhead for standard students.
+*   **Proactive Asset Warming**: Pre-warms facial embedding caches, making the kiosk "instant-on" for the next student.
 
 ### 7. Role-Based Access Control (RBAC)
 *   **Institutional Intelligence**: Automatically detects user roles based on email patterns (Student vs. Staff).
