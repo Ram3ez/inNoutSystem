@@ -14,8 +14,8 @@ import {
 const client = new Client();
 
 client
-  .setEndpoint("https://hostel.ram3ez.dev/v1")
-  .setProject("6991740c001012a4a46f");
+  .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || "")
+  .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || "");
 
 export const account = new Account(client);
 export const databases = new Databases(client);

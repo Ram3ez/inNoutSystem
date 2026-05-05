@@ -47,9 +47,9 @@ export const BIOMETRIC_THRESHOLDS = {
     CONFLICT_GAP: 0.05,
   },
   EDGEFACE: {
-    MATCH: 0.53, // Recognition sensitivity for EdgeFace
+    MATCH: 0.6, // Recognition sensitivity for EdgeFace
     DIVERSITY: 0.89, // Minimum diversity between registration frames
-    ADAPTIVE_UPDATE: 0.72, // Score required to auto-update profile
+    ADAPTIVE_UPDATE: 0.7, // Score required to auto-update profile
     CONFLICT_GAP: 0.05,
   },
 } as const;
