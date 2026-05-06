@@ -25,6 +25,7 @@ import { GradientBackground } from "@/components/GradientBackground";
 import { Navigation } from "@/components/Navigation";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
 import { useRouter } from "next/navigation";
+import { useLoading } from "@/context/LoadingContext";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { databases, tablesDB, fetchAllRows, Query } from "@/lib/appwrite";
@@ -52,9 +53,26 @@ import * as faceapi from "face-api.js";
 // Target number of embeddings to collect for a high-accuracy profile
 const TARGET_EMBEDDINGS = 8;
 
+/**
+ * RegisterFacePage
+ * 
+ * A comprehensive biometric enrollment interface that allows staff to register 
+ * student faces into the system. It supports three different AI models:
+ * - EdgeFace (Lightweight, Recommended)
+ * - GhostFaceNet (High-Precision)
+ * - Face-API (Legacy Fallback)
+ * 
+ * WORKFLOW:
+ * 1. Student Selection: Search for students without registered biometric profiles.
+ * 2. AI Warming: Downloads and initializes ONNX models via Web Workers.
+ * 3. Multi-Angle Enrollment: Collects 8 distinct facial embeddings from different 
+ *    angles (Straight, Left, Right, Up, Down) to ensure robust recognition.
+ * 4. DB Commit: Normalizes and uploads high-dimensional vectors to Appwrite TablesDB.
+ */
 export default function RegisterFacePage() {
   const { user, isLoading: authLoading, isAdmin, isKiosk } = useAuth();
   const router = useRouter();
+  const { startLoading } = useLoading();
 
   const serverLog = (action: string, message: string) => {
     fetch("/api/log", {
@@ -684,13 +702,7 @@ export default function RegisterFacePage() {
     return (
       <GradientBackground>
         <div className="flex-1 flex flex-col items-center justify-center space-y-6">
-          <LoadingIndicator />
-          <div className="text-secondary font-black uppercase tracking-widest text-xs animate-pulse text-center">
-            <p>Warming Up Neural Engine</p>
-            <p className="text-[10px] text-primary/40 mt-1">
-              Loading Biometric Weights (Enrollment)
-            </p>
-          </div>
+          <LoadingIndicator size="lg" />
         </div>
       </GradientBackground>
     );
@@ -702,12 +714,15 @@ export default function RegisterFacePage() {
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 pt-36 sm:pt-40 pb-12 relative z-10">
         <header className="mb-12 flex items-center justify-between">
           <div className="flex items-center space-x-2 sm:space-x-4">
-            <Link
-              href="/"
+            <button
+              onClick={() => {
+                startLoading();
+                router.push("/");
+              }}
               className="p-2 hover:bg-primary/5 rounded-full transition-all text-primary/40 hover:text-primary shrink-0"
             >
               <ArrowLeft size={24} />
-            </Link>
+            </button>
             <div className="text-left">
               <p className="text-secondary font-bold tracking-[0.2em] text-[10px] sm:text-xs uppercase mb-1">
                 Onboarding

@@ -6,6 +6,7 @@
  */
 
 import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
+import { fetchWithProgress } from "./fetchProgress";
 
 let landmarkerInstance: FaceLandmarker | null = null;
 let landmarkerInitPromise: Promise<FaceLandmarker> | null = null;
@@ -15,21 +16,48 @@ let landmarkerInitPromise: Promise<FaceLandmarker> | null = null;
  * The first call initializes it; every subsequent call returns the cached instance instantly.
  * This prevents the "Warming Up" screen from appearing on every page navigation.
  */
-export async function getLandmarker(): Promise<FaceLandmarker> {
+export async function getLandmarker(updateProgress?: (p: number, s: string) => void): Promise<FaceLandmarker> {
   if (landmarkerInstance) return landmarkerInstance;
   if (landmarkerInitPromise) return landmarkerInitPromise;
 
   landmarkerInitPromise = (async () => {
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
     const vision = await FilesetResolver.forVisionTasks("/mediapipe/wasm");
-    const landmarker = await FaceLandmarker.createFromOptions(vision, {
-      baseOptions: {
-        modelAssetPath: "/mediapipe/face_landmarker.task",
-        delegate: isIOS ? "CPU" : "GPU",
-      },
-      runningMode: "VIDEO",
-      outputFaceBlendshapes: false,
-    });
+    
+    // Download model with progress tracking
+    if (updateProgress) updateProgress(0, "Downloading Detection Model...");
+    const modelBuffer = await fetchWithProgress(
+      "/mediapipe/face_landmarker.task",
+      (p) => updateProgress?.(p, "Downloading Detection Model...")
+    );
+
+    /**
+     * Robust Initialization:
+     * We attempt to use GPU for performance, but automatically fall back to CPU
+     * if the device context prevents GPU delegation (common on some mobile/PWA environments).
+     */
+    let landmarker;
+    try {
+      landmarker = await FaceLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetBuffer: new Uint8Array(modelBuffer),
+          delegate: isIOS ? "CPU" : "GPU",
+        },
+        runningMode: "VIDEO",
+        outputFaceBlendshapes: false,
+      });
+    } catch (e) {
+      console.warn("[🧠 ENGINE] GPU Delegate failed, falling back to CPU", e);
+      landmarker = await FaceLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetBuffer: new Uint8Array(modelBuffer),
+          delegate: "CPU",
+        },
+        runningMode: "VIDEO",
+        outputFaceBlendshapes: false,
+      });
+    }
+
 
     // WARMING PHASE: Run a dummy frame to initialize WASM & WebGL backends
     try {

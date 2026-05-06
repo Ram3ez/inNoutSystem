@@ -20,17 +20,25 @@ ort.env.wasm.proxy = false;
 let session: ort.InferenceSession | null = null;
 let loadingPromise: Promise<ort.InferenceSession> | null = null;
 
-async function initSessionV1(): Promise<ort.InferenceSession> {
+async function initSessionV1(modelBuffer?: ArrayBuffer): Promise<ort.InferenceSession> {
   if (session) return session;
   if (loadingPromise) return loadingPromise;
 
   loadingPromise = (async () => {
     try {
       console.log("[👷 WORKER] Lazily Initializing GhostFaceNet v1 ONNX Session...");
-      const s = await ort.InferenceSession.create("/models/ghostfacenet.onnx", {
-        executionProviders: ["wasm"],
-        graphOptimizationLevel: "all",
-      });
+      let s;
+      if (modelBuffer) {
+        s = await ort.InferenceSession.create(new Uint8Array(modelBuffer), {
+          executionProviders: ["wasm"],
+          graphOptimizationLevel: "all",
+        });
+      } else {
+        s = await ort.InferenceSession.create("/models/ghostfacenet.onnx", {
+          executionProviders: ["wasm"],
+          graphOptimizationLevel: "all",
+        });
+      }
       session = s;
       console.log("[👷 WORKER] GhostFaceNet v1 Engine Ready (WASM).");
       return s;
@@ -61,11 +69,11 @@ async function preprocess(imageData: ImageData): Promise<ort.Tensor> {
 }
 
 self.onmessage = async (e: MessageEvent) => {
-  const { type, imageData, id } = e.data;
+  const { type, imageData, id, modelBuffer } = e.data;
 
   if (type === "INIT") {
     try {
-      await initSessionV1();
+      await initSessionV1(modelBuffer);
     } catch (e) {
       console.error("[👷 WORKER] Preload failed:", e);
     }

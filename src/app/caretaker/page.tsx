@@ -22,6 +22,7 @@ import { GradientBackground } from "@/components/GradientBackground";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
 import { Navigation } from "@/components/Navigation";
 import { useRouter } from "next/navigation";
+import { useLoading } from "@/context/LoadingContext";
 
 interface LeaveRequest {
   $id: string;
@@ -59,6 +60,7 @@ export default function CaretakerDashboard() {
   );
 
   const router = useRouter();
+  const { startLoading } = useLoading();
 
   useEffect(() => {
     if (!authLoading && (!isCaretaker || isRegistrationRequired)) {
@@ -360,7 +362,10 @@ export default function CaretakerDashboard() {
           className="mb-8"
         >
           <button
-            onClick={() => router.push("/")}
+            onClick={() => {
+              startLoading();
+              router.push("/");
+            }}
             className="flex items-center gap-2 text-primary/60 hover:text-primary transition-colors text-xs font-black uppercase tracking-widest w-fit group"
           >
             <div className="p-1.5 rounded-full bg-primary/5 group-hover:bg-primary/10 transition-colors">

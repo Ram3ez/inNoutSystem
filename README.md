@@ -3,7 +3,7 @@
 A premium, touchless biometric hostel management system built for **NIT Puducherry**. This system automates student outings, leave management, and faculty/caretaker oversight using a cutting-edge on-device AI pipeline. Featuring a robust offline-first architecture, relational data management via TablesDB, and multi-threaded AI processing.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Next.js](https://img.shields.io/badge/Next.js-15-black)
+![Next.js](https://img.shields.io/badge/Next.js-16-black)
 ![Appwrite](https://img.shields.io/badge/Backend-Appwrite%201.9-red)
 ![AI](https://img.shields.io/badge/AI-GhostFace%20(ONNX)%20%2B%20EdgeFace%20%2B%20MediaPipe-green)
 ![PWA](https://img.shields.io/badge/PWA-Offline%20First-orange)
@@ -12,13 +12,20 @@ A premium, touchless biometric hostel management system built for **NIT Puducher
 
 ## 🚀 Key Features
 
-### 1. Hybrid AI Biometric Engine
+### 1. Unified Digital Portal
+*   **Inclusive Entry Point**: Replaced restrictive administrative branding with a "Digital Portal" identity, designed to encompass future institutional features beyond hostel management.
+*   **Modern Institutional Design**: Features a professional glassmorphism interface with institutional colors, prioritizing clarity and accessibility for students and staff.
+
+### 2. Hybrid AI Biometric Engine
 *   **Web Worker Offloading**: High-performance face detection and search are handled in dedicated background threads (`faceSearch.worker.ts`, `ghostface.worker.ts`, and `edgeface.worker.ts`), ensuring a 60FPS UI even during heavy AI processing.
+*   **Resilient Initialization**: Implements automated **GPU-to-CPU fallback** for the MediaPipe Landmarker, ensuring stability across devices with restricted hardware acceleration.
+
 *   **Precision AI Pipeline**: 
     *   **MediaPipe**: Used for real-time face landmarking, pose estimation, and "Stability" checks.
     *   **GhostFaceNet (ONNX)**: A specialized SOTA recognition model running via `onnxruntime-web` for generating 512-d embeddings with extreme precision, utilizing MediaPipe for direct face alignment.
     *   **EdgeFace (ONNX)**: An optimized lightweight model running via `onnxruntime-web` for low-latency facial embedding generation on the edge.
     *   **face-api.js**: Leveraged as an alternative or fallback model for standard detection and alignment.
+*   **Persistent Cache Infrastructure**: Implements a manual `Cache-First` strategy via the `Cache API` for all AI models (ONNX, TFLite). This ensures models are only downloaded once (~200MB saving) and remain persistent across browser restarts and offline sessions.
 *   **Temporal Consensus**: Recognition isn't instant; the system requires a stable "consensus" over multiple frames to eliminate false positives.
 
 ### 2. Timezone Precision & Outing Restrictions
@@ -61,7 +68,11 @@ A premium, touchless biometric hostel management system built for **NIT Puducher
 *   **Authenticated Asset Warming**: Optimizes PWA performance by loading heavy AI models and biometric caches only for authenticated Administrative or Kiosk users, reducing data overhead for standard students.
 *   **Proactive Asset Warming**: Pre-warms facial embedding caches, making the kiosk "instant-on" for the next student.
 
-### 7. Role-Based Access Control (RBAC)
+### 7. Global Performance Indicators
+*   **Aesthetic Progress System**: Implemented a global, top-mounted progress bar that provides instant visual feedback for all client-side navigations and network-intensive actions.
+*   **Perceived Latency Optimization**: Transitioned from standard link-based navigation to custom handlers with predictive loading triggers, ensuring the UI feels responsive even on slower networks.
+
+### 8. Role-Based Access Control (RBAC)
 *   **Institutional Intelligence**: Automatically detects user roles based on email patterns (Student vs. Staff).
 *   **Staff Login View Customization**: For staff logins, student-only settings and features (My Leaves, Apply for Leave) are automatically hidden for maximum security and relevance.
 *   **Gated Environments**: Deep integration with **Appwrite Teams** for granular control:

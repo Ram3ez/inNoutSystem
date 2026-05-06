@@ -4,7 +4,7 @@ This document provides an overview of the project structure, the purpose of each
 
 ## Overview
 
-This is a **Next.js 15+** application using the **App Router** architecture. It serves as a hostel management system with advanced biometric (face recognition) capabilities.
+This is a **Next.js 16+** application using the **App Router** architecture. It serves as a hostel management system with advanced biometric (face recognition) capabilities.
 
 ### Tech Stack
 - **Framework**: Next.js (React)
@@ -36,12 +36,14 @@ Reusable UI components.
 React Context providers for global state management.
 - `AuthContext.tsx`: Manages user sessions, roles (Admin, Faculty, etc.), and profile data.
 - `ThemeContext.tsx`: Manages dark/light mode preferences.
+- `LoadingContext.tsx`: Manages the global loading state and top progress bar for navigation feedback.
 
 ### `src/lib/`
 Core business logic, AI engines, and utility functions.
 - `appwrite.ts`: Appwrite client initialization and data fetching helpers.
 - `aiEngine.ts`: Integration with MediaPipe for face landmark detection.
-- `edgefaceEngine.ts` / `ghostfaceEngine.ts`: ONNX-based face recognition models.
+- `edgefaceEngine.ts` / `ghostfaceEngine.ts`: ONNX-based face recognition models using Web Workers.
+- `fetchProgress.ts`: Specialized fetch utility with real-time progress reporting and Cache API persistence.
 - `faceCache.ts`: Manages local storage of facial embeddings for fast matching.
 - `idb.ts`: IndexedDB wrapper for offline data storage.
 - `syncService.ts`: Logic for syncing offline changes to Appwrite.

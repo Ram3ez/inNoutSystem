@@ -20,20 +20,16 @@ import { useAuth } from "@/context/AuthContext";
 import { GradientBackground } from "@/components/GradientBackground";
 import { Navigation } from "@/components/Navigation";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
+import { useLoading } from "@/context/LoadingContext";
 import { useRouter } from "next/navigation";
 import { databases, tablesDB, fetchAllRows, Query, ID } from "@/lib/appwrite";
 import { DB_ID, COLLECTIONS, API_SECRET } from "@/lib/constants";
 import Link from "next/link";
 
 export default function MyLeavesPage() {
-  const {
-    user,
-    studentData,
-    isLoading: authLoading,
-    isAdmin,
-    isKiosk,
-  } = useAuth();
+  const { user, studentData, isLoading: authLoading, isAdmin, isKiosk } = useAuth();
   const router = useRouter();
+  const { startLoading } = useLoading();
 
   const [leaves, setLeaves] = useState<any[]>([]);
   const [archivedLeaves, setArchivedLeaves] = useState<any[]>([]);
@@ -312,12 +308,15 @@ export default function MyLeavesPage() {
 
       <main className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 pt-32 sm:pt-40 pb-12">
         <header className="mb-8 flex items-center justify-between">
-          <Link
-            href="/"
+          <button
+            onClick={() => {
+              startLoading();
+              router.push("/");
+            }}
             className="p-2 hover:bg-primary/5 rounded-full transition-all text-primary/40 hover:text-primary shrink-0"
           >
             <ArrowLeft size={24} />
-          </Link>
+          </button>
           <div className="text-center flex-1 mx-4">
             <h1 className="text-xl sm:text-2xl font-bold text-primary tracking-[0.2em] uppercase">
               My Leaves

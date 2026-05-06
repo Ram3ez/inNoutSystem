@@ -25,6 +25,7 @@ import { useAuth } from "@/context/AuthContext";
 import { GradientBackground } from "@/components/GradientBackground";
 import { Navigation } from "@/components/Navigation";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
+import { useLoading } from "@/context/LoadingContext";
 import { useRouter, useSearchParams } from "next/navigation";
 import { databases, tablesDB, ID } from "@/lib/appwrite";
 import { Query } from "appwrite";
@@ -64,6 +65,7 @@ function CaptureContent() {
   } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { startLoading } = useLoading();
   const actionType = searchParams.get("type") || "Capture";
 
   const serverLog = (action: string, message: string) => {
@@ -1154,13 +1156,7 @@ function CaptureContent() {
     return (
       <GradientBackground>
         <div className="flex-1 flex flex-col items-center justify-center space-y-6">
-          <LoadingIndicator />
-          <div className="text-secondary font-bold uppercase tracking-widest text-xs animate-pulse text-center">
-            <p>Warming Up Neural Engine</p>
-            <p className="text-[10px] text-primary/40 mt-1 font-bold">
-              Loading Biometric Weights
-            </p>
-          </div>
+          <LoadingIndicator size="lg" />
         </div>
       </GradientBackground>
     );
@@ -1173,12 +1169,15 @@ function CaptureContent() {
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 pt-36 sm:pt-40 pb-12 flex flex-col">
         <header className="mb-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center space-x-4 w-full sm:w-auto">
-            <Link
-              href="/"
+            <button
+              onClick={() => {
+                startLoading();
+                router.push("/");
+              }}
               className="p-2 hover:bg-primary/5 rounded-full transition-all text-primary/40 hover:text-primary shrink-0"
             >
               <ArrowLeft size={24} />
-            </Link>
+            </button>
             <h1 className="text-base sm:text-xl font-bold text-primary tracking-[0.2em] uppercase flex-1 sm:flex-none">
               {actionType}
             </h1>
