@@ -65,7 +65,11 @@ function CaptureContent() {
   } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { startLoading } = useLoading();
+  const {
+    startLoading: startGlobalLoading,
+    stopLoading: stopGlobalLoading,
+    updateProgress,
+  } = useLoading();
   const actionType = searchParams.get("type") || "Capture";
 
   const serverLog = (action: string, message: string) => {
@@ -91,15 +95,13 @@ function CaptureContent() {
   } | null>(null);
 
   const [faceLandmarker, setFaceLandmarker] = useState<FaceLandmarker | null>(
-    typeof window !== "undefined" ? getLandmarkerSync() : null,
+    getLandmarkerSync(),
   );
   const [isFaceValid, setIsFaceValid] = useState(false);
   const [detectionFeedback, setDetectionFeedback] =
     useState("Initializing AI...");
   const [isScanning, setIsScanning] = useState(false);
-  const [aiLoaded, setAiLoaded] = useState(
-    typeof window !== "undefined" ? isAIReady() && isLandmarkerLoaded() : false,
-  );
+  const [aiLoaded, setAiLoaded] = useState(isAIReady() && isLandmarkerLoaded());
   const [modelType, setModelType] = useState<
     "face-api" | "ghostface" | "edgeface"
   >("edgeface");
@@ -143,42 +145,46 @@ function CaptureContent() {
     if (isAIReady() && isLandmarkerLoaded()) {
       setFaceLandmarker(getLandmarkerSync());
       setAiLoaded(true);
-      return;
-    }
+    } else {
+      const init = async () => {
+        try {
+          startGlobalLoading("Warming AI Engines...");
+          // Neural engine initialization
+          await loadBaseFaceModels();
 
-    const init = async () => {
-      try {
-        // Neural engine initialization
-        await loadBaseFaceModels();
-
-        const tf = (faceapi as any).tf;
-        if (tf) {
-          // Set safety flags AFTER registration to prevent "not registered" errors
-          try {
-            tf.env().set("WASM_HAS_SIMD_SUPPORT", false);
-            tf.env().set("WASM_HAS_MULTITHREAD_SUPPORT", false);
-          } catch (e) {
-            console.warn(
-              "[📱 MAIN] Could not set TFJS flags, continuing with defaults...",
-            );
+          const tf = (faceapi as any).tf;
+          if (tf) {
+            // Set safety flags AFTER registration to prevent "not registered" errors
+            try {
+              tf.env().set("WASM_HAS_SIMD_SUPPORT", false);
+              tf.env().set("WASM_HAS_MULTITHREAD_SUPPORT", false);
+            } catch (e) {
+              console.warn(
+                "[📱 MAIN] Could not set TFJS flags, continuing with defaults...",
+              );
+            }
           }
-        }
-        await new Promise((r) => setTimeout(r, 150));
-        await loadFaceCache();
-        await new Promise((r) => setTimeout(r, 150));
-        await getLandmarker();
-        await new Promise((r) => setTimeout(r, 150));
-        await initGhostFace();
+          await new Promise((r) => setTimeout(r, 100));
+          await loadFaceCache();
+          await new Promise((r) => setTimeout(r, 100));
+          await getLandmarker(updateProgress);
+          await new Promise((r) => setTimeout(r, 100));
+          await initGhostFace(updateProgress);
+          await new Promise((r) => setTimeout(r, 100));
+          await initEdgeFace(updateProgress);
 
-        if (isMounted.current) {
-          setFaceLandmarker(getLandmarkerSync());
-          setAiLoaded(true);
+          if (isMounted.current) {
+            setFaceLandmarker(getLandmarkerSync());
+            setAiLoaded(true);
+          }
+        } catch (e) {
+          console.error("Failed to initialize AI engine", e);
+        } finally {
+          stopGlobalLoading();
         }
-      } catch (e) {
-        console.error("Failed to initialize AI engine", e);
-      }
-    };
-    init();
+      };
+      init();
+    }
 
     return () => {
       isMounted.current = false;
@@ -219,28 +225,33 @@ function CaptureContent() {
       const COLL_STUDENTS = COLLECTIONS.STUDENTS;
 
       try {
-        const student = await tablesDB.getRow({
+        const student = (await tablesDB.getRow({
           databaseId: DB_ID,
           tableId: COLL_STUDENTS,
           rowId: rollNumber,
-        }) as any;
+        })) as any;
 
         // Check for block status
-        if (student.outing_blocked_until && new Date() < new Date(student.outing_blocked_until)) {
-            const until = new Date(student.outing_blocked_until).toLocaleDateString('en-IN', { 
-                timeZone: 'Asia/Kolkata', 
-                day: '2-digit', 
-                month: '2-digit', 
-                year: 'numeric' 
-            });
-            setResultDialog({
-                title: "Outing Blocked",
-                message: `${rollNumber}\n\n⚠️ YOUR OUTING PRIVILEGES HAVE BEEN RESTRICTED BY ADMIN.\n\nRESTRICTED UNTIL: ${until}`,
-                type: "error",
-            });
-            setIsProcessing(false);
-            setIsScanning(false);
-            return;
+        if (
+          student.outing_blocked_until &&
+          new Date() < new Date(student.outing_blocked_until)
+        ) {
+          const until = new Date(
+            student.outing_blocked_until,
+          ).toLocaleDateString("en-IN", {
+            timeZone: "Asia/Kolkata",
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+          });
+          setResultDialog({
+            title: "Outing Blocked",
+            message: `${rollNumber}\n\n⚠️ YOUR OUTING PRIVILEGES HAVE BEEN RESTRICTED BY ADMIN.\n\nRESTRICTED UNTIL: ${until}`,
+            type: "error",
+          });
+          setIsProcessing(false);
+          setIsScanning(false);
+          return;
         }
 
         setConfirmationData({
@@ -667,25 +678,31 @@ function CaptureContent() {
     setStatusText(`Verifying barcode for ${scanned}...`);
 
     try {
-      const student = await tablesDB.getRow({
+      const student = (await tablesDB.getRow({
         databaseId: DB_ID,
         tableId: COLLECTIONS.STUDENTS,
         rowId: scanned,
-      }) as any;
+      })) as any;
 
-      if (student.outing_blocked_until && new Date() < new Date(student.outing_blocked_until)) {
-          const until = new Date(student.outing_blocked_until).toLocaleDateString('en-IN', { 
-              timeZone: 'Asia/Kolkata', 
-              day: '2-digit', 
-              month: '2-digit', 
-              year: 'numeric' 
-          });
-          setResultDialog({
-              title: "Outing Blocked",
-              message: `${scanned}\n\n⚠️ YOUR OUTING PRIVILEGES HAVE BEEN RESTRICTED BY ADMIN.\n\nRESTRICTED UNTIL: ${until}`,
-              type: "error",
-          });
-          return;
+      if (
+        student.outing_blocked_until &&
+        new Date() < new Date(student.outing_blocked_until)
+      ) {
+        const until = new Date(student.outing_blocked_until).toLocaleDateString(
+          "en-IN",
+          {
+            timeZone: "Asia/Kolkata",
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+          },
+        );
+        setResultDialog({
+          title: "Outing Blocked",
+          message: `${scanned}\n\n⚠️ YOUR OUTING PRIVILEGES HAVE BEEN RESTRICTED BY ADMIN.\n\nRESTRICTED UNTIL: ${until}`,
+          type: "error",
+        });
+        return;
       }
 
       setConfirmationData({
@@ -1171,7 +1188,7 @@ function CaptureContent() {
           <div className="flex items-center space-x-4 w-full sm:w-auto">
             <button
               onClick={() => {
-                startLoading();
+                startGlobalLoading();
                 router.push("/");
               }}
               className="p-2 hover:bg-primary/5 rounded-full transition-all text-primary/40 hover:text-primary shrink-0"
@@ -1435,6 +1452,7 @@ function CaptureContent() {
                   <button
                     onClick={() => {
                       setResultDialog(null);
+                      startGlobalLoading();
                       router.push("/");
                     }}
                     className="w-full h-12 border border-primary/20 text-primary/60 hover:bg-primary/5 rounded-xl font-bold uppercase tracking-widest transition-all text-xs"

@@ -72,7 +72,7 @@ const TARGET_EMBEDDINGS = 8;
 export default function RegisterFacePage() {
   const { user, isLoading: authLoading, isAdmin, isKiosk } = useAuth();
   const router = useRouter();
-  const { startLoading } = useLoading();
+  const { startLoading: startGlobalLoading, stopLoading: stopGlobalLoading, updateProgress } = useLoading();
 
   const serverLog = (action: string, message: string) => {
     fetch("/api/log", {
@@ -137,6 +137,7 @@ export default function RegisterFacePage() {
     } else {
       const init = async () => {
         try {
+          startGlobalLoading("Initializing AI Engines...");
           // Neural engine initialization
           await loadBaseFaceModels();
 
@@ -151,18 +152,23 @@ export default function RegisterFacePage() {
               );
             }
           }
-          await new Promise((r) => setTimeout(r, 150));
+          await new Promise((r) => setTimeout(r, 100));
           await loadFaceCache();
-          await new Promise((r) => setTimeout(r, 150));
-          await getLandmarker();
-          await new Promise((r) => setTimeout(r, 150));
-          await initGhostFace();
+          await new Promise((r) => setTimeout(r, 100));
+          await getLandmarker(updateProgress);
+          await new Promise((r) => setTimeout(r, 100));
+          await initGhostFace(updateProgress);
+          await new Promise((r) => setTimeout(r, 100));
+          await initEdgeFace(updateProgress);
+
           if (isMounted.current) {
             setFaceLandmarker(getLandmarkerSync());
             setAiLoaded(true);
           }
         } catch (e) {
           console.error("Failed to initialize AI engine", e);
+        } finally {
+          stopGlobalLoading();
         }
       };
       init();
@@ -716,7 +722,7 @@ export default function RegisterFacePage() {
           <div className="flex items-center space-x-2 sm:space-x-4">
             <button
               onClick={() => {
-                startLoading();
+                startGlobalLoading();
                 router.push("/");
               }}
               className="p-2 hover:bg-primary/5 rounded-full transition-all text-primary/40 hover:text-primary shrink-0"
@@ -1131,7 +1137,10 @@ export default function RegisterFacePage() {
                 has been successfully committed to the cloud.
               </p>
               <button
-                onClick={() => router.push("/")}
+                onClick={() => {
+                  startGlobalLoading();
+                  router.push("/");
+                }}
                 className="w-full h-14 bg-secondary text-background rounded-2xl font-black uppercase tracking-widest hover:brightness-110 transition-all shadow-lg shadow-secondary/10 italic"
               >
                 Return to Dashboard
