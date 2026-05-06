@@ -199,10 +199,21 @@ export default function LeavePage() {
         return;
       }
 
-      // Use dynamically fetched emails with safety fallbacks
-      const finalCaretakerId =
-        caretakerEmail || "general_caretaker@nitpy.ac.in";
-      const finalFacultyId = facultyEmail || "general_faculty@nitpy.ac.in";
+      // Strict Approver Validation: Ensure assignments exist before allowing submission
+      if (!caretakerEmail) {
+        setError("CRITICAL ERROR: No Caretaker is currently assigned to your Year/Gender in the database (or network error, please try again). Please report this to the Hostel Admin to update the Staff Assignments before you can apply for leave.");
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (requiresFaculty && !facultyEmail) {
+        setError("CRITICAL ERROR: No Faculty Advisor is currently assigned to your Department/Year in the database (or network error, please try again). Please report this to the Faculty Admin to update the Staff Assignments before you can apply for leave.");
+        setIsSubmitting(false);
+        return;
+      }
+
+      const finalCaretakerId = caretakerEmail;
+      const finalFacultyId = facultyEmail || "not_assigned@nitpy.ac.in";
 
       /*
       await databases.createDocument({
