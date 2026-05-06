@@ -20,17 +20,25 @@ ort.env.wasm.proxy = false;
 let session: ort.InferenceSession | null = null;
 let loadingPromise: Promise<ort.InferenceSession> | null = null;
 
-async function initSession(): Promise<ort.InferenceSession> {
+async function initSession(modelBuffer?: ArrayBuffer): Promise<ort.InferenceSession> {
   if (session) return session;
   if (loadingPromise) return loadingPromise;
 
   loadingPromise = (async () => {
     try {
       console.log("[👷 WORKER] Lazily Initializing EdgeFace ONNX Session...");
-      const s = await ort.InferenceSession.create("/models/edgeface.onnx", {
-        executionProviders: ["wasm"],
-        graphOptimizationLevel: "all",
-      });
+      let s;
+      if (modelBuffer) {
+        s = await ort.InferenceSession.create(new Uint8Array(modelBuffer), {
+          executionProviders: ["wasm"],
+          graphOptimizationLevel: "all",
+        });
+      } else {
+        s = await ort.InferenceSession.create("/models/edgeface.onnx", {
+          executionProviders: ["wasm"],
+          graphOptimizationLevel: "all",
+        });
+      }
       session = s;
       console.log("[👷 WORKER] EdgeFace Engine Ready (WASM).");
       return s;
@@ -43,6 +51,15 @@ async function initSession(): Promise<ort.InferenceSession> {
   return loadingPromise;
 }
 
+/**
+ * preprocess
+ * Converts standard ImageData (RGBA) into an ONNX-ready Tensor.
+ * 
+ * Logic:
+ * 1. Normalization: Scales 0-255 pixels to -1.0 to 1.0 range (mean=127.5, std=127.5).
+ * 2. Format Handling: Switches between Planar (CHW) and Interleaved (HWC) formats based 
+ *    on the model's metadata requirements.
+ */
 async function preprocess(
   imageData: ImageData,
   inputShape: readonly number[],
@@ -80,11 +97,12 @@ async function preprocess(
 }
 
 self.onmessage = async (e: MessageEvent) => {
-  const { type, imageData, id } = e.data;
+  const { type, imageData, id, modelBuffer } = e.data;
 
   if (type === "INIT") {
+    // Model warming up phase
     try {
-      await initSession();
+      await initSession(modelBuffer);
     } catch (e) {
       console.error("[👷 WORKER] EdgeFace Preload failed:", e);
     }
@@ -106,12 +124,15 @@ self.onmessage = async (e: MessageEvent) => {
       const feeds: any = {};
       feeds[inputName] = inputTensor;
 
+      // Run the ONNX model
       const outputMap = await activeSession.run(feeds);
       const outputTensor = outputMap[activeSession.outputNames[0]];
 
       const embedding = outputTensor.data as Float32Array;
 
-      // L2 Normalization
+      // --- L2 NORMALIZATION ---
+      // We normalize the 512-d vector to a unit length of 1.0.
+      // This allows us to use simple Dot Product for Cosine Similarity.
       let norm = 0;
       for (let i = 0; i < embedding.length; i++)
         norm += embedding[i] * embedding[i];
@@ -121,6 +142,7 @@ self.onmessage = async (e: MessageEvent) => {
       for (let i = 0; i < embedding.length; i++)
         normalizedEmbedding[i] = embedding[i] / (norm + 1e-6);
 
+      // Pass the result back to the main thread using Transferable Objects
       (self as any).postMessage(
         { type: "INFERENCE_DONE", embedding: normalizedEmbedding, id },
         [normalizedEmbedding.buffer],

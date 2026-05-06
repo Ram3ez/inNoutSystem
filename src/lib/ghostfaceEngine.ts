@@ -7,42 +7,56 @@
  */
 
 
+import { fetchWithProgress } from "./fetchProgress";
+
 let worker: Worker | null = null;
-let initPromise: Promise<void> | null = null;
+let initPromise: Promise<any> | null = null;
 const pendingRequests = new Map<number, (embedding: Float32Array) => void>();
 let requestIdCounter = 0;
 
 /**
  * Initializes the GhostFace Web Worker and warms up the model.
  */
-export async function initGhostFace(): Promise<void> {
+export async function initGhostFace(updateProgress?: (p: number, s: string) => void): Promise<void> {
   if (initPromise) return initPromise;
 
-  initPromise = new Promise((resolve, reject) => {
+  initPromise = (async () => {
     try {
-      worker = new Worker(new URL("./ghostface.worker.ts", import.meta.url));
+      // Download model with progress tracking
+      if (updateProgress) updateProgress(0, "Downloading Recognition Model...");
+      const modelBuffer = await fetchWithProgress(
+        "/models/ghostfacenet.onnx",
+        (p) => updateProgress?.(p, "Downloading Recognition Model...")
+      );
 
-      worker.onmessage = (e) => {
-        const { type, embedding, id, error } = e.data;
-        if (type === "INIT_DONE") {
-          console.log("[🧠 ENGINE] GhostFaceNet Worker Initialized.");
-          resolve();
-        } else if (type === "INFERENCE_DONE") {
-          const callback = pendingRequests.get(id);
-          if (callback) {
-            callback(embedding);
-            pendingRequests.delete(id);
+      return new Promise<void>((resolve, reject) => {
+        worker = new Worker(new URL("./ghostface.worker.ts", import.meta.url));
+
+        worker.onmessage = (e) => {
+          const { type, embedding, id, error } = e.data;
+          if (type === "INIT_DONE") {
+            console.log("[🧠 ENGINE] GhostFaceNet Worker Initialized.");
+            resolve();
+          } else if (type === "INFERENCE_DONE") {
+            const callback = pendingRequests.get(id);
+            if (callback) {
+              callback(embedding);
+              pendingRequests.delete(id);
+            }
+          } else if (type === "ERROR") {
+            console.error("[🧠 ENGINE] Worker Error:", error);
           }
-        } else if (type === "ERROR") {
-          console.error("[🧠 ENGINE] Worker Error:", error);
-        }
-      };
+        };
 
-      worker.postMessage({ type: "INIT" });
+        // Pass the downloaded buffer to the worker
+        worker.postMessage({ type: "INIT", modelBuffer }, [modelBuffer]);
+      });
     } catch (e) {
-      reject(e);
+      console.error("[🧠 ENGINE] GhostFace Initialization failed:", e);
+      throw e;
     }
-  });
+  })();
+
 
   return initPromise;
 }
@@ -109,107 +123,112 @@ export async function getGhostFaceDescriptor(
 
   ctx.clearRect(0, 0, 112, 112);
 
-  // --- SUPERIOR AFFINE ALIGNMENT ---
-  // We can handle either Face-API landmarks or MediaPipe landmarks (Array of 478 pts)
-  let l: { x: number; y: number } | null = null;
-  let r: { x: number; y: number } | null = null;
+    // --- SUPERIOR AFFINE ALIGNMENT ---
+    // We use affine transformation to rotate and scale the face into a standardized 112x112 crop.
+    // This process (Alignment) is critical for high-accuracy recognition.
+    // We can handle either Face-API landmarks or MediaPipe landmarks (Array of 478 pts).
+    let l: { x: number; y: number } | null = null;
+    let r: { x: number; y: number } | null = null;
 
-  if (Array.isArray(landmarks)) {
-    // MEDIAPIPE LANDMARKS (Normalized 0.0 - 1.0)
-    // Left eye corners: 33, 133. Right eye: 362, 263. Nose bridge: 168.
-    const getMPCoord = (idx: number) => ({
-      x: landmarks[idx].x * sw,
-      y: landmarks[idx].y * sh,
-    });
+    if (Array.isArray(landmarks)) {
+      // CASE 1: MEDIAPIPE LANDMARKS (Normalized 0.0 - 1.0)
+      // Index mapping: Left eye inner corner: 133, Right eye inner corner: 362.
+      // We scale these normalized coordinates to pixel coordinates based on source dimensions.
+      const getMPCoord = (idx: number) => ({
+        x: landmarks[idx].x * sw,
+        y: landmarks[idx].y * sh,
+      });
 
-    const lCorner = getMPCoord(33);
-    const rCorner = getMPCoord(263);
+      const lCorner = getMPCoord(33);
+      const rCorner = getMPCoord(263);
 
-    // Calculate angle based on eyes
-    const dy = rCorner.y - lCorner.y;
-    const dx = rCorner.x - lCorner.x;
-    const angle = Math.atan2(dy, dx);
+      // ALIGNMENT MATH:
+      // 1. Calculate the angle between the eyes to determine head tilt (Roll).
+      const dy = rCorner.y - lCorner.y;
+      const dx = rCorner.x - lCorner.x;
+      const angle = Math.atan2(dy, dx);
 
-    // Scale based on eye distance
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const desiredEyeDist = 51.5; // 46% of 112px
-    const scale = desiredEyeDist / dist;
+      // 2. Calculate the interpupillary distance (IPD) to determine face scale.
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      
+      // SOTA Constraint: For a 112px input, eyes should be ~51.5px apart (IPD).
+      const desiredEyeDist = 51.5; 
+      const scale = desiredEyeDist / dist;
 
-    // Use eye midpoint as the anchor to match Face-API logic
-    const mx = (lCorner.x + rCorner.x) / 2;
-    const my = (lCorner.y + rCorner.y) / 2;
+      // 3. Eye midpoint serves as our rotational anchor.
+      const mx = (lCorner.x + rCorner.x) / 2;
+      const my = (lCorner.y + rCorner.y) / 2;
 
-    ctx.save();
-    // Standard GhostFaceNet anchor: Eye midpoint at (56, 48)
-    ctx.translate(56, 48);
+      ctx.save();
+      // We translate the center-point of the eyes to (56, 48) on the 112x112 target.
+      ctx.translate(56, 48);
 
-    if (flip) {
-      ctx.scale(-1, 1);
+      if (flip) {
+        ctx.scale(-1, 1);
+      }
+
+      // Apply the inverse roll and the required scale
+      ctx.rotate(-angle);
+      ctx.scale(scale, scale);
+      
+      // Move back to the eye midpoint in the source space
+      ctx.translate(-mx, -my);
+      ctx.drawImage(source, 0, 0);
+      ctx.restore();
+
+      l = lCorner;
+      r = rCorner;
+    } else if (landmarks && landmarks.getLeftEye && landmarks.getRightEye) {
+      // CASE 2: FACE-API LANDMARKS (Pixel coordinates)
+      // Calculate the average (centroid) of the multi-point eye landmarks.
+      const leftEyePoints = landmarks.getLeftEye();
+      const rightEyePoints = landmarks.getRightEye();
+      if (leftEyePoints?.length > 0 && rightEyePoints?.length > 0) {
+        l = {
+          x: leftEyePoints.reduce((s: any, p: any) => s + p.x, 0) / leftEyePoints.length,
+          y: leftEyePoints.reduce((s: any, p: any) => s + p.y, 0) / leftEyePoints.length,
+        };
+        r = {
+          x: rightEyePoints.reduce((s: any, p: any) => s + p.x, 0) / rightEyePoints.length,
+          y: rightEyePoints.reduce((s: any, p: any) => s + p.y, 0) / rightEyePoints.length,
+        };
+      }
     }
 
-    ctx.rotate(-angle);
-    ctx.scale(scale, scale);
-    ctx.translate(-mx, -my);
-    ctx.drawImage(source, 0, 0);
-    ctx.restore();
+    // Apply the same affine logic for Case 2 if points were found
+    if (l && r && !Array.isArray(landmarks)) {
+      const dy = r.y - l.y;
+      const dx = r.x - l.x;
+      const angle = Math.atan2(dy, dx);
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const mx = (l.x + r.x) / 2;
+      const my = (l.y + r.y) / 2;
 
-    // Safety check
-    l = lCorner;
-    r = rCorner;
-  } else if (landmarks && landmarks.getLeftEye && landmarks.getRightEye) {
-    // FACE-API LANDMARKS (Pixel coordinates)
-    const leftEyePoints = landmarks.getLeftEye();
-    const rightEyePoints = landmarks.getRightEye();
-    if (leftEyePoints?.length > 0 && rightEyePoints?.length > 0) {
-      l = {
-        x:
-          leftEyePoints.reduce((s: any, p: any) => s + p.x, 0) /
-          leftEyePoints.length,
-        y:
-          leftEyePoints.reduce((s: any, p: any) => s + p.y, 0) /
-          leftEyePoints.length,
-      };
-      r = {
-        x:
-          rightEyePoints.reduce((s: any, p: any) => s + p.x, 0) /
-          rightEyePoints.length,
-        y:
-          rightEyePoints.reduce((s: any, p: any) => s + p.y, 0) /
-          rightEyePoints.length,
-      };
+      const desiredEyeDist = 51.5;
+      const scale = desiredEyeDist / dist;
+
+      ctx.save();
+      ctx.translate(56, 48);
+      ctx.rotate(-angle);
+      ctx.scale(scale, scale);
+      ctx.translate(-mx, -my);
+      ctx.drawImage(source, 0, 0);
+      ctx.restore();
+    } else if (!l || !r) {
+      // FALLBACK: Simple bounding-box crop if landmarks are missing or failed.
+      drawSimpleCrop(ctx, source, box);
     }
-  }
 
-  if (l && r && !Array.isArray(landmarks)) {
-    const dy = r.y - l.y;
-    const dx = r.x - l.x;
-    const angle = Math.atan2(dy, dx);
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const mx = (l.x + r.x) / 2;
-    const my = (l.y + r.y) / 2;
-
-    // Optimal parameters for 112x112 GhostFaceNet input:
-    // We set the Interpupillary Distance (IPD) to ~46% of the width (51.5px)
-    const desiredEyeDist = 51.5;
-    const scale = desiredEyeDist / dist;
-
-    ctx.save();
-    ctx.translate(56, 48);
-    ctx.rotate(-angle);
-    ctx.scale(scale, scale);
-    ctx.translate(-mx, -my);
-    ctx.drawImage(source, 0, 0);
-    ctx.restore();
-  } else if (!l || !r) {
-    drawSimpleCrop(ctx, source, box);
-  }
-
-  // Quality Check: Factor out bad frames before inference
-  const quality = checkFaceQuality(ctx);
-  if (!quality.isGood) {
-    console.warn(`[🧠 ENGINE] Skipping frame: ${quality.reason}`);
-    return new Float32Array(512); // Return zeroed descriptor to skip
-  }
+    /**
+     * Quality Guard (Pre-Inference)
+     * We analyze the cropped 112x112 face image before passing it to the Neural Engine.
+     * If the frame is blurry or under-exposed, we skip it to prevent unstable embeddings.
+     */
+    const quality = checkFaceQuality(ctx);
+    if (!quality.isGood) {
+      console.warn(`[🧠 ENGINE] Skipping frame: ${quality.reason}`);
+      return new Float32Array(512); // Zeroed descriptor signals a skip to the caller
+    }
 
   return extractGhostFaceEmbedding(sharedCropCanvas);
 }

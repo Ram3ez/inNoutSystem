@@ -15,6 +15,7 @@ import { useAuth } from "@/context/AuthContext";
 import { GradientBackground } from "@/components/GradientBackground";
 import { Navigation } from "@/components/Navigation";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
+import { useLoading } from "@/context/LoadingContext";
 import { useRouter } from "next/navigation";
 import { tablesDB } from "@/lib/appwrite";
 import { DB_ID, COLLECTIONS, BIOMETRIC_THRESHOLDS } from "@/lib/constants";
@@ -34,14 +35,9 @@ import * as faceapi from "face-api.js";
 const TARGET_EMBEDDINGS = 8;
 
 export default function StudentRegisterFace() {
-  const {
-    user,
-    studentData,
-    isLoading: authLoading,
-    isAdmin,
-    isKiosk,
-  } = useAuth();
+  const { user, studentData, isLoading: authLoading, isAdmin, isKiosk } = useAuth();
   const router = useRouter();
+  const { startLoading } = useLoading();
 
   const serverLog = (action: string, message: string) => {
     fetch("/api/log", {
@@ -486,7 +482,10 @@ export default function StudentRegisterFace() {
       <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 pt-36 sm:pt-40 pb-12">
         <header className="mb-8 flex items-center justify-between">
           <button
-            onClick={() => router.push("/")}
+            onClick={() => {
+              startLoading();
+              router.push("/");
+            }}
             className="flex items-center space-x-2 text-primary/60 hover:text-primary font-bold uppercase text-xs tracking-widest bg-primary/5 px-4 py-2 rounded-xl transition-all border border-primary/10 hover:bg-primary/10 shadow-sm"
           >
             <ArrowLeft size={16} />
@@ -625,11 +624,8 @@ export default function StudentRegisterFace() {
                 </div>
 
                 {!aiLoaded ? (
-                  <div className="p-4 bg-primary/[0.02] rounded-2xl border border-primary/5 text-center flex flex-col items-center justify-center space-y-2">
-                    <div className="w-5 h-5 border-2 border-secondary border-t-transparent rounded-full animate-spin" />
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-primary/40">
-                      Warming AI Engine...
-                    </span>
+                  <div className="p-8 bg-primary/[0.02] rounded-2xl border border-primary/5 text-center flex flex-col items-center justify-center space-y-4">
+                    <LoadingIndicator size="sm" />
                   </div>
                 ) : (
                   <button

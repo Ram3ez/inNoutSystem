@@ -15,7 +15,9 @@ import {
 } from "@/lib/appwrite";
 import { Models } from "appwrite";
 import { useRouter, usePathname } from "next/navigation";
+import { useLoading } from "./LoadingContext";
 import { Student } from "@/types/models";
+
 import { DB_ID, COLLECTIONS, TEAMS, CACHE_KEYS } from "@/lib/constants";
 
 /**
@@ -230,8 +232,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       localStorage.setItem(CACHE_KEY_KIOSK, encodeCache(kioskStatus));
       localStorage.setItem(CACHE_KEY_FACULTY, encodeCache(facultyStatus));
       localStorage.setItem(CACHE_KEY_CARETAKER, encodeCache(caretakerStatus));
-    } catch (error) {
-      console.warn("Auth check failed, checking cache...", error);
+    } catch (error: any) {
+      // Silence 401 errors as they are expected when a user is not logged in
+      // This keeps the developer console clean from "guest access" noise.
+      if (error.code !== 401) {
+        console.warn("Auth check failed, checking cache...", error);
+      }
       const cachedUser = localStorage.getItem(CACHE_KEY_USER);
       if (cachedUser) {
         console.log("Restoring cached fallback session...");
@@ -321,23 +327,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  const { updateProgress, startLoading: startGlobalLoading, stopLoading: stopGlobalLoading } = useLoading();
+
   // Background model pre-loading based on user roles
   useEffect(() => {
     if (user && !isLoading) {
-      import("@/lib/faceCache").then((m) => {
-        if (isKiosk || isAdmin) {
-          // Admins/Kiosks need full Face-API and the student database for verification
-          m.loadFaceApiModels();
-          m.loadFaceCache();
-        } else {
-          // Regular users only need lightweight models for registration or profile
-          import("@/lib/aiEngine").then((ai) => ai.getLandmarker());
-          import("@/lib/ghostfaceEngine").then((gf) => gf.initGhostFace());
-          import("@/lib/edgefaceEngine").then((ef) => ef.initEdgeFace());
+      const preloadModels = async () => {
+        try {
+          const m = await import("@/lib/faceCache");
+          if (isKiosk || isAdmin) {
+            // Admins/Kiosks need full Face-API and the student database for verification
+            startGlobalLoading("Preparing AI Engines...");
+            await m.loadFaceApiModels();
+            await m.loadFaceCache();
+            stopGlobalLoading();
+          } else {
+            // Regular users only need lightweight models for registration or profile
+            startGlobalLoading("Loading AI Models...");
+            const ai = await import("@/lib/aiEngine");
+            await ai.getLandmarker(updateProgress);
+            
+            const gf = await import("@/lib/ghostfaceEngine");
+            await gf.initGhostFace(updateProgress);
+            
+            const ef = await import("@/lib/edgefaceEngine");
+            await ef.initEdgeFace(); // Edgeface doesn't have progress yet
+            stopGlobalLoading();
+          }
+        } catch (error) {
+          console.error("Model pre-loading failed:", error);
+          stopGlobalLoading();
         }
-      });
+      };
+
+      preloadModels();
     }
   }, [user, isLoading, isKiosk, isAdmin]);
+
 
   return (
     <AuthContext.Provider

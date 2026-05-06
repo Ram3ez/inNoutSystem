@@ -19,6 +19,7 @@ import { useAuth } from "@/context/AuthContext";
 import { tablesDB } from "@/lib/appwrite";
 import { GradientBackground } from "@/components/GradientBackground";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
+import { useLoading } from "@/context/LoadingContext";
 import { Navigation } from "@/components/Navigation";
 import { useRouter } from "next/navigation";
 import { DB_ID, COLLECTIONS } from "@/lib/constants";
@@ -27,6 +28,7 @@ import Link from "next/link";
 export default function SettingsPage() {
   const { user, studentData, isLoading: authLoading } = useAuth();
   const router = useRouter();
+  const { startLoading } = useLoading();
 
   const [parentName, setParentName] = useState("");
   const [parentPhone, setParentPhone] = useState("");
@@ -131,12 +133,15 @@ export default function SettingsPage() {
       <main className="flex-1 max-w-2xl mx-auto w-full px-4 sm:px-6 pt-32 sm:pt-40 pb-12">
         <header className="mb-12">
           <div className="flex items-center space-x-4 mb-6">
-            <Link
-              href="/"
+            <button
+              onClick={() => {
+                startLoading();
+                router.push("/");
+              }}
               className="p-2 hover:bg-primary/5 rounded-full transition-all text-primary/40 hover:text-primary"
             >
               <ArrowLeft size={24} />
-            </Link>
+            </button>
             <div>
               <p className="text-secondary font-bold tracking-[0.2em] text-[10px] uppercase mb-1">
                 Account Settings

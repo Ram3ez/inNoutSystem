@@ -25,7 +25,9 @@ import { useAuth } from "@/context/AuthContext";
 import { GradientBackground } from "@/components/GradientBackground";
 import { Navigation } from "@/components/Navigation";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
+import { useLoading } from "@/context/LoadingContext";
 import { useRouter } from "next/navigation";
+
 import { databases, tablesDB, fetchAllRows, Query } from "@/lib/appwrite";
 import { format } from "date-fns";
 import { formatToIST } from "@/lib/constants";
@@ -43,6 +45,7 @@ export default function Dashboard() {
     isCaretaker,
     studentData,
   } = useAuth();
+  const { startLoading } = useLoading();
   const router = useRouter();
   const profileId = user?.email ? user.email.split("@")[0].toUpperCase() : "";
   const isStudent = /^[A-Z]{2}[0-9]{2}[A-Z][0-9]{4}$/.test(profileId);
@@ -125,6 +128,19 @@ export default function Dashboard() {
     }
   };
 
+  // REDIRECTION LOGIC
+  // We handle navigation in a useEffect to avoid "setState during render" warnings.
+  // This ensures the dashboard content is only interactive for authenticated & registered users.
+  React.useEffect(() => {
+    if (!isLoading) {
+      if (!user) {
+        router.push("/login");
+      } else if (isRegistrationRequired) {
+        router.push("/complete-profile");
+      }
+    }
+  }, [user, isLoading, isRegistrationRequired, router]);
+
   if (isLoading) {
     return (
       <GradientBackground>
@@ -136,15 +152,8 @@ export default function Dashboard() {
     );
   }
 
-  if (!user) {
-    if (typeof window !== "undefined") router.push("/login");
-    return null;
-  }
+  if (!user || isRegistrationRequired) return null;
 
-  if (isRegistrationRequired) {
-    if (typeof window !== "undefined") router.push("/complete-profile");
-    return null;
-  }
 
   return (
     <GradientBackground>
@@ -221,28 +230,28 @@ export default function Dashboard() {
                 subtitle="Short Duration Entry/Exit"
                 icon={<Footprints className="text-secondary" size={32} />}
                 delay={0.1}
-                onClick={() => router.push("/capture?type=Outing")}
+                onClick={() => { startLoading(); router.push("/capture?type=Outing"); }}
               />
               <ActionCard
                 title="Leave"
                 subtitle="Long Duration Leave Entry/Exit"
                 icon={<Home className="text-secondary" size={32} />}
                 delay={0.12}
-                onClick={() => router.push("/capture?type=Leave")}
+                onClick={() => { startLoading(); router.push("/capture?type=Leave"); }}
               />
               <ActionCard
                 title="Register Face"
                 subtitle="New Student Enrollment"
                 icon={<ScanFace className="text-secondary" size={32} />}
                 delay={0.15}
-                onClick={() => router.push("/register")}
+                onClick={() => { startLoading(); router.push("/register"); }}
               />
               <ActionCard
                 title="Live Monitor"
                 subtitle="Active Outing Tracking"
                 icon={<Activity className="text-secondary" size={32} />}
                 delay={0.2}
-                onClick={() => router.push("/live-status")}
+                onClick={() => { startLoading(); router.push("/live-status"); }}
               />
             </>
           )}
@@ -253,21 +262,21 @@ export default function Dashboard() {
                 subtitle="Academic or Personal Leave"
                 icon={<Home className="text-primary/20" size={32} />}
                 delay={0.25}
-                onClick={() => router.push("/leave")}
+                onClick={() => { startLoading(); router.push("/leave"); }}
               />
               <ActionCard
                 title="My Leaves"
                 subtitle="Track Leave Approvals"
                 icon={<Activity className="text-primary/20" size={32} />}
                 delay={0.28}
-                onClick={() => router.push("/my-leaves")}
+                onClick={() => { startLoading(); router.push("/my-leaves"); }}
               />
               <ActionCard
                 title="Settings"
                 subtitle="Manage Parent Details"
                 icon={<ShieldCheck className="text-primary/20" size={32} />}
                 delay={0.31}
-                onClick={() => router.push("/settings")}
+                onClick={() => { startLoading(); router.push("/settings"); }}
               />
               <ActionCard
                 title="Register Face"
@@ -278,7 +287,7 @@ export default function Dashboard() {
                 }
                 icon={<ScanFace className="text-primary/20" size={32} />}
                 delay={0.33}
-                onClick={() => router.push("/register-face")}
+                onClick={() => { startLoading(); router.push("/register-face"); }}
               />
             </>
           )}
@@ -288,7 +297,7 @@ export default function Dashboard() {
               subtitle="Administrative Console"
               icon={<ShieldCheck className="text-secondary" size={32} />}
               delay={0.3}
-              onClick={() => router.push("/admin")}
+              onClick={() => { startLoading(); router.push("/admin"); }}
             />
           )}
           {isCaretaker && (
@@ -297,7 +306,7 @@ export default function Dashboard() {
               subtitle="Leave Management Console"
               icon={<ShieldCheck className="text-secondary" size={32} />}
               delay={0.35}
-              onClick={() => router.push("/caretaker")}
+              onClick={() => { startLoading(); router.push("/caretaker"); }}
             />
           )}
           {isFaculty && (
@@ -306,7 +315,7 @@ export default function Dashboard() {
               subtitle="Leave Management Console"
               icon={<UserCheck className="text-secondary" size={32} />}
               delay={0.4}
-              onClick={() => router.push("/faculty")}
+              onClick={() => { startLoading(); router.push("/faculty"); }}
             />
           )}
         </div>

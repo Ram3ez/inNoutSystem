@@ -10,6 +10,7 @@ import { LoadingIndicator } from '@/components/LoadingIndicator';
 import { Navigation } from '@/components/Navigation';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { useLoading } from '@/context/LoadingContext';
 
 import { Student } from '@/types/models';
 
@@ -20,6 +21,7 @@ import { Models } from 'appwrite';
 export default function AdminPortal() {
     const { user, isLoading: authLoading, isAdmin, isRegistrationRequired } = useAuth();
     const router = useRouter();
+    const { startLoading } = useLoading();
     
     const [activeTab, setActiveTab] = useState<'students' | 'assignments' | 'faculty' | 'caretakers' | 'outings' | 'leaves' | 'calendar'>('students');
     const [students, setStudents] = useState<Student[]>([]);
@@ -690,9 +692,15 @@ export default function AdminPortal() {
             <main className="flex-1 w-full px-4 sm:px-8 xl:px-12 pt-36 sm:pt-40 pb-12">
                 <header className="mb-12 flex flex-col md:flex-row md:items-center justify-between gap-8">
                     <div className="flex items-center space-x-4">
-                        <Link href="/" className="p-2 hover:bg-primary/5 rounded-full transition-all text-primary/40 hover:text-primary">
+                        <button 
+                            onClick={() => {
+                                startLoading();
+                                router.push("/");
+                            }}
+                            className="p-2 hover:bg-primary/5 rounded-full transition-all text-primary/40 hover:text-primary"
+                        >
                             <ArrowLeft size={24} />
-                        </Link>
+                        </button>
                         <div className="text-center md:text-left">
                             <p className="text-secondary font-bold tracking-[0.2em] text-[10px] sm:text-xs uppercase mb-1">Administrative Access</p>
                             <h1 className="text-3xl font-bold text-primary tracking-tight uppercase flex items-center justify-center md:justify-start space-x-3">

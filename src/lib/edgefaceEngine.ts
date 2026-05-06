@@ -7,42 +7,56 @@
  */
 
 
+import { fetchWithProgress } from "./fetchProgress";
+
 let worker: Worker | null = null;
-let initPromise: Promise<void> | null = null;
+let initPromise: Promise<any> | null = null;
 const pendingRequests = new Map<number, (embedding: Float32Array) => void>();
 let requestIdCounter = 0;
 
 /**
  * Initializes the EdgeFace Web Worker and warms up the model.
  */
-export async function initEdgeFace(): Promise<void> {
+export async function initEdgeFace(updateProgress?: (p: number, s: string) => void): Promise<void> {
   if (initPromise) return initPromise;
 
-  initPromise = new Promise((resolve, reject) => {
+  initPromise = (async () => {
     try {
-      worker = new Worker(new URL("./edgeface.worker.ts", import.meta.url));
+      // Download model with progress tracking
+      if (updateProgress) updateProgress(0, "Downloading Edge Model...");
+      const modelBuffer = await fetchWithProgress(
+        "/models/edgeface.onnx",
+        (p) => updateProgress?.(p, "Downloading Edge Model...")
+      );
 
-      worker.onmessage = (e) => {
-        const { type, embedding, id, error } = e.data;
-        if (type === "INIT_DONE") {
-          console.log("[🧠 ENGINE] EdgeFace Worker Initialized.");
-          resolve();
-        } else if (type === "INFERENCE_DONE") {
-          const callback = pendingRequests.get(id);
-          if (callback) {
-            callback(embedding);
-            pendingRequests.delete(id);
+      return new Promise<void>((resolve, reject) => {
+        worker = new Worker(new URL("./edgeface.worker.ts", import.meta.url));
+
+        worker.onmessage = (e) => {
+          const { type, embedding, id, error } = e.data;
+          if (type === "INIT_DONE") {
+            console.log("[🧠 ENGINE] EdgeFace Worker Initialized.");
+            resolve();
+          } else if (type === "INFERENCE_DONE") {
+            const callback = pendingRequests.get(id);
+            if (callback) {
+              callback(embedding);
+              pendingRequests.delete(id);
+            }
+          } else if (type === "ERROR") {
+            console.error("[🧠 ENGINE] Worker Error:", error);
           }
-        } else if (type === "ERROR") {
-          console.error("[🧠 ENGINE] Worker Error:", error);
-        }
-      };
+        };
 
-      worker.postMessage({ type: "INIT" });
+        // Pass the downloaded buffer to the worker
+        worker.postMessage({ type: "INIT", modelBuffer }, [modelBuffer]);
+      });
     } catch (e) {
-      reject(e);
+      console.error("[🧠 ENGINE] EdgeFace Initialization failed:", e);
+      throw e;
     }
-  });
+  })();
+
 
   return initPromise;
 }
@@ -124,23 +138,33 @@ export async function getEdgeFaceDescriptor(
     }
   }
 
+  // --- AFFINE ALIGNMENT ---
+  // standardizes the face image into a 112x112 square.
+  // Proper alignment significantly increases recognition accuracy.
   if (l && r && dw && dh) {
+    // 1. Calculate the roll angle (tilt) of the head
     const dy = r.y - l.y;
     const dx = r.x - l.x;
     const angle = Math.atan2(dy, dx);
 
+    // 2. Find the eye midpoint as the rotational anchor
     const mx = (l.x + r.x) / 2;
     const my = (l.y + r.y) / 2;
 
+    // 3. Scale calculation based on Interpupillary Distance (IPD)
+    // For EdgeFace (112px input), we target an IPD of ~48px.
     const desiredDistance = 48;
     const actualDistance = Math.sqrt(dx * dx + dy * dy);
     const scale = desiredDistance / actualDistance;
 
     ctx.save();
     if (flip) {
+      // Handle mirrored video streams (typical of front cameras)
       ctx.translate(112, 0);
       ctx.scale(-1, 1);
     }
+    
+    // Transform to center-point (56, 48) on the output canvas
     ctx.translate(56, 48);
     ctx.rotate(-angle);
     ctx.scale(scale, scale);
@@ -148,6 +172,7 @@ export async function getEdgeFaceDescriptor(
     ctx.drawImage(source, 0, 0);
     ctx.restore();
   } else {
+    // FALLBACK: If landmarks failed, perform a simple centered crop.
     drawSimpleCrop(ctx, source, box);
   }
 

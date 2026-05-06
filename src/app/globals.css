@@ -89,4 +89,22 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
   cursor: pointer;
 }
 
+@keyframes progress {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(-20%); }
+  100% { transform: translateX(0%); }
+}
 
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.animate-progress {
+  animation: progress 2s ease-in-out infinite;
+  transform-origin: left;
+}
+
+.animate-shimmer {
+  animation: shimmer 2s linear infinite;
+}
