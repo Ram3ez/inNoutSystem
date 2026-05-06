@@ -23,6 +23,12 @@ export async function POST(req: NextRequest) {
 
     const payload = await req.json();
     console.log("SEND-EMAIL API received payload:", payload);
+    console.log("SMTP Config Check:", {
+        host: process.env.SMTP_HOST || "smtp.gmail.com",
+        port: process.env.SMTP_PORT || "587",
+        hasUser: !!process.env.SMTP_USER,
+        hasPass: !!process.env.SMTP_PASSWORD,
+    });
     const {
       parentEmail,
       parentName,
