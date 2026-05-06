@@ -19,6 +19,7 @@ export interface Student extends Models.Document {
     pending_parent_phone?: number;
     pending_parent_email?: string;
     parent_verification_status?: 'unverified' | 'verified' | 'pending_approval' | 'rejected';
+    outing_blocked_until?: string;
 }
 
 export interface Outing extends Models.Document {

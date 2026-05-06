@@ -41,6 +41,14 @@ A premium, touchless biometric hostel management system built for **NIT Puducher
 *   **Dynamic Custom Filtering**: Seamless filter popover dropdowns for filtering exactly by *Out Time* vs *In Time* for outings, and *Departure* vs *Return* for leaves.
 *   **Real-time Activity Status**: Shows live contextual badges (`Currently Out` / `Completed`) for active leave requests, ensuring instant visual awareness for hostel administrators.
 *   **Standardized "Contains" Search**: All administrative and registration search modules utilize "contains" matching instead of "starts with," ensuring reliable retrieval of student records across all portals.
+*   **Enhanced Reporting & CSV Export**: 
+    *   **Dedicated Export Modal**: Premium interface for generating Outings and Leaves reports with duration-specific selectors (Date Picker for Days/Weeks, Month Picker for Months).
+    *   **Smart Filenames**: Automatic generation of human-readable filenames in `DD-MM-YYYY` format based on the selected period.
+    *   **Precise IST Boundaries**: Reporting engine utilizes IST-adjusted (+05:30) date boundaries for 100% accuracy in data retrieval from both active and archive collections.
+*   **Administrative Outing Blocking**: 
+    *   **Granular Restriction**: Admins can block specific students from taking outings until a chosen future date.
+    *   **Proactive Enforcement**: The capture page automatically checks block status during face/barcode recognition, showing a warning dialog and preventing departure for restricted students.
+    *   **Visual Status Indicators**: Real-time "Blocked" badges and color-coded lock icons in the admin student list for instant status awareness.
 *   **Holidays & Academic Calendar Management**: Integrated administrative controls to mark Gazetted and Restricted holidays. Prevents scheduling issues, aids leave evaluations, and visualizes important institutional dates.
 
 ### 5. Relational Data & TablesDB (1.9.0+)
@@ -100,6 +108,7 @@ All AI sensitivities are centralized in `src/lib/constants.ts`, allowing for ins
 
 ### Relational Tables
 *   `student_details`: Metadata for students (Roll Number as Primary Key).
+    *   Includes `outing_blocked_until` for movement restriction.
 *   `facial_embeddings`: High-dimensional vectors for the standard Face-API model.
 *   `facial_embeddings_new`: High-dimensional vectors for the GhostFaceNet model.
 *   `facial_embeddings_edge`: High-dimensional vectors for the EdgeFace model.

@@ -221,10 +221,29 @@ function CaptureContent() {
           databaseId: DB_ID,
           tableId: COLL_STUDENTS,
           rowId: rollNumber,
-        });
+        }) as any;
+
+        // Check for block status
+        if (student.outing_blocked_until && new Date() < new Date(student.outing_blocked_until)) {
+            const until = new Date(student.outing_blocked_until).toLocaleDateString('en-IN', { 
+                timeZone: 'Asia/Kolkata', 
+                day: '2-digit', 
+                month: '2-digit', 
+                year: 'numeric' 
+            });
+            setResultDialog({
+                title: "Outing Blocked",
+                message: `${rollNumber}\n\n⚠️ YOUR OUTING PRIVILEGES HAVE BEEN RESTRICTED BY ADMIN.\n\nRESTRICTED UNTIL: ${until}`,
+                type: "error",
+            });
+            setIsProcessing(false);
+            setIsScanning(false);
+            return;
+        }
+
         setConfirmationData({
           rollNo: rollNumber,
-          name: (student as any).name,
+          name: student.name,
         });
       } catch (e) {
         setConfirmationData({ rollNo: rollNumber });
@@ -650,10 +669,26 @@ function CaptureContent() {
         databaseId: DB_ID,
         tableId: COLLECTIONS.STUDENTS,
         rowId: scanned,
-      });
+      }) as any;
+
+      if (student.outing_blocked_until && new Date() < new Date(student.outing_blocked_until)) {
+          const until = new Date(student.outing_blocked_until).toLocaleDateString('en-IN', { 
+              timeZone: 'Asia/Kolkata', 
+              day: '2-digit', 
+              month: '2-digit', 
+              year: 'numeric' 
+          });
+          setResultDialog({
+              title: "Outing Blocked",
+              message: `${scanned}\n\n⚠️ YOUR OUTING PRIVILEGES HAVE BEEN RESTRICTED BY ADMIN.\n\nRESTRICTED UNTIL: ${until}`,
+              type: "error",
+          });
+          return;
+      }
+
       setConfirmationData({
         rollNo: scanned,
-        name: (student as any).name,
+        name: student.name,
       });
     } catch (e) {
       setConfirmationData({ rollNo: scanned });

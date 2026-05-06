@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, ShieldCheck, Users, Search, Trash2, UserCheck, UserX, ScanFace, RefreshCw, ChevronDown, Edit2, Plus } from 'lucide-react';
+import { ArrowLeft, ShieldCheck, Users, Search, Trash2, UserCheck, UserX, ScanFace, RefreshCw, ChevronDown, Edit2, Plus, Download, Calendar, X, ShieldAlert, Lock, Unlock } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { databases, tablesDB, fetchAllRows, Query } from '@/lib/appwrite';
 import { GradientBackground } from '@/components/GradientBackground';
@@ -26,6 +26,29 @@ export default function AdminPortal() {
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
     const [isDeleting, setIsDeleting] = useState<string | null>(null);
+    const [isDownloadingReport, setIsDownloadingReport] = useState<string | null>(null);
+    const [exportConfig, setExportConfig] = useState<{
+        isOpen: boolean;
+        type: 'outings' | 'leaves' | null;
+        duration: 'day' | 'week' | 'month' | null;
+        selectedDate: string;
+    }>({
+        isOpen: false,
+        type: null,
+        duration: null,
+        selectedDate: new Date().toISOString().split('T')[0]
+    });
+    const [blockConfig, setBlockConfig] = useState<{
+        isOpen: boolean;
+        studentId: string | null;
+        studentName: string | null;
+        blockedUntil: string;
+    }>({
+        isOpen: false,
+        studentId: null,
+        studentName: null,
+        blockedUntil: ''
+    });
 
     // Outings Tab State
     const [outingsSubTab, setOutingsSubTab] = useState<'current' | 'archived'>('current');
@@ -479,6 +502,109 @@ export default function AdminPortal() {
     }, [activeTab, leavesSubTab, leavesPage, leavesRollQuery, leavesDateQuery, leavesDateType]);
 
 
+    const handleDownloadReport = async (type: 'outings' | 'leaves', duration: 'day' | 'week' | 'month', selectedDate: string) => {
+        const reportId = `${type}-${duration}`;
+        setIsDownloadingReport(reportId);
+        try {
+            const tz = "+05:30";
+            let startDate: Date;
+            let endDate: Date;
+            
+            if (duration === 'day') {
+                startDate = new Date(`${selectedDate}T00:00:00${tz}`);
+                endDate = new Date(`${selectedDate}T23:59:59.999${tz}`);
+            } else if (duration === 'week') {
+                // Selected date is start of week
+                startDate = new Date(`${selectedDate}T00:00:00${tz}`);
+                endDate = new Date(startDate.getTime() + 7 * 24 * 60 * 60 * 1000 - 1);
+            } else {
+                // month: selectedDate is YYYY-MM
+                const [year, month] = selectedDate.split('-').map(Number);
+                startDate = new Date(`${selectedDate}-01T00:00:00${tz}`);
+                const lastDay = new Date(year, month, 0).getDate();
+                endDate = new Date(`${selectedDate}-${String(lastDay).padStart(2, '0')}T23:59:59.999${tz}`);
+            }
+
+            const startISO = startDate.toISOString();
+            const endISO = endDate.toISOString();
+            
+            // 1. Fetch Students for names
+            const studentsList = await fetchAllRows<Student>(DB_ID, COLLECTIONS.STUDENTS);
+            const studentMap = new Map(studentsList.map(s => [s.$id, s.name]));
+
+            let reportData: any[] = [];
+            const dateAttr = type === 'outings' ? 'out_time' : 'proposed_exit_date';
+            
+            // 2. Fetch from main collection
+            const mainColl = type === 'outings' ? COLLECTIONS.OUTING : COLLECTIONS.LEAVE;
+            const mainRows = await fetchAllRows<any>(DB_ID, mainColl, [
+                Query.greaterThanEqual(dateAttr, startISO),
+                Query.lessThanEqual(dateAttr, endISO)
+            ]);
+            reportData = [...mainRows];
+
+            // 3. Fetch from archive collection
+            const archiveColl = type === 'outings' ? COLLECTIONS.OUTING_ARCHIVE : COLLECTIONS.LEAVE_ARCHIVE;
+            const archiveRows = await fetchAllRows<any>(DB_ID, archiveColl, [
+                Query.greaterThanEqual(dateAttr, startISO),
+                Query.lessThanEqual(dateAttr, endISO)
+            ]);
+            reportData = [...reportData, ...archiveRows];
+
+            // 4. Sort by date desc
+            reportData.sort((a, b) => new Date(b[dateAttr]).getTime() - new Date(a[dateAttr]).getTime());
+
+            // 5. Generate CSV
+            const headers = ['Roll Number', 'Name', 'Exit Date Time', 'Entry Date Time'];
+            const rows = reportData.map(item => {
+                const roll = item.roll_no;
+                const name = studentMap.get(roll) || 'Unknown';
+                const exit = type === 'outings' ? item.out_time : item.exit_date_time;
+                const entry = type === 'outings' ? item.in_time : item.in_date_time;
+                
+                const formatCSVDate = (d: string | null) => {
+                    if (!d) return 'N/A';
+                    return new Date(d).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }).replace(/,/g, '');
+                };
+
+                return [
+                    roll,
+                    name,
+                    formatCSVDate(exit),
+                    formatCSVDate(entry)
+                ].join(',');
+            });
+
+            const csvContent = [headers.join(','), ...rows].join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            const formatFilenameDate = (dateStr: string) => {
+                const parts = dateStr.split('-');
+                if (duration === 'month') {
+                    return `${parts[1]}-${parts[0]}`; // MM-YYYY
+                }
+                return `${parts[2]}-${parts[1]}-${parts[0]}`; // DD-MM-YYYY
+            };
+
+            const filenameDate = formatFilenameDate(selectedDate);
+            link.setAttribute('download', `${type}_report_${duration}_${filenameDate}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            // Close modal after successful start
+            setExportConfig(prev => ({ ...prev, isOpen: false }));
+        } catch (error) {
+            console.error('Failed to download report:', error);
+            alert('Failed to generate report. Please try again.');
+        } finally {
+            setIsDownloadingReport(null);
+        }
+    };
+
     const handleDeleteFace = async (studentId: string, type: "face-api" | "ghostface" | "edgeface") => {
         const typeName = type === 'ghostface' ? 'GhostFace' : type === 'edgeface' ? 'EdgeFace' : 'Face-API';
         if (!confirm(`Are you sure you want to remove ${typeName} data for ${studentId}?`)) {
@@ -492,7 +618,7 @@ export default function AdminPortal() {
                 : type === "edgeface"
                 ? COLLECTIONS.FACIAL_EMBEDDINGS_EDGE
                 : COLLECTIONS.FACIAL_EMBEDDINGS;
-            
+
             try {
                 await tablesDB.deleteRow({
                     databaseId: DB_ID, 
@@ -523,6 +649,25 @@ export default function AdminPortal() {
             alert(error.message || "An error occurred");
         } finally {
             setIsDeleting(null);
+        }
+    };
+
+    const handleBlockStudent = async (studentId: string, until: string | null) => {
+        try {
+            await tablesDB.updateRow({
+                databaseId: DB_ID,
+                tableId: COLLECTIONS.STUDENTS,
+                rowId: studentId,
+                data: {
+                    outing_blocked_until: until
+                }
+            });
+            
+            setStudents(prev => prev.map(s => s.$id === studentId ? { ...s, outing_blocked_until: until || undefined } : s));
+            setBlockConfig(prev => ({ ...prev, isOpen: false }));
+        } catch (error) {
+            console.error('Failed to block student:', error);
+            alert('Failed to update block status.');
         }
     };
 
@@ -742,6 +887,23 @@ export default function AdminPortal() {
                                         </div>
 
                                         <div className="w-full md:w-1/4 flex justify-center md:justify-end items-center space-x-3 opacity-100 md:opacity-40 md:group-hover:opacity-100 transition-opacity">
+                                            {student.outing_blocked_until && new Date() < new Date(student.outing_blocked_until) && (
+                                                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 border border-red-500/20 rounded-xl">
+                                                    <ShieldAlert size={10} className="text-red-400" />
+                                                    <span className="text-[8px] font-black text-red-400 uppercase tracking-tighter">Blocked</span>
+                                                </div>
+                                            )}
+                                            <button 
+                                                onClick={() => setBlockConfig({ 
+                                                    isOpen: true, 
+                                                    studentId: student.$id, 
+                                                    studentName: student.name,
+                                                    blockedUntil: student.outing_blocked_until ? new Date(student.outing_blocked_until).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+                                                })}
+                                                className={`p-2 rounded-xl transition-all ${student.outing_blocked_until && new Date() < new Date(student.outing_blocked_until) ? 'text-red-500 bg-red-500/10 border border-red-500/20' : 'text-primary/60 hover:text-secondary hover:bg-secondary/10 border border-primary/5 hover:border-secondary/20'}`}
+                                            >
+                                                {student.outing_blocked_until && new Date() < new Date(student.outing_blocked_until) ? <Lock size={18} /> : <Unlock size={18} />}
+                                            </button>
                                             <div className="p-2 text-primary/5 hidden md:block">
                                                 <ScanFace size={20} />
                                             </div>
@@ -972,6 +1134,26 @@ export default function AdminPortal() {
                                     </button>
                                 </div>
 
+                                <div className="flex flex-wrap items-center gap-2 justify-center xl:justify-start">
+                                    <span className="text-[8px] font-black text-primary/30 uppercase tracking-[0.2em] mr-1">Export:</span>
+                                    {(['day', 'week', 'month'] as const).map((d) => (
+                                        <button 
+                                            key={d}
+                                            disabled={isDownloadingReport !== null}
+                                            onClick={() => setExportConfig({ 
+                                                isOpen: true, 
+                                                type: 'outings', 
+                                                duration: d, 
+                                                selectedDate: d === 'month' ? new Date().toISOString().slice(0, 7) : new Date().toISOString().split('T')[0] 
+                                            })}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/5 border border-primary/10 hover:border-secondary/30 rounded-xl text-[8px] font-black uppercase tracking-widest text-primary/60 hover:text-primary transition-all disabled:opacity-50"
+                                        >
+                                            {isDownloadingReport === `outings-${d}` ? <RefreshCw size={10} className="animate-spin text-secondary" /> : <Download size={10} />}
+                                            {d}
+                                        </button>
+                                    ))}
+                                </div>
+
                                 <div className="flex flex-col sm:flex-row gap-4 w-full xl:w-auto">
                                     <div className="relative group w-full sm:w-56">
                                         <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-primary/20 group-focus-within:text-secondary transition-colors">
@@ -1134,6 +1316,26 @@ export default function AdminPortal() {
                                     >
                                         Archived Leaves
                                     </button>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2 justify-center xl:justify-start">
+                                    <span className="text-[8px] font-black text-primary/30 uppercase tracking-[0.2em] mr-1">Export:</span>
+                                    {(['day', 'week', 'month'] as const).map((d) => (
+                                        <button 
+                                            key={d}
+                                            disabled={isDownloadingReport !== null}
+                                            onClick={() => setExportConfig({ 
+                                                isOpen: true, 
+                                                type: 'leaves', 
+                                                duration: d, 
+                                                selectedDate: d === 'month' ? new Date().toISOString().slice(0, 7) : new Date().toISOString().split('T')[0] 
+                                            })}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/5 border border-primary/10 hover:border-secondary/30 rounded-xl text-[8px] font-black uppercase tracking-widest text-primary/60 hover:text-primary transition-all disabled:opacity-50"
+                                        >
+                                            {isDownloadingReport === `leaves-${d}` ? <RefreshCw size={10} className="animate-spin text-secondary" /> : <Download size={10} />}
+                                            {d}
+                                        </button>
+                                    ))}
                                 </div>
 
                                 <div className="flex flex-col sm:flex-row gap-4 w-full xl:w-auto">
@@ -1715,6 +1917,182 @@ export default function AdminPortal() {
                                 )}
                             </section>
                         </motion.div>
+                    )}
+                </AnimatePresence>
+                {/* Export Report Modal */}
+                <AnimatePresence>
+                    {exportConfig.isOpen && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                            <motion.div 
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="absolute inset-0 bg-background/60 backdrop-blur-xl"
+                                onClick={() => setExportConfig(prev => ({ ...prev, isOpen: false }))}
+                            />
+                            <motion.div 
+                                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                                className="relative w-full max-w-md bg-surface border border-primary/10 rounded-[2.5rem] p-8 shadow-2xl overflow-hidden"
+                            >
+                                {/* Modal Header */}
+                                <div className="flex items-center justify-between mb-8">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 bg-secondary/10 rounded-2xl flex items-center justify-center text-secondary">
+                                            <Download size={20} />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-sm font-black text-primary uppercase tracking-tight">Export {exportConfig.type}</h3>
+                                            <p className="text-[10px] font-bold text-primary/40 uppercase tracking-widest">{exportConfig.duration}ly Report</p>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={() => setExportConfig(prev => ({ ...prev, isOpen: false }))}
+                                        className="p-2 text-primary/20 hover:text-primary hover:bg-primary/5 rounded-xl transition-all"
+                                    >
+                                        <X size={20} />
+                                    </button>
+                                </div>
+
+                                {/* Modal Body */}
+                                <div className="space-y-6">
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black text-primary/30 uppercase tracking-[0.2em] ml-2">
+                                            {exportConfig.duration === 'day' ? 'Select Date' : exportConfig.duration === 'week' ? 'Select Start Date' : 'Select Month'}
+                                        </label>
+                                        <div className="relative group">
+                                            <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-primary/20 group-focus-within:text-secondary transition-colors">
+                                                <Calendar size={18} />
+                                            </div>
+                                            <input 
+                                                type={exportConfig.duration === 'month' ? 'month' : 'date'}
+                                                value={exportConfig.selectedDate}
+                                                onChange={(e) => setExportConfig(prev => ({ ...prev, selectedDate: e.target.value }))}
+                                                className="w-full bg-primary/5 border border-primary/10 rounded-2xl h-14 pl-12 pr-4 text-primary text-sm font-bold focus:outline-none focus:border-secondary/50 transition-all uppercase"
+                                                style={{ colorScheme: 'dark' }}
+                                            />
+                                        </div>
+                                        {exportConfig.duration === 'week' && (
+                                            <p className="text-[9px] font-bold text-primary/30 uppercase tracking-wider mt-2 ml-2 italic">
+                                                * Report will cover 7 days starting from the selected date
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    <button 
+                                        disabled={!exportConfig.selectedDate || isDownloadingReport !== null}
+                                        onClick={() => handleDownloadReport(exportConfig.type!, exportConfig.duration!, exportConfig.selectedDate)}
+                                        className="w-full bg-primary text-background h-14 rounded-2xl font-black uppercase tracking-[0.2em] text-xs shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:scale-100 flex items-center justify-center gap-3"
+                                    >
+                                        {isDownloadingReport ? (
+                                            <>
+                                                <RefreshCw size={18} className="animate-spin" />
+                                                Preparing Report...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Download size={18} />
+                                                Download Report
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+
+                                {/* Background Accent */}
+                                <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-secondary/5 rounded-full blur-3xl -z-10" />
+                            </motion.div>
+                        </div>
+                    )}
+                </AnimatePresence>
+
+                {/* Outing Block Modal */}
+                <AnimatePresence>
+                    {blockConfig.isOpen && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                            <motion.div 
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="absolute inset-0 bg-background/60 backdrop-blur-xl"
+                                onClick={() => setBlockConfig(prev => ({ ...prev, isOpen: false }))}
+                            />
+                            <motion.div 
+                                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                                className="relative w-full max-w-md bg-surface border border-primary/10 rounded-[2.5rem] p-8 shadow-2xl overflow-hidden"
+                            >
+                                {/* Modal Header */}
+                                <div className="flex items-center justify-between mb-8">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 bg-red-500/10 rounded-2xl flex items-center justify-center text-red-500">
+                                            <ShieldAlert size={20} />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-sm font-black text-primary uppercase tracking-tight truncate max-w-[200px]">{blockConfig.studentName}</h3>
+                                            <p className="text-[10px] font-bold text-primary/40 uppercase tracking-widest">Restrict Outing</p>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={() => setBlockConfig(prev => ({ ...prev, isOpen: false }))}
+                                        className="p-2 text-primary/20 hover:text-primary hover:bg-primary/5 rounded-xl transition-all"
+                                    >
+                                        <X size={20} />
+                                    </button>
+                                </div>
+
+                                {/* Modal Body */}
+                                <div className="space-y-6">
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black text-primary/30 uppercase tracking-[0.2em] ml-2">
+                                            Block Until Date
+                                        </label>
+                                        <div className="relative group">
+                                            <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-primary/20 group-focus-within:text-red-500 transition-colors">
+                                                <Calendar size={18} />
+                                            </div>
+                                            <input 
+                                                type="date"
+                                                value={blockConfig.blockedUntil}
+                                                min={new Date().toISOString().split('T')[0]}
+                                                onChange={(e) => setBlockConfig(prev => ({ ...prev, blockedUntil: e.target.value }))}
+                                                className="w-full bg-primary/5 border border-primary/10 rounded-2xl h-14 pl-12 pr-4 text-primary text-sm font-bold focus:outline-none focus:border-red-500/50 transition-all uppercase"
+                                                style={{ colorScheme: 'dark' }}
+                                            />
+                                        </div>
+                                        <p className="text-[9px] font-bold text-primary/30 uppercase tracking-wider mt-2 ml-2 italic">
+                                            * Student will be unable to take outings until 11:59 PM of this date
+                                        </p>
+                                    </div>
+
+                                    <div className="flex flex-col gap-3">
+                                        <button 
+                                            disabled={!blockConfig.blockedUntil}
+                                            onClick={() => {
+                                                const untilDate = new Date(`${blockConfig.blockedUntil}T23:59:59+05:30`).toISOString();
+                                                handleBlockStudent(blockConfig.studentId!, untilDate);
+                                            }}
+                                            className="w-full bg-red-500 text-white h-14 rounded-2xl font-black uppercase tracking-[0.2em] text-xs shadow-lg shadow-red-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 flex items-center justify-center gap-3"
+                                        >
+                                            <Lock size={18} />
+                                            Confirm Block
+                                        </button>
+                                        
+                                        <button 
+                                            onClick={() => handleBlockStudent(blockConfig.studentId!, null)}
+                                            className="w-full bg-primary/5 text-primary/40 h-14 rounded-2xl font-black uppercase tracking-[0.2em] text-xs hover:bg-primary/10 hover:text-primary transition-all flex items-center justify-center gap-3"
+                                        >
+                                            <Unlock size={18} />
+                                            Unblock / Clear
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Background Accent */}
+                                <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-red-500/5 rounded-full blur-3xl -z-10" />
+                            </motion.div>
+                        </div>
                     )}
                 </AnimatePresence>
             </main>
