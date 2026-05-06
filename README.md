@@ -121,7 +121,7 @@ All AI sensitivities are centralized in `src/lib/constants.ts`, allowing for ins
 
 1.  **Clone the Repository**:
     ```bash
-    git clone https://github.com/your-repo/hostel-web.git
+    git clone https://github.com/Ram3ez/hostelSystemWeb.git
     cd hostel-web
     ```
 
