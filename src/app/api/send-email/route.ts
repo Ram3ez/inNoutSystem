@@ -1,6 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import { lookup } from "dns";
+import fs from "fs";
+import path from "path";
+
+// Force load .env.local for standalone mode compatibility
+if (!process.env.SMTP_USER) {
+  try {
+    const envPath = path.resolve(process.cwd(), ".env.local");
+    if (fs.existsSync(envPath)) {
+      const envContent = fs.readFileSync(envPath, "utf8");
+      envContent.split("\n").forEach((line) => {
+        const trimmedLine = line.trim();
+        if (!trimmedLine || trimmedLine.startsWith("#")) return;
+        const [key, ...valueParts] = trimmedLine.split("=");
+        if (key && valueParts.length > 0) {
+          const value = valueParts.join("=").trim().replace(/^["']|["']$/g, "");
+          process.env[key.trim()] = value;
+        }
+      });
+      console.log("SUCCESS: Manually loaded .env.local variables");
+    }
+  } catch (err) {
+    console.error("FAILED: Could not manually load .env.local", err);
+  }
+}
 
 // Custom dns lookup function that restricts resolution strictly to IPv4
 const ipv4Lookup = (hostname: string, options: any, callback: any) => {
@@ -23,12 +47,6 @@ export async function POST(req: NextRequest) {
 
     const payload = await req.json();
     console.log("SEND-EMAIL API received payload:", payload);
-    console.log("SMTP Config Check:", {
-        host: process.env.SMTP_HOST || "smtp.gmail.com",
-        port: process.env.SMTP_PORT || "587",
-        hasUser: !!process.env.SMTP_USER,
-        hasPass: !!process.env.SMTP_PASSWORD,
-    });
     const {
       parentEmail,
       parentName,
