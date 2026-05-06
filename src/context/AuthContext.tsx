@@ -328,11 +328,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const { updateProgress, startLoading: startGlobalLoading, stopLoading: stopGlobalLoading } = useLoading();
+  const hasPreloaded = React.useRef(false);
 
   // Background model pre-loading based on user roles
   useEffect(() => {
-    if (user && !isLoading) {
+    if (user && !isLoading && !hasPreloaded.current) {
       const preloadModels = async () => {
+        hasPreloaded.current = true;
         try {
           const m = await import("@/lib/faceCache");
           if (isKiosk || isAdmin) {
@@ -340,7 +342,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
             startGlobalLoading("Preparing AI Engines...");
             await m.loadFaceApiModels();
             await m.loadFaceCache();
-            stopGlobalLoading();
           } else {
             // Regular users only need lightweight models for registration or profile
             startGlobalLoading("Loading AI Models...");
@@ -351,18 +352,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
             await gf.initGhostFace(updateProgress);
             
             const ef = await import("@/lib/edgefaceEngine");
-            await ef.initEdgeFace(); // Edgeface doesn't have progress yet
-            stopGlobalLoading();
+            await ef.initEdgeFace(updateProgress); 
           }
         } catch (error) {
           console.error("Model pre-loading failed:", error);
+        } finally {
           stopGlobalLoading();
         }
       };
 
       preloadModels();
     }
-  }, [user, isLoading, isKiosk, isAdmin]);
+  }, [user, isLoading, isKiosk, isAdmin, startGlobalLoading, stopGlobalLoading, updateProgress]);
 
 
   return (

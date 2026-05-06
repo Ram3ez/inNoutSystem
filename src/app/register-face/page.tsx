@@ -37,7 +37,7 @@ const TARGET_EMBEDDINGS = 8;
 export default function StudentRegisterFace() {
   const { user, studentData, isLoading: authLoading, isAdmin, isKiosk } = useAuth();
   const router = useRouter();
-  const { startLoading } = useLoading();
+  const { startLoading: startGlobalLoading, stopLoading: stopGlobalLoading, updateProgress } = useLoading();
 
   const serverLog = (action: string, message: string) => {
     fetch("/api/log", {
@@ -95,12 +95,13 @@ export default function StudentRegisterFace() {
     } else {
       const init = async () => {
         try {
+          startGlobalLoading("Warming AI Engines...");
           // Regular users don't need the heavy face database (Face Cache) or Face-API
           // They only need Landmarks, GhostFace, and EdgeFace for registration.
           const promises: Promise<any>[] = [
-            getLandmarker(),
-            initGhostFace(),
-            initEdgeFace(),
+            getLandmarker(updateProgress),
+            initGhostFace(updateProgress),
+            initEdgeFace(updateProgress),
           ];
 
           if (isAdmin || isKiosk) {
@@ -116,6 +117,8 @@ export default function StudentRegisterFace() {
           }
         } catch (e) {
           console.error("Failed to initialize AI engine", e);
+        } finally {
+          stopGlobalLoading();
         }
       };
       init();
@@ -483,7 +486,7 @@ export default function StudentRegisterFace() {
         <header className="mb-8 flex items-center justify-between">
           <button
             onClick={() => {
-              startLoading();
+              startGlobalLoading();
               router.push("/");
             }}
             className="flex items-center space-x-2 text-primary/60 hover:text-primary font-bold uppercase text-xs tracking-widest bg-primary/5 px-4 py-2 rounded-xl transition-all border border-primary/10 hover:bg-primary/10 shadow-sm"
@@ -728,6 +731,7 @@ export default function StudentRegisterFace() {
                   <button
                     onClick={() => {
                       resetEnrollment();
+                      startGlobalLoading();
                       router.push("/");
                     }}
                     className="px-6 py-3 bg-white text-black font-black uppercase text-xs tracking-widest rounded-2xl hover:bg-white/90 transition-all shadow-xl"
