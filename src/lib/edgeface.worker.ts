@@ -1,4 +1,10 @@
+/**
+ * EdgeFace ONNX Worker
+ * Runs the EdgeFace face recognition model in a background thread using ONNX Runtime Web.
+ * Performs preprocessing (image to tensor) and postprocessing (L2 normalization).
+ */
 import * as ort from "onnxruntime-web";
+
 
 // Safe Defaults for ALL devices
 ort.env.wasm.numThreads = 1;

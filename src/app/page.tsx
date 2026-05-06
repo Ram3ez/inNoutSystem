@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * Main Dashboard Page
+ * Central hub for students and staff. Provides action cards based on user roles
+ * (e.g., Applying for leave, Biometric capture, Admin portal access).
+ * Also handles background "warming" of AI models for improved UX.
+ */
+
+
 import React from "react";
 import { motion } from "framer-motion";
 import {

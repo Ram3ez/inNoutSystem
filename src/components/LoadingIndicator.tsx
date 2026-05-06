@@ -1,5 +1,11 @@
 'use client';
 
+/**
+ * Loading Indicator Component
+ * Displays a styled, animated spinner and text to indicate background activity.
+ */
+
+
 import React from 'react';
 import { motion } from 'framer-motion';
 

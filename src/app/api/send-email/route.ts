@@ -1,4 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+
+/**
+ * Send Email API Route
+ * Handles sending automated leave and extension notifications via SMTP.
+ * Includes manual .env.local loading for standalone deployments and IPv4 strict lookup.
+ */
+
 import nodemailer from "nodemailer";
 import { lookup } from "dns";
 import fs from "fs";

@@ -1,5 +1,11 @@
 'use client';
 
+/**
+ * Navigation Component
+ * Provides the main top navigation bar with user profile, theme toggle, and role-based links.
+ */
+
+
 import React from 'react';
 import { motion } from 'framer-motion';
 import { LogOut, Home, Settings, User, Sun, Moon } from 'lucide-react';

@@ -1,5 +1,15 @@
+/**
+ * Global Constants and Utility Functions
+ * This file contains database IDs, collection names, team IDs, and biometric configuration.
+ */
+
+// Appwrite Database ID
 export const DB_ID = "69cb970a000853f23489";
 
+/**
+ * Appwrite Collection IDs
+ * Used for database operations across the application.
+ */
 export const COLLECTIONS = {
   STUDENTS: "student_details",
   LEAVE: "leave",
@@ -15,6 +25,10 @@ export const COLLECTIONS = {
   HOLIDAYS: "holidays",
 } as const;
 
+/**
+ * Appwrite Team IDs
+ * Used for role-based access control (RBAC).
+ */
 export const TEAMS = {
   ADMIN: "69ef1f3500234902b8e8",
   KIOSK: "69ef205100213c8cc871",
@@ -22,6 +36,10 @@ export const TEAMS = {
   CARETAKER: "69f10f3a002c7dd58e7a",
 } as const;
 
+/**
+ * LocalStorage Cache Keys
+ * Used by AuthContext to persist session data and roles.
+ */
 export const CACHE_KEYS = {
   USER: "_npx_u1",
   ADMIN: "_npx_a1",
@@ -32,8 +50,13 @@ export const CACHE_KEYS = {
   STAFF: "_npx_t1",
 } as const;
 
+// API Secret for internal proxy or secured requests
 export const API_SECRET = "9b0f44358a9807567ecb5107e3240742f36d0a7a";
 
+/**
+ * Biometric Configuration
+ * Defines thresholds for matching, diversity, and adaptive updates for different AI models.
+ */
 export const BIOMETRIC_THRESHOLDS = {
   GHOSTFACE: {
     MATCH: 0.58, // Recognition sensitivity (Higher = stricter)
@@ -54,6 +77,10 @@ export const BIOMETRIC_THRESHOLDS = {
   },
 } as const;
 
+/**
+ * Formats a date to Indian Standard Time (IST) string.
+ * Format: MMM DD, HH:MM AM/PM
+ */
 export function formatToIST(
   dateInput: string | Date | number | null | undefined,
 ): string {
@@ -74,6 +101,10 @@ export function formatToIST(
   }
 }
 
+/**
+ * Formats a date to IST time string only.
+ * Format: HH:MM:SS AM/PM
+ */
 export function formatToISTTime(
   dateInput: string | Date | number | null | undefined,
 ): string {
@@ -93,6 +124,10 @@ export function formatToISTTime(
   }
 }
 
+/**
+ * Formats a date to full IST datetime string.
+ * Format: DD/MM/YYYY, HH:MM:SS AM/PM
+ */
 export function formatToISTFull(
   dateInput: string | Date | number | null | undefined,
 ): string {
@@ -114,3 +149,4 @@ export function formatToISTFull(
     return "Invalid Date";
   }
 }
+

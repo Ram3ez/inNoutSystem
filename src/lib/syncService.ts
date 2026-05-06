@@ -1,4 +1,10 @@
+/**
+ * Sync Service
+ * Manages the synchronization of offline-captured outing records to the Appwrite cloud.
+ * Ensures data integrity by verifying latest states before applying changes.
+ */
 import { databases, tablesDB, ID, client } from "./appwrite";
+
 import { Query } from "appwrite";
 import {
   getOfflineQueue,
@@ -9,6 +15,11 @@ import { DB_ID, COLLECTIONS } from "./constants";
 
 let isProcessing = false;
 
+/**
+ * Offline Sync Queue
+ * Manages the local storage queue for check-in/out events captured during network outages.
+ * Processes background tasks to ensure data consistency when connectivity is restored.
+ */
 export async function processOfflineQueue() {
   if (isProcessing) return;
 

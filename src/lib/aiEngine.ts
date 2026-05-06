@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * MediaPipe Face Landmarker Engine
+ * Provides singleton access to the MediaPipe Face Landmarker for face detection and tracking.
+ */
+
 import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 
 let landmarkerInstance: FaceLandmarker | null = null;

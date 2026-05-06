@@ -1,4 +1,9 @@
+/**
+ * Offline Sync Queue
+ * Manages the local storage queue for check-in/out events captured during network outages.
+ */
 interface QueuedSync {
+
   rollNo: string;
   timestamp: string;
 }

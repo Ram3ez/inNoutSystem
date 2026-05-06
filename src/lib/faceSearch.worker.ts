@@ -1,8 +1,9 @@
 /**
  * Face Search Web Worker
- * Offloads 512d vector comparisons for 3000+ students (24,000+ embeddings)
- * to a background thread to prevent UI jank.
+ * Offloads heavy 512-dimension vector comparisons for thousands of student embeddings
+ * to a background thread to maintain 60fps UI performance.
  */
+
 
 interface EmbeddingData {
   id: string;
@@ -48,6 +49,7 @@ self.onmessage = (e: MessageEvent) => {
       const { id, count } = entry;
       for (let i = 0; i < count; i++) {
         const sub = flattenedData.slice(offset, offset + dim);
+
         list.push({ id, data: sub });
         offset += dim;
       }
