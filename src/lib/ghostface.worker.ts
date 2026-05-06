@@ -1,4 +1,10 @@
+/**
+ * GhostFaceNet ONNX Worker
+ * Runs the GhostFaceNet v1 face recognition model in a background thread.
+ * Handles specialized image preprocessing and L2 normalization of results.
+ */
 import * as ort from "onnxruntime-web";
+
 
 // Safe Defaults for ALL devices (Prevents lag/stutter)
 ort.env.wasm.numThreads = 1;

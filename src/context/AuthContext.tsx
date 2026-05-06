@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Authentication Context Provider
+ * Manages user sessions, roles, and profile data across the application.
+ */
+
 import React, { createContext, useContext, useEffect, useState } from "react";
 import {
   account,
@@ -13,22 +18,28 @@ import { useRouter, usePathname } from "next/navigation";
 import { Student } from "@/types/models";
 import { DB_ID, COLLECTIONS, TEAMS, CACHE_KEYS } from "@/lib/constants";
 
+/**
+ * Shape of the AuthContext data and methods
+ */
 interface AuthContextType {
-  user: Models.User<Models.Preferences> | null;
-  isLoading: boolean;
-  isRegistrationRequired: boolean;
-  studentData: Student | null;
-  staffData: any | null;
-  loginWithGoogle: () => Promise<void>;
-  logout: () => Promise<void>;
-  isAdmin: boolean;
-  isKiosk: boolean;
-  isFaculty: boolean;
-  isCaretaker: boolean;
+  user: Models.User<Models.Preferences> | null; // Currently logged in user
+  isLoading: boolean; // Global loading state for auth check
+  isRegistrationRequired: boolean; // True if user is logged in but profile is missing
+  studentData: Student | null; // Student profile data if applicable
+  staffData: any | null; // Staff profile data if applicable
+  loginWithGoogle: () => Promise<void>; // Triggers Google OAuth
+  logout: () => Promise<void>; // Ends session and clears cache
+  isAdmin: boolean; // Role: Admin
+  isKiosk: boolean; // Role: Kiosk (for biometric check-in/out)
+  isFaculty: boolean; // Role: Faculty member
+  isCaretaker: boolean; // Role: Hostel caretaker
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+/**
+ * Encodes data to Base64 for safe storage in LocalStorage.
+ */
 const encodeCache = (data: any) => {
   if (data === null || data === undefined) return "";
   try {
@@ -44,6 +55,9 @@ const encodeCache = (data: any) => {
   }
 };
 
+/**
+ * Decodes Base64 data back to its original object/value.
+ */
 const decodeCache = (encoded: string | null) => {
   if (!encoded) return null;
   try {
@@ -59,6 +73,10 @@ const decodeCache = (encoded: string | null) => {
   }
 };
 
+/**
+ * AuthProvider Component
+ * Wraps the application to provide authentication state and methods.
+ */
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
@@ -84,6 +102,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const CACHE_KEY_STUDENT = CACHE_KEYS.STUDENT;
   const CACHE_KEY_STAFF = CACHE_KEYS.STAFF;
 
+  // Initial load: restore session from cache for immediate UI responsiveness
   useEffect(() => {
     if (typeof window !== "undefined") {
       const cachedUser = localStorage.getItem(CACHE_KEY_USER);
@@ -124,15 +143,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
     }
-    checkUser();
+    checkUser(); // Always perform a fresh check from server
   }, []);
 
+  /**
+   * Freshly checks the user's authentication status and roles from Appwrite.
+   */
   const checkUser = async () => {
     try {
       const currentUser = await account.get();
       setUser(currentUser);
 
-      // Check Admin, Kiosk, Faculty & Caretaker Status
+      // Check Admin, Kiosk, Faculty & Caretaker Status via Team memberships
       let adminStatus = false;
       let kioskStatus = false;
       let facultyStatus = false;
@@ -160,22 +182,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         setIsCaretaker(caretakerStatus);
       }
 
-      // Check if profile exists in database
+      // Check if profile exists in database based on email format
       if (currentUser.email) {
         const profileId = currentUser.email.split("@")[0].toUpperCase();
+        // Regex for student IDs (e.g., CS21B1234)
         const isStudentEmail = /^[A-Z]{2}[0-9]{2}[A-Z][0-9]{4}$/.test(
           profileId,
         );
 
         try {
           if (isStudentEmail) {
-            /*
-            const data = await databases.getDocument({
-              databaseId: DB_ID,
-              collectionId: COLLECTIONS.STUDENTS,
-              documentId: profileId,
-            });
-            */
+            // Fetch student profile
             const data = await tablesDB.getRow({
               databaseId: DB_ID,
               tableId: COLLECTIONS.STUDENTS,
@@ -186,13 +203,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
             setIsRegistrationRequired(false);
             localStorage.setItem(CACHE_KEY_STUDENT, encodeCache(data));
           } else {
-            /*
-            const data = await databases.getDocument({
-              databaseId: DB_ID,
-              collectionId: COLLECTIONS.STAFF_DETAILS,
-              documentId: profileId.toLowerCase(),
-            });
-            */
+            // Fetch staff profile
             const data = await tablesDB.getRow({
               databaseId: DB_ID,
               tableId: COLLECTIONS.STAFF_DETAILS,
@@ -205,6 +216,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           }
         } catch (dbError: any) {
           if (dbError.code === 404) {
+            // No profile found: user needs to complete their profile
             setStudentData(null);
             setStaffData(null);
             setIsRegistrationRequired(true);
@@ -212,6 +224,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
 
+      // Update cache with fresh data
       localStorage.setItem(CACHE_KEY_USER, encodeCache(currentUser));
       localStorage.setItem(CACHE_KEY_ADMIN, encodeCache(adminStatus));
       localStorage.setItem(CACHE_KEY_KIOSK, encodeCache(kioskStatus));
@@ -259,6 +272,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
 
+      // If both server and cache fail, clear state
       setUser(null);
       setStudentData(null);
       setStaffData(null);
@@ -267,17 +281,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setIsKiosk(false);
       setIsFaculty(false);
       setIsCaretaker(false);
-      if (pathname !== "/login") {
-        // router.push('/login');
-      }
     } finally {
       setIsLoading(false);
     }
   };
 
+  /**
+   * Initiates Google OAuth login flow.
+   */
   const loginWithGoogle = async () => {
     try {
-      // In web, OAuth2 is handled by redirect
       account.createOAuth2Session({
         provider: OAuthProvider.Google,
         success: window.location.origin + "/",
@@ -288,6 +301,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  /**
+   * Logs out the user and clears all cached session data.
+   */
   const logout = async () => {
     try {
       await account.deleteSession({ sessionId: "current" });
@@ -305,17 +321,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  // Background model pre-loading based on user roles
   useEffect(() => {
     if (user && !isLoading) {
-      // Start pre-loading AI engine in the background for a seamless experience
       import("@/lib/faceCache").then((m) => {
-        // Only Admins and Kiosks need the heavy Face-API models and the student database
         if (isKiosk || isAdmin) {
+          // Admins/Kiosks need full Face-API and the student database for verification
           m.loadFaceApiModels();
           m.loadFaceCache();
         } else {
-          // Regular users only need MediaPipe (Landmarker) and ONNX (GhostFace/EdgeFace)
-          // for their own registration or profile verification.
+          // Regular users only need lightweight models for registration or profile
           import("@/lib/aiEngine").then((ai) => ai.getLandmarker());
           import("@/lib/ghostfaceEngine").then((gf) => gf.initGhostFace());
           import("@/lib/edgefaceEngine").then((ef) => ef.initEdgeFace());
@@ -345,6 +360,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 };
 
+/**
+ * Hook to consume authentication state.
+ */
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
@@ -352,3 +370,4 @@ export const useAuth = () => {
   }
   return context;
 };
+

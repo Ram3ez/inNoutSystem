@@ -1,4 +1,11 @@
 import type { Metadata } from "next";
+
+/**
+ * Root Layout
+ * Configures the base HTML structure, metadata, PWA settings, and global context providers.
+ * Includes ThemeProvider, AuthProvider, and OfflineSyncManager.
+ */
+
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
 import { ThemeProvider } from "@/context/ThemeContext";
@@ -14,7 +21,8 @@ export const metadata: Metadata = {
     startupImage: [
       {
         url: "/logo.png",
-        media: "(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)",
+        media:
+          "(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)",
       },
     ],
   },
@@ -55,6 +63,11 @@ export default function RootLayout({
         <ThemeProvider>
           <AuthProvider>
             {children}
+            <footer className="w-full py-10 mt-auto text-center opacity-[0.1] pointer-events-none select-none">
+              <p className="text-[10px] font-black tracking-[0.5em] uppercase text-primary">
+                built by Rameez
+              </p>
+            </footer>
             <OfflineSyncManager />
           </AuthProvider>
         </ThemeProvider>

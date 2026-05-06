@@ -1,5 +1,12 @@
 "use client";
 
+/**
+ * Offline Sync Manager
+ * A background component that monitors network connectivity and triggers synchronization
+ * of offline-captured data when the device returns online.
+ */
+
+
 import { useEffect } from "react";
 import { processOfflineQueue } from "@/lib/syncService";
 

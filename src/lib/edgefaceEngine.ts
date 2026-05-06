@@ -1,5 +1,12 @@
 "use client";
 
+/**
+ * EdgeFace Recognition Engine
+ * Handles face embedding extraction using the EdgeFace ONNX model via a Web Worker.
+ * Includes utilities for facial alignment and cropping.
+ */
+
+
 let worker: Worker | null = null;
 let initPromise: Promise<void> | null = null;
 const pendingRequests = new Map<number, (embedding: Float32Array) => void>();

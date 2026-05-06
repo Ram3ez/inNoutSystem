@@ -1,5 +1,12 @@
 "use client";
 
+/**
+ * GhostFaceNet Recognition Engine
+ * Handles high-precision face embedding extraction and facial alignment.
+ * Uses a Web Worker for ONNX inference and includes a quality guard for frame selection.
+ */
+
+
 let worker: Worker | null = null;
 let initPromise: Promise<void> | null = null;
 const pendingRequests = new Map<number, (embedding: Float32Array) => void>();

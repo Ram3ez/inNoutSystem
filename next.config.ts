@@ -32,6 +32,18 @@ const withPWA = withPWAInit({
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // Configuration for Turbopack (used in development by default in Next.js 15+)
+  // Setting this explicitly silences the webpack mismatch error
+  turbopack: {
+    resolveAlias: {
+      // Handle the same encoding issue as the webpack config
+      encoding: "false",
+    },
+  },
+  // Allow cross-origin requests for HMR/dev resources when using a custom domain
+  allowedDevOrigins: ["system.ram3ez.dev"],
+
+
   webpack: (config, { isServer, webpack }) => {
     if (!isServer) {
       config.resolve.fallback = {
@@ -59,5 +71,6 @@ const nextConfig: NextConfig = {
     return config;
   },
 };
+
 
 export default withPWA(nextConfig);
