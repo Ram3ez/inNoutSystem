@@ -13,12 +13,10 @@ import {
   RefreshCw,
 } from "lucide-react";
 import Link from "next/link";
-import * as faceapi from "face-api.js";
+
 import {
-  loadBaseFaceModels,
   loadFaceCache,
   isAIReady,
-  getMemoryCache,
   getMemoryCacheGhost,
   getMemoryCacheEdge,
 } from "@/lib/faceCache";
@@ -31,7 +29,6 @@ import { GradientBackground } from "@/components/GradientBackground";
 interface CompareResult {
   rollNo: string;
   ghostScore: number;
-  faceApiScore: number;
   edgeScore: number;
 }
 
@@ -50,8 +47,6 @@ export default function CompareLab() {
 
   useEffect(() => {
     const init = async () => {
-      setStatus("Loading Neural Models...");
-      await loadBaseFaceModels();
       setStatus("Synchronizing Biometric Database...");
       await loadFaceCache();
       setStatus("Warming Up Landmarker...");
@@ -103,18 +98,7 @@ export default function CompareLab() {
       // 1. Detect and Extract for BOTH
       setStatus("AI Step 1: Running Neural Engine...");
 
-      const tf = (faceapi as any).tf;
-      if (tf) {
-        try {
-          const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-          if (isIOS && tf.setBackend) {
-            await tf.setBackend("cpu");
-          }
-        } catch (err) {}
-        if (tf.engine) tf.engine().startScope();
-      }
-
-       try {
+      try {
         const swOriginal = video.videoWidth || 640;
         const shOriginal = video.videoHeight || 480;
 
@@ -181,36 +165,20 @@ export default function CompareLab() {
           false,
         );
 
-        // Yield to browser thread to release WASM/VRAM buffers before launching legacy path
-        await new Promise((r) => setTimeout(r, 100));
-
-        // --- 1b. FACE-API (Legacy Path) ---
-        const faceApiDetection = await faceapi
-          .detectSingleFace(
-            cropCanvas,
-            new faceapi.SsdMobilenetv1Options({ minConfidence: 0.4 }),
-          )
-          .withFaceLandmarks()
-          .withFaceDescriptor();
-
-        const faceApiDescriptor = faceApiDetection?.descriptor;
-
         if (!ghostDescriptor) throw new Error("GhostFace engine failed");
         if (!edgeDescriptor) throw new Error("EdgeFace engine failed");
 
-        // NOW WE CAN FREEZE
+        // Freeze the frame
         setImgSrc(screenshot);
 
         // 2. Perform Database Comparisons
-        setStatus("AI Step 2: Comparing with 3,000+ Students...");
+        setStatus("AI Step 2: Comparing with all Students...");
 
         const ghostCache = getMemoryCacheGhost();
-        const faceApiCache = getMemoryCache();
         const edgeCache = getMemoryCacheEdge();
         const allRollNos = Array.from(
           new Set([
             ...Object.keys(ghostCache),
-            ...Object.keys(faceApiCache),
             ...Object.keys(edgeCache),
           ]),
         );
@@ -225,7 +193,7 @@ export default function CompareLab() {
             // GhostFace (Cosine Similarity)
             let ghostMax = 0;
             if (ghostCache[rollNo]) {
-              ghostCache[rollNo].forEach((saved) => {
+              ghostCache[rollNo].forEach((saved: Float32Array) => {
                 let score = 0;
                 for (let j = 0; j < saved.length; j++) {
                   score += ghostDescriptor[j] * saved[j];
@@ -237,7 +205,7 @@ export default function CompareLab() {
             // EdgeFace (Cosine Similarity)
             let edgeMax = 0;
             if (edgeCache[rollNo]) {
-              edgeCache[rollNo].forEach((saved) => {
+              edgeCache[rollNo].forEach((saved: Float32Array) => {
                 let score = 0;
                 for (let j = 0; j < saved.length; j++) {
                   score += edgeDescriptor[j] * saved[j];
@@ -246,23 +214,9 @@ export default function CompareLab() {
               });
             }
 
-            // Face-API (Euclidean converted to score)
-            let faceApiMax = 0;
-            if (faceApiCache[rollNo] && faceApiDescriptor) {
-              faceApiCache[rollNo].forEach((saved) => {
-                const dist = faceapi.euclideanDistance(
-                  faceApiDescriptor,
-                  saved,
-                );
-                const score = Math.max(0, 1 - dist);
-                if (score > faceApiMax) faceApiMax = score;
-              });
-            }
-
             comparison.push({
               rollNo,
               ghostScore: ghostMax,
-              faceApiScore: faceApiMax,
               edgeScore: edgeMax,
             });
           });
@@ -280,7 +234,7 @@ export default function CompareLab() {
         setResults(comparison);
         setStatus("");
       } finally {
-        if (tf && tf.engine) tf.engine().endScope();
+        // Release static canvas memory
       }
     } catch (e: any) {
       console.error(e);
@@ -431,16 +385,13 @@ export default function CompareLab() {
                     <th className="p-4 text-[9px] font-black uppercase tracking-widest text-secondary">
                       GhostFace (Sim)
                     </th>
-                    <th className="p-4 text-[9px] font-black uppercase tracking-widest text-primary">
-                      Face-API (Sim*)
-                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {results.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={4}
+                        colSpan={3}
                         className="p-12 text-center text-primary/20 text-[10px] font-bold uppercase tracking-widest"
                       >
                         Scan your face to see scores
@@ -485,19 +436,6 @@ export default function CompareLab() {
                             </div>
                           </div>
                         </td>
-                        <td className="p-4">
-                          <div className="flex flex-col">
-                            <span className="text-sm font-bold text-primary/60">
-                              {(res.faceApiScore * 100).toFixed(1)}%
-                            </span>
-                            <div className="w-full h-1 bg-primary/5 rounded-full mt-1 overflow-hidden">
-                              <div
-                                className="h-full bg-primary/20"
-                                style={{ width: `${res.faceApiScore * 100}%` }}
-                              />
-                            </div>
-                          </div>
-                        </td>
                       </tr>
                     ))
                   )}
@@ -524,12 +462,12 @@ export default function CompareLab() {
             <div className="flex items-center space-x-2 mb-2 text-primary">
               <Cpu size={16} />
               <h3 className="text-[10px] font-black uppercase tracking-widest">
-                Euclidean Distance
+                EdgeFace
               </h3>
             </div>
             <p className="text-[10px] text-primary/60 leading-relaxed font-medium">
-              Face-API uses distance. In this table, we've converted it to %
-              (Higher is better). 0.60+ is a match.
+              EdgeFace uses Cosine Similarity (Higher is better). 0.55+ is a
+              strong match. Lighter model, faster inference.
             </p>
           </div>
           <div className="p-6 bg-primary/5 rounded-2xl border border-primary/10 flex items-center justify-center">

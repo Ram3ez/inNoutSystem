@@ -22,13 +22,43 @@ export async function getLandmarker(updateProgress?: (p: number, s: string) => v
 
   landmarkerInitPromise = (async () => {
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+    // Step 1 – Pre-download MediaPipe WASM runtime files.
+    // FilesetResolver.forVisionTasks() silently fetches vision_wasm_internal.wasm
+    // (~11MB) or its nosimd variant with no progress hook. We download both
+    // in parallel here so the SW caches them before MediaPipe requests them.
+    // On iOS we prioritize the nosimd variant since SIMD is restricted.
+    if (updateProgress) updateProgress(0, "Downloading Vision Runtime...");
+    const wasmFiles = isIOS
+      ? [
+          "/mediapipe/wasm/vision_wasm_nosimd_internal.wasm",
+          "/mediapipe/wasm/vision_wasm_nosimd_internal.js",
+        ]
+      : [
+          "/mediapipe/wasm/vision_wasm_internal.wasm",
+          "/mediapipe/wasm/vision_wasm_internal.js",
+          "/mediapipe/wasm/vision_wasm_module_internal.wasm",
+        ];
+
+    let wasmLoaded = 0;
+    await Promise.all(
+      wasmFiles.map((file) =>
+        fetchWithProgress(file, (p) => {
+          // Average progress across all files for a smooth bar
+          wasmLoaded = Math.max(wasmLoaded, p);
+          updateProgress?.(wasmLoaded * 0.3, "Downloading Vision Runtime...");
+        })
+      )
+    );
+
+    // Step 2 – FilesetResolver is now an instant cache hit.
     const vision = await FilesetResolver.forVisionTasks("/mediapipe/wasm");
-    
-    // Download model with progress tracking
-    if (updateProgress) updateProgress(0, "Downloading Detection Model...");
+
+    // Step 3 – Download the face_landmarker.task model with progress.
+    if (updateProgress) updateProgress(30, "Downloading Detection Model...");
     const modelBuffer = await fetchWithProgress(
       "/mediapipe/face_landmarker.task",
-      (p) => updateProgress?.(p, "Downloading Detection Model...")
+      (p) => updateProgress?.(30 + p * 0.7, "Downloading Detection Model...")
     );
 
     /**

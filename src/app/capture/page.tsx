@@ -35,9 +35,6 @@ import { Query } from "appwrite";
 import { DB_ID, COLLECTIONS, BIOMETRIC_THRESHOLDS } from "@/lib/constants";
 import Link from "next/link";
 import {
-  loadBaseFaceModels,
-  loadFaceRecognitionModel,
-  loadFaceApiModels,
   loadFaceCache,
   getBestMatch,
   isAIReady,
@@ -48,7 +45,7 @@ import {
   isLandmarkerLoaded,
   getLandmarkerSync,
 } from "@/lib/aiEngine";
-import * as faceapi from "face-api.js";
+
 import { addToOfflineQueue, isSystemOnline } from "@/lib/offlineQueue";
 import { initGhostFace, getGhostFaceDescriptor } from "@/lib/ghostfaceEngine";
 import {
@@ -57,7 +54,6 @@ import {
 } from "@/lib/edgefaceEngine";
 import { performIncrementalSync } from "@/lib/faceCache";
 
-const SSD_OPTIONS = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.2 });
 
 /**
  * CAPTURE PAGE — KIOSK TOUCHLESS RECOGNITION
@@ -116,9 +112,7 @@ function CaptureContent() {
     useState("Initializing AI...");
   const [isScanning, setIsScanning] = useState(false);
   const [aiLoaded, setAiLoaded] = useState(isAIReady() && isLandmarkerLoaded());
-  const [modelType, setModelType] = useState<
-    "face-api" | "ghostface" | "edgeface"
-  >("edgeface");
+  const [modelType, setModelType] = useState<"ghostface" | "edgeface">("edgeface");
   const [showNotRecognized, setShowNotRecognized] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const [isBarcodeModalOpen, setIsBarcodeModalOpen] = useState(false);
@@ -135,7 +129,7 @@ function CaptureContent() {
   const [lastMatchData, setLastMatchData] = useState<{
     descriptor: Float32Array;
     score: number;
-    modelType: "face-api" | "ghostface" | "edgeface";
+    modelType: "ghostface" | "edgeface";
     rollNo: string;
   } | null>(null);
 
@@ -161,50 +155,41 @@ function CaptureContent() {
   useEffect(() => {
     isMounted.current = true;
     isIOSDevice.current = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    // If already loaded in background (e.g. from Home page), skip the await chain for instant UI
+
+    // Fast path: everything already loaded (e.g. navigated from another page)
     if (isAIReady() && isLandmarkerLoaded()) {
       setFaceLandmarker(getLandmarkerSync());
       setAiLoaded(true);
-    } else {
-      const init = async () => {
-        try {
-          startGlobalLoading("Warming AI Engines...");
-          // Neural engine initialization
-          await loadBaseFaceModels();
-
-          const tf = (faceapi as any).tf;
-          if (tf) {
-            // Set safety flags AFTER registration to prevent "not registered" errors
-            try {
-              tf.env().set("WASM_HAS_SIMD_SUPPORT", false);
-              tf.env().set("WASM_HAS_MULTITHREAD_SUPPORT", false);
-            } catch (e) {
-              console.warn(
-                "[📱 MAIN] Could not set TFJS flags, continuing with defaults...",
-              );
-            }
-          }
-          await new Promise((r) => setTimeout(r, 100));
-          await loadFaceCache();
-          await new Promise((r) => setTimeout(r, 100));
-          await getLandmarker(updateProgress);
-          await new Promise((r) => setTimeout(r, 100));
-          await initGhostFace(updateProgress);
-          await new Promise((r) => setTimeout(r, 100));
-          await initEdgeFace(updateProgress);
-
-          if (isMounted.current) {
-            setFaceLandmarker(getLandmarkerSync());
-            setAiLoaded(true);
-          }
-        } catch (e) {
-          console.error("Failed to initialize AI engine", e);
-        } finally {
-          stopGlobalLoading();
-        }
-      };
-      init();
+      return;
     }
+
+    const init = async () => {
+      try {
+        startGlobalLoading("Warming AI Engines...");
+
+        // Step 1: MediaPipe landmarker (needed for live face tracking).
+        await getLandmarker(updateProgress);
+
+        // Step 2: Load the face embedding cache from IndexedDB / cloud sync.
+        await loadFaceCache();
+
+        // Step 3: Load only the active recognition model (EdgeFace by default).
+        // GhostFace is loaded lazily if the user switches. Loading both simultaneously
+        // peaks at ~600MB+ on iOS and triggers Jetsam.
+        await initEdgeFace(updateProgress);
+
+        if (isMounted.current) {
+          setFaceLandmarker(getLandmarkerSync());
+          setAiLoaded(true);
+        }
+      } catch (e) {
+        console.error("Failed to initialize AI engine", e);
+      } finally {
+        stopGlobalLoading();
+      }
+    };
+
+    init();
 
     return () => {
       isMounted.current = false;
@@ -840,89 +825,29 @@ function CaptureContent() {
           return;
         }
 
-        const tf = (faceapi as any).tf;
-        if (tf && tf.engine) tf.engine().startScope();
-
         let descriptor: Float32Array;
 
-        try {
-          if (modelType === "ghostface" || modelType === "edgeface") {
-            // For GhostFaceNet and EdgeFace, we use MediaPipe's high-fidelity results
-            const mpResult = lastMediaPipeResult.current;
-
-            if (
-              !mpResult ||
-              !mpResult.faceLandmarks ||
-              mpResult.faceLandmarks.length === 0
-            ) {
-              // Fallback to Face-API ONLY if MediaPipe failed to cache a result
-              const detection = await faceapi
-                .detectSingleFace(videoElement, SSD_OPTIONS)
-                .withFaceLandmarks();
-              if (!detection) {
-                failureBuffer.current++;
-                setIsScanning(false);
-                return;
-              }
-              descriptor =
-                modelType === "ghostface"
-                  ? await getGhostFaceDescriptor(
-                      videoElement,
-                      detection.detection.box,
-                      detection.landmarks,
-                      false,
-                    )
-                  : await getEdgeFaceDescriptorFn(
-                      videoElement,
-                      detection.detection.box,
-                      detection.landmarks,
-                      false,
-                    );
-            } else {
-              // --- HIGH PRECISION MIGRATION ---
-              const landmarks = mpResult.faceLandmarks[0];
-              const box = mpResult.faceBoundingBoxes
-                ? mpResult.faceBoundingBoxes[0]
-                : { x: 0, y: 0, width: 0, height: 0 };
-
-              descriptor =
-                modelType === "ghostface"
-                  ? await getGhostFaceDescriptor(
-                      videoElement,
-                      box,
-                      landmarks,
-                      false,
-                    )
-                  : await getEdgeFaceDescriptorFn(
-                      videoElement,
-                      box,
-                      landmarks,
-                      false,
-                    );
-            }
-          } else {
-            const detection = await faceapi
-              .detectSingleFace(videoElement, SSD_OPTIONS)
-              .withFaceLandmarks()
-              .withFaceDescriptor();
-
-            // --- STABILITY GUARD: Detect "null" or invalid boxes ---
-            if (
-              !detection ||
-              !detection.detection ||
-              !detection.detection.box ||
-              detection.detection.box.width === null
-            ) {
-              failureBuffer.current++;
-              setIsScanning(false);
-              consensusBuffer.current = { rollNo: "", count: 0 };
-              return;
-            }
-            descriptor = detection.descriptor;
-          }
-        } finally {
-          if (tf && tf.engine) tf.engine().endScope();
+        // Use MediaPipe cached landmarks for alignment (GhostFace & EdgeFace only).
+        // If MediaPipe hasn't produced a result yet (first frame), skip this scan.
+        const mpResult = lastMediaPipeResult.current;
+        if (
+          !mpResult ||
+          !mpResult.faceLandmarks ||
+          mpResult.faceLandmarks.length === 0
+        ) {
+          setIsScanning(false);
+          return;
         }
+
+        const landmarks = mpResult.faceLandmarks[0];
+        const box = mpResult.faceBoundingBoxes
+          ? mpResult.faceBoundingBoxes[0]
+          : { x: 0, y: 0, width: 0, height: 0 };
+
+        descriptor =
+          modelType === "ghostface"
+            ? await getGhostFaceDescriptor(videoElement, box, landmarks, false)
+            : await getEdgeFaceDescriptorFn(videoElement, box, landmarks, false);
 
         if (!isMounted.current) return;
 
@@ -1292,22 +1217,12 @@ function CaptureContent() {
           <div className="flex bg-primary/5 p-1 rounded-2xl border border-primary/10 shadow-inner">
             <button
               onClick={async () => {
-                if (modelType === "face-api") return;
+                if (modelType === "ghostface") return;
                 setAiLoaded(false);
-                await loadFaceRecognitionModel();
-                setModelType("face-api");
+                await initGhostFace();
+                setModelType("ghostface");
                 setAiLoaded(true);
               }}
-              className={`px-3 sm:px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all duration-300 ${
-                modelType === "face-api"
-                  ? "bg-primary text-background shadow-lg scale-105"
-                  : "text-primary/40 hover:text-primary hover:bg-primary/5"
-              }`}
-            >
-              Face-API
-            </button>
-            <button
-              onClick={() => setModelType("ghostface")}
               className={`px-3 sm:px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all duration-300 ${
                 modelType === "ghostface"
                   ? "bg-secondary text-background shadow-lg scale-105"

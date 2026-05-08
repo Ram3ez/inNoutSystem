@@ -33,10 +33,7 @@ import { ID } from "appwrite";
 import { generateAugmentations } from "@/lib/augmentFace";
 import {
   uploadEmbeddings,
-  loadBaseFaceModels,
-  loadFaceRecognitionModel,
   loadFaceApiModels,
-  areModelsLoaded,
   loadFaceCache,
   isUserRegisteredFor,
 } from "@/lib/faceCache";
@@ -47,7 +44,7 @@ import {
 } from "@/lib/aiEngine";
 import { initGhostFace, getGhostFaceDescriptor } from "@/lib/ghostfaceEngine";
 import { initEdgeFace, getEdgeFaceDescriptor as getEdgeFaceDescriptorFn } from "@/lib/edgefaceEngine";
-import * as faceapi from "face-api.js";
+
 
 
 // Target number of embeddings to collect for a high-accuracy profile
@@ -87,9 +84,7 @@ export default function RegisterFacePage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [showDropdown, setShowDropdown] = useState(false);
   const [aiLoaded, setAiLoaded] = useState(false);
-  const [modelType, setModelType] = useState<"face-api" | "ghostface" | "edgeface">(
-    "edgeface",
-  );
+  const [modelType, setModelType] = useState<"ghostface" | "edgeface">("edgeface");
 
   // Unified Enrollment Pipeline States
   const [collectedEmbeddings, setCollectedEmbeddings] = useState<
@@ -126,41 +121,24 @@ export default function RegisterFacePage() {
   const lastScanTime = useRef(0);
   const isIOSDevice = useRef(false);
 
-  // Initialize face-api models + MediaPipe — singletons, only warm up once per session
+  // Initialize MediaPipe + selected ONNX model — singletons, only warm up once per session
   React.useEffect(() => {
     isMounted.current = true;
     isIOSDevice.current = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    // If already loaded in background (e.g. from Home page), skip the await chain for instant UI
-    if (areModelsLoaded() && isLandmarkerLoaded()) {
+    if (isLandmarkerLoaded()) {
       setFaceLandmarker(getLandmarkerSync());
       setAiLoaded(true);
     } else {
       const init = async () => {
         try {
           startGlobalLoading("Initializing AI Engines...");
-          // Neural engine initialization
-          await loadBaseFaceModels();
-
-          const tf = (faceapi as any).tf;
-          if (tf) {
-            try {
-              tf.env().set("WASM_HAS_SIMD_SUPPORT", false);
-              tf.env().set("WASM_HAS_MULTITHREAD_SUPPORT", false);
-            } catch (e) {
-              console.warn(
-                "[📱 MAIN] Could not set TFJS flags, continuing with defaults...",
-              );
-            }
-          }
-          await new Promise((r) => setTimeout(r, 100));
-          await loadFaceCache();
-          await new Promise((r) => setTimeout(r, 100));
           await getLandmarker(updateProgress);
-          await new Promise((r) => setTimeout(r, 100));
-          await initGhostFace(updateProgress);
-          await new Promise((r) => setTimeout(r, 100));
-          await initEdgeFace(updateProgress);
-
+          await loadFaceCache();
+          const selectedInit =
+            modelType === "edgeface"
+              ? initEdgeFace(updateProgress)
+              : initGhostFace(updateProgress);
+          await selectedInit;
           if (isMounted.current) {
             setFaceLandmarker(getLandmarkerSync());
             setAiLoaded(true);
@@ -215,9 +193,7 @@ export default function RegisterFacePage() {
       const baseQueries =
         modelType === "ghostface"
           ? [Query.notEqual("ghostface_registered", true)]
-          : modelType === "edgeface"
-          ? [Query.notEqual("edgeface_registered", true)]
-          : [Query.equal("faceRegistered", false)];
+          : [Query.notEqual("edgeface_registered", true)];
 
       if (!q) {
         const { rows } = await tablesDB.listRows({
@@ -276,72 +252,20 @@ export default function RegisterFacePage() {
     setIsCapturing(false);
 
     try {
-      if ((faceapi as any).tf && (faceapi as any).tf.engine) {
-        (faceapi as any).tf.engine().startScope();
-      }
 
       if (!selectedRollNo) throw new Error("Roll Number lost during session");
 
       setStatusText("Generating augmented identity cluster...");
       await new Promise((r) => setTimeout(r, 100));
 
-      // --- Brightness augmentation ---
-      let finalEmbeddings = [...embeddings];
-      const video = webcamRef.current?.video;
-      if (video && video.readyState === 4 && modelType === "face-api") {
-        let frameCanvas: HTMLCanvasElement | null = null;
-        try {
-          frameCanvas = document.createElement("canvas");
-          frameCanvas.width = video.videoWidth;
-          frameCanvas.height = video.videoHeight;
-          const fCtx = frameCanvas.getContext("2d");
-          if (fCtx) {
-            fCtx.drawImage(video, 0, 0);
-
-            const detectConfig = new faceapi.SsdMobilenetv1Options({
-              minConfidence: 0.5,
-            });
-
-            for (const offset of [40, -40]) {
-              const augCanvas = adjustBrightness(frameCanvas, offset);
-              try {
-                const det = await faceapi
-                  .detectSingleFace(augCanvas, detectConfig)
-                  .withFaceLandmarks()
-                  .withFaceDescriptor();
-                if (det) {
-                  finalEmbeddings.push(new Float32Array(det.descriptor));
-                  serverLog(
-                    "REGISTRATION",
-                    `Augmented embedding (brightness ${offset > 0 ? "+" : ""}${offset})`,
-                  );
-                }
-              } finally {
-                augCanvas.width = 0;
-                augCanvas.height = 0;
-              }
-            }
-          }
-        } catch (augErr) {
-          console.warn("Augmentation step failed (non-critical):", augErr);
-        } finally {
-          if (frameCanvas) {
-            frameCanvas.width = 0;
-            frameCanvas.height = 0;
-          }
-        }
-      }
-
-      // Push all embeddings (organic + augmented) to Appwrite
-      await uploadEmbeddings(selectedRollNo, finalEmbeddings, modelType);
+      // Push all embeddings to Appwrite
+      await uploadEmbeddings(selectedRollNo, embeddings, modelType);
 
       try {
         const regFlag =
           modelType === "ghostface"
             ? "ghostface_registered"
-            : modelType === "edgeface"
-            ? "edgeface_registered"
-            : "faceRegistered";
+            : "edgeface_registered";
         await tablesDB.updateRow({
           databaseId: DB_ID,
           tableId: COLLECTIONS.STUDENTS,
@@ -359,9 +283,6 @@ export default function RegisterFacePage() {
       setEnrollmentStatus("idle");
     } finally {
       setIsSubmitting(false);
-      if ((faceapi as any).tf && (faceapi as any).tf.engine) {
-        (faceapi as any).tf.engine().endScope();
-      }
     }
   };
 
@@ -369,16 +290,11 @@ export default function RegisterFacePage() {
     if (!webcamRef.current?.video || enrollmentStatus !== "scanning") return;
     await new Promise((r) => setTimeout(r, 10));
 
-    const tf = (faceapi as any).tf;
-    if (tf && tf.engine) tf.engine().startScope();
-
     try {
       const video = webcamRef.current.video;
       let descriptor: Float32Array | null = null;
 
-      if (modelType === "ghostface" || modelType === "edgeface") {
-        // Use the high-fidelity MediaPipe landmarks already cached by the live loop
-        const landmarks = lastLandmarks.current;
+      const landmarks = lastLandmarks.current;
         if (!landmarks || landmarks.length === 0) return;
 
         // Estimate a bounding box from landmarks for the crop
@@ -389,7 +305,6 @@ export default function RegisterFacePage() {
         const minY = Math.min(...ys),
           maxY = Math.max(...ys);
 
-        // sw/sh are needed for getGhostFaceDescriptor (pixel conversion)
         const sw = video.videoWidth;
         const sh = video.videoHeight;
 
@@ -412,17 +327,6 @@ export default function RegisterFacePage() {
           }
         }
         if (isAllZeros) return;
-      } else {
-        const detectConfig = new faceapi.SsdMobilenetv1Options({
-          minConfidence: 0.6,
-        });
-        const detection = await faceapi
-          .detectSingleFace(video, detectConfig)
-          .withFaceLandmarks()
-          .withFaceDescriptor();
-        if (!detection) return;
-        descriptor = detection.descriptor;
-      }
 
       if (!descriptor) return;
       const d = new Float32Array(descriptor); // Force-clone to raw array (prevents disposal errors)
@@ -433,9 +337,7 @@ export default function RegisterFacePage() {
         const DIVERSITY_THRESHOLD =
           modelType === "ghostface"
             ? BIOMETRIC_THRESHOLDS.GHOSTFACE.DIVERSITY
-            : modelType === "edgeface"
-            ? BIOMETRIC_THRESHOLDS.EDGEFACE.DIVERSITY
-            : BIOMETRIC_THRESHOLDS.FACE_API.DIVERSITY;
+            : BIOMETRIC_THRESHOLDS.EDGEFACE.DIVERSITY;
         const isDuplicate = prev.slice(-2).some((existing) => {
           let dot = 0,
             normA = 0,
@@ -466,12 +368,6 @@ export default function RegisterFacePage() {
       });
     } catch (err) {
       console.error("Embedding extraction failed:", err);
-    } finally {
-      try {
-        if (tf && tf.engine) {
-          tf.engine().endScope();
-        }
-      } catch (e) {}
     }
   }, [enrollmentStatus, modelType, handleEnrollmentComplete]);
 
@@ -739,25 +635,8 @@ export default function RegisterFacePage() {
             </div>
           </div>
           <div className="flex items-center space-x-6">
-            {/* Model Selector */}
+                        {/* Model Selector */}
             <div className="flex bg-primary/5 p-1 rounded-2xl border border-primary/10 shadow-inner">
-              <button
-                type="button"
-                onClick={async () => {
-                  if (modelType === "face-api") return;
-                  setAiLoaded(false);
-                  await loadFaceRecognitionModel();
-                  setModelType("face-api");
-                  setAiLoaded(true);
-                }}
-                className={`px-3 sm:px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all duration-300 ${
-                  modelType === "face-api"
-                    ? "bg-primary text-background shadow-lg scale-105"
-                    : "text-primary/40 hover:text-primary hover:bg-primary/5"
-                }`}
-              >
-                Face-API
-              </button>
               <button
                 type="button"
                 onClick={() => setModelType("ghostface")}

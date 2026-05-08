@@ -15,6 +15,11 @@ ort.env.wasm.proxy = false;
   "ort-wasm-simd-threaded.wasm": "/models/ort-wasm-simd-threaded.wasm",
   "ort-wasm-simd.wasm": "/models/ort-wasm-simd-threaded.wasm",
   "ort-wasm.wasm": "/models/ort-wasm-simd-threaded.wasm",
+  // Map each variant to its actual local file.
+  // Pre-downloaded by ghostfaceEngine.ts before the worker starts,
+  // so these are served instantly from the SW cache.
+  "ort-wasm-simd-threaded.jsep.wasm": "/models/ort-wasm-simd-threaded.jsep.wasm",
+  "ort-wasm-simd-threaded.jspi.wasm": "/models/ort-wasm-simd-threaded.jspi.wasm",
 };
 
 let session: ort.InferenceSession | null = null;
@@ -82,14 +87,16 @@ self.onmessage = async (e: MessageEvent) => {
   }
 
   if (type === "INFERENCE") {
+    let inputTensor: ort.Tensor | null = null;
+    let outputMap: ort.InferenceSession.OnnxValueMapType | null = null;
     try {
       const activeSession = await initSessionV1();
 
-      const inputTensor = await preprocess(imageData);
+      inputTensor = await preprocess(imageData);
       const feeds: any = {};
       feeds[activeSession.inputNames[0]] = inputTensor;
 
-      const outputMap = await activeSession.run(feeds);
+      outputMap = await activeSession.run(feeds);
       const outputTensor = outputMap[activeSession.outputNames[0]];
 
       const embedding = outputTensor.data as Float32Array;
@@ -116,6 +123,14 @@ self.onmessage = async (e: MessageEvent) => {
         { type: "INFERENCE_DONE", embedding: empty, id },
         [empty.buffer],
       );
+    } finally {
+      // Explicitly release tensors to keep WASM heap flat on iOS.
+      try { inputTensor?.dispose(); } catch (_) {}
+      if (outputMap) {
+        for (const key of Object.keys(outputMap)) {
+          try { outputMap[key]?.dispose(); } catch (_) {}
+        }
+      }
     }
   }
 };

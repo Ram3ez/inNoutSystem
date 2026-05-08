@@ -71,33 +71,7 @@ export default function Dashboard() {
     }
   }, [user, studentData, isAdmin, isKiosk]);
 
-  // Background "Warming" for Kiosk/Admin
-  React.useEffect(() => {
-    let timeoutId: NodeJS.Timeout | undefined;
-    if (typeof window !== "undefined" && (isAdmin || isKiosk)) {
-      const startSync = async () => {
-        try {
-          // 1. Start the face cache / sync IMMEDIATELY
-          await loadFaceCache();
-          
-          // 2. Wait 2 seconds before doing heavy AI GPU warming
-          // to keep the dashboard initial load buttery smooth.
-          timeoutId = setTimeout(async () => {
-             await Promise.all([
-               loadFaceApiModels(),
-               getLandmarker(),
-             ]);
-          }, 2000);
-        } catch (e) {
-          console.warn("[🧠 ENGINE] Background warming/sync failed", e);
-        }
-      };
-      startSync();
-    }
-    return () => {
-      if (timeoutId) clearTimeout(timeoutId);
-    };
-  }, [isAdmin, isKiosk]);
+  // Background AI Warming was removed to prevent 30MB downloads on the home page
 
   const fetchOutings = async () => {
     setIsOutingsLoading(true);

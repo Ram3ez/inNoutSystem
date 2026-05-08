@@ -22,11 +22,21 @@ export async function initGhostFace(updateProgress?: (p: number, s: string) => v
 
   initPromise = (async () => {
     try {
-      // Download model with progress tracking
-      if (updateProgress) updateProgress(0, "Downloading Recognition Model...");
+      // Step 1 – Pre-download the ONNX WASM runtime.
+      // ONNX Runtime fetches its .wasm file inside the Worker where there is no
+      // way to hook a progress callback. Downloading it here first shows a real
+      // progress bar AND warms the SW cache so the worker gets an instant hit.
+      if (updateProgress) updateProgress(0, "Downloading WASM Runtime...");
+      await fetchWithProgress(
+        "/models/ort-wasm-simd-threaded.wasm",
+        (p) => updateProgress?.(p * 0.4, "Downloading WASM Runtime...")
+      );
+
+      // Step 2 – Download the GhostFace model binary with progress.
+      if (updateProgress) updateProgress(40, "Downloading Recognition Model...");
       const modelBuffer = await fetchWithProgress(
         "/models/ghostfacenet.onnx",
-        (p) => updateProgress?.(p, "Downloading Recognition Model...")
+        (p) => updateProgress?.(40 + p * 0.6, "Downloading Recognition Model...")
       );
 
       return new Promise<void>((resolve, reject) => {

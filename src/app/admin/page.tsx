@@ -784,14 +784,9 @@ export default function AdminPortal() {
 
   const handleDeleteFace = async (
     studentId: string,
-    type: "face-api" | "ghostface" | "edgeface",
+    type: "ghostface" | "edgeface",
   ) => {
-    const typeName =
-      type === "ghostface"
-        ? "GhostFace"
-        : type === "edgeface"
-          ? "EdgeFace"
-          : "Face-API";
+    const typeName = type === "ghostface" ? "GhostFace" : "EdgeFace";
     if (
       !confirm(
         `Are you sure you want to remove ${typeName} data for ${studentId}?`,
@@ -805,9 +800,7 @@ export default function AdminPortal() {
       const tableId =
         type === "ghostface"
           ? COLLECTIONS.FACIAL_EMBEDDINGS_NEW
-          : type === "edgeface"
-            ? COLLECTIONS.FACIAL_EMBEDDINGS_EDGE
-            : COLLECTIONS.FACIAL_EMBEDDINGS;
+          : COLLECTIONS.FACIAL_EMBEDDINGS_EDGE;
 
       try {
         await tablesDB.deleteRow({
@@ -824,9 +817,7 @@ export default function AdminPortal() {
       const updateData =
         type === "ghostface"
           ? { ghostface_registered: false }
-          : type === "edgeface"
-            ? { edgeface_registered: false }
-            : { faceRegistered: false };
+          : { edgeface_registered: false };
 
       await tablesDB.updateRow({
         databaseId: DB_ID,
@@ -1125,30 +1116,6 @@ export default function AdminPortal() {
                     </div>
 
                     <div className="w-full md:w-1/4 flex flex-col items-center space-y-2">
-                      {student.faceRegistered ? (
-                        <div className="flex items-center space-x-2 text-primary/60 bg-primary/5 px-3 py-1 rounded-full border border-primary/10">
-                          <UserCheck size={10} />
-                          <span className="text-[8px] font-bold uppercase tracking-widest text-primary/40">
-                            Face-API
-                          </span>
-                          <button
-                            onClick={() =>
-                              handleDeleteFace(student.$id, "face-api")
-                            }
-                            disabled={isDeleting === student.$id + "face-api"}
-                            className="ml-2 text-secondary hover:scale-110 transition-transform"
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center space-x-2 text-primary/20 bg-primary/5 px-3 py-1 rounded-full border border-primary/5">
-                          <span className="text-[8px] font-bold uppercase tracking-widest opacity-30">
-                            Face-API Missing
-                          </span>
-                        </div>
-                      )}
-
                       {student.ghostface_registered ? (
                         <div className="flex items-center space-x-2 text-secondary bg-secondary/10 px-3 py-1 rounded-full border border-secondary/20">
                           <ScanFace size={10} />

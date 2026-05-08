@@ -8,7 +8,10 @@ const withPWA = withPWAInit({
   cacheOnFrontEndNav: true,
   aggressiveFrontEndNavCaching: true,
   extendDefaultRuntimeCaching: true,
+  publicExcludes: ["!**/*.wasm", "!**/*.onnx", "!**/*.task", "!**/*.tflite"], // The '!' prefix is required for fast-glob to exclude them
   workboxOptions: {
+    exclude: [/\.wasm$/, /\.onnx$/, /\.task$/, /\.tflite$/], // Exclude models bundled by Webpack in .next/static/
+    maximumFileSizeToCacheInBytes: 50 * 1024 * 1024, // 50MB limit to allow heavy ONNX WASM models
     skipWaiting: true,
     clientsClaim: true,
     runtimeCaching: [
@@ -43,6 +46,23 @@ const nextConfig: NextConfig = {
   // Allow cross-origin requests for HMR/dev resources when using a custom domain
   allowedDevOrigins: ["system.ram3ez.dev"],
 
+  /**
+   * Cross-Origin-Opener-Policy: same-origin
+   * Provides process isolation without affecting fetch() requests to cross-origin APIs.
+   * NOTE: COEP (require-corp) is intentionally omitted — it would block all fetch()
+   * calls to the Appwrite backend at student.nitpy.ac.in. Since both ONNX workers
+   * use numThreads=1, SharedArrayBuffer is never needed, so COEP has no benefit here.
+   */
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: [
+          { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+        ],
+      },
+    ];
+  },
 
   webpack: (config, { isServer, webpack }) => {
     if (!isServer) {
