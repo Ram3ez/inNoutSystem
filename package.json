@@ -11,7 +11,7 @@
   "dependencies": {
     "@ducanh2912/next-pwa": "^10.2.9",
     "@mediapipe/tasks-vision": "^0.10.34",
-    "appwrite": "^24.2.0",
+    "appwrite": "24.1.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "face-api.js": "^0.22.2",
