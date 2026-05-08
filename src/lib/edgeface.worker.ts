@@ -15,6 +15,11 @@ ort.env.wasm.proxy = false;
   "ort-wasm-simd-threaded.wasm": "/models/ort-wasm-simd-threaded.wasm",
   "ort-wasm-simd.wasm": "/models/ort-wasm-simd-threaded.wasm",
   "ort-wasm.wasm": "/models/ort-wasm-simd-threaded.wasm",
+  // Map each variant to its actual local file.
+  // Pre-downloaded by edgefaceEngine.ts before the worker starts,
+  // so these are served instantly from the SW cache.
+  "ort-wasm-simd-threaded.jsep.wasm": "/models/ort-wasm-simd-threaded.jsep.wasm",
+  "ort-wasm-simd-threaded.jspi.wasm": "/models/ort-wasm-simd-threaded.jspi.wasm",
 };
 
 let session: ort.InferenceSession | null = null;
@@ -111,6 +116,8 @@ self.onmessage = async (e: MessageEvent) => {
   }
 
   if (type === "INFERENCE") {
+    let inputTensor: ort.Tensor | null = null;
+    let outputMap: ort.InferenceSession.OnnxValueMapType | null = null;
     try {
       const activeSession = await initSession();
       const inputName = activeSession.inputNames[0];
@@ -120,12 +127,12 @@ self.onmessage = async (e: MessageEvent) => {
       const shape =
         inputInfo && inputInfo.dims ? inputInfo.dims : [1, 3, 112, 112];
 
-      const inputTensor = await preprocess(imageData, shape);
+      inputTensor = await preprocess(imageData, shape);
       const feeds: any = {};
       feeds[inputName] = inputTensor;
 
       // Run the ONNX model
-      const outputMap = await activeSession.run(feeds);
+      outputMap = await activeSession.run(feeds);
       const outputTensor = outputMap[activeSession.outputNames[0]];
 
       const embedding = outputTensor.data as Float32Array;
@@ -154,6 +161,20 @@ self.onmessage = async (e: MessageEvent) => {
         { type: "INFERENCE_DONE", embedding: empty, id },
         [empty.buffer],
       );
+    } finally {
+      // Explicitly release tensors to keep WASM heap stable on iOS.
+      // iOS caps the WebProcess memory tightly; unreleased ONNX tensors
+      // accumulate across enrollment calls and can trigger a Jetsam kill.
+      try {
+        inputTensor?.dispose();
+      } catch (_) {}
+      if (outputMap) {
+        for (const key of Object.keys(outputMap)) {
+          try {
+            outputMap[key]?.dispose();
+          } catch (_) {}
+        }
+      }
     }
   }
 };

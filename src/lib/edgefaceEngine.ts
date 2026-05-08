@@ -22,11 +22,22 @@ export async function initEdgeFace(updateProgress?: (p: number, s: string) => vo
 
   initPromise = (async () => {
     try {
-      // Download model with progress tracking
-      if (updateProgress) updateProgress(0, "Downloading Edge Model...");
+      // Step 1 – Pre-download the ONNX WASM runtime.
+      // ONNX Runtime fetches its .wasm file inside the Worker where there is no
+      // way to hook a progress callback. By downloading it here on the main thread
+      // first, we both show a real progress bar AND warm the SW cache so the
+      // worker gets a near-instant cache hit when it makes the same request.
+      if (updateProgress) updateProgress(0, "Downloading WASM Runtime...");
+      await fetchWithProgress(
+        "/models/ort-wasm-simd-threaded.wasm",
+        (p) => updateProgress?.(p * 0.4, "Downloading WASM Runtime...")
+      );
+
+      // Step 2 – Download the EdgeFace model binary with progress.
+      if (updateProgress) updateProgress(40, "Downloading Edge Model...");
       const modelBuffer = await fetchWithProgress(
         "/models/edgeface.onnx",
-        (p) => updateProgress?.(p, "Downloading Edge Model...")
+        (p) => updateProgress?.(40 + p * 0.6, "Downloading Edge Model...")
       );
 
       return new Promise<void>((resolve, reject) => {

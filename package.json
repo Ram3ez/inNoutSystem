@@ -14,7 +14,6 @@
     "appwrite": "24.1.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
-    "face-api.js": "^0.22.2",
     "framer-motion": "^12.38.0",
     "html5-qrcode": "^2.3.8",
     "lucide-react": "^1.11.0",

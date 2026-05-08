@@ -335,51 +335,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  const { updateProgress, startLoading: startGlobalLoading, stopLoading: stopGlobalLoading } = useLoading();
-  const hasPreloaded = React.useRef(false);
-
-  // Background model pre-loading based on user roles
-  useEffect(() => {
-    if (user && !isLoading && !hasPreloaded.current) {
-      const preloadModels = async () => {
-        hasPreloaded.current = true;
-        try {
-          /**
-           * ADAPTIVE AI INITIALIZATION
-           * We perform "Asset Warming" only for relevant users to save data.
-           * - Admins/Kiosks: Load full verification databases (Face-API).
-           * - Students: Load lightweight enrollment models (EdgeFace/GhostFace).
-           */
-          const m = await import("@/lib/faceCache");
-          if (isKiosk || isAdmin) {
-            // Admins/Kiosks need full Face-API and the student database for verification
-            startGlobalLoading("Preparing AI Engines...");
-            await m.loadFaceApiModels();
-            await m.loadFaceCache();
-          } else {
-            // Regular users only need lightweight models for registration or profile
-            startGlobalLoading("Loading AI Models...");
-            const ai = await import("@/lib/aiEngine");
-            await ai.getLandmarker(updateProgress);
-            
-            const gf = await import("@/lib/ghostfaceEngine");
-            await gf.initGhostFace(updateProgress);
-            
-            const ef = await import("@/lib/edgefaceEngine");
-            await ef.initEdgeFace(updateProgress); 
-          }
-        } catch (error) {
-          console.error("Model pre-loading failed:", error);
-        } finally {
-          stopGlobalLoading();
-        }
-      };
-
-      preloadModels();
-    }
-  }, [user, isLoading, isKiosk, isAdmin, startGlobalLoading, stopGlobalLoading, updateProgress]);
-
-
+  // Background model pre-loading was explicitly removed to stop 30MB downloads on the home page.
+  // AI Models are strictly lazy-loaded on the Capture and Registration pages now.
   return (
     <AuthContext.Provider
       value={{

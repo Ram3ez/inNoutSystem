@@ -10,7 +10,6 @@ interface EmbeddingData {
   data: Float32Array;
 }
 
-let faceCache: EmbeddingData[] = [];
 let ghostCache: EmbeddingData[] = [];
 let edgeCache: EmbeddingData[] = [];
 
@@ -19,9 +18,8 @@ self.onmessage = (e: MessageEvent) => {
 
   if (type === 'SYNC_CACHE') {
     const { modelType, data } = payload;
-    let target = faceCache;
-    if (modelType === 'ghostface') target = ghostCache;
-    else if (modelType === 'edgeface') target = edgeCache;
+    let target = ghostCache;
+    if (modelType === 'edgeface') target = edgeCache;
     
     // Clear and rebuild for this student
     const studentId = data.id;
@@ -34,38 +32,34 @@ self.onmessage = (e: MessageEvent) => {
     }
     
     if (modelType === 'ghostface') ghostCache = filtered;
-    else if (modelType === 'edgeface') edgeCache = filtered;
-    else faceCache = filtered;
+    else edgeCache = filtered;
     return;
   }
 
   if (type === 'SET_FULL_CACHE') {
     const { modelType, flattenedData, mapping } = payload;
     const list: EmbeddingData[] = [];
-    const dim = modelType === 'face-api' ? 128 : 512;
+    const dim = 512;
     
     let offset = 0;
     for (const entry of mapping) {
       const { id, count } = entry;
       for (let i = 0; i < count; i++) {
         const sub = flattenedData.slice(offset, offset + dim);
-
         list.push({ id, data: sub });
         offset += dim;
       }
     }
     
     if (modelType === 'ghostface') ghostCache = list;
-    else if (modelType === 'edgeface') edgeCache = list;
-    else faceCache = list;
+    else edgeCache = list;
     return;
   }
 
   if (type === 'SEARCH') {
     const { query, modelType, threshold, conflictGap, requestId } = payload;
-    let target = faceCache;
-    if (modelType === 'ghostface') target = ghostCache;
-    else if (modelType === 'edgeface') target = edgeCache;
+    let target = ghostCache;
+    if (modelType === 'edgeface') target = edgeCache;
     
     let bestMatch = "Unknown";
     let bestScore = -1;
@@ -124,7 +118,6 @@ self.onmessage = (e: MessageEvent) => {
   }
 
   if (type === 'CLEAR') {
-    faceCache = [];
     ghostCache = [];
     edgeCache = [];
     return;
@@ -134,10 +127,8 @@ self.onmessage = (e: MessageEvent) => {
     const { modelType, studentId } = payload;
     if (modelType === 'ghostface') {
       ghostCache = ghostCache.filter(item => item.id !== studentId);
-    } else if (modelType === 'edgeface') {
-      edgeCache = edgeCache.filter(item => item.id !== studentId);
     } else {
-      faceCache = faceCache.filter(item => item.id !== studentId);
+      edgeCache = edgeCache.filter(item => item.id !== studentId);
     }
     return;
   }

@@ -19,7 +19,7 @@ import { useLoading } from "@/context/LoadingContext";
 import { useRouter } from "next/navigation";
 import { tablesDB } from "@/lib/appwrite";
 import { DB_ID, COLLECTIONS, BIOMETRIC_THRESHOLDS } from "@/lib/constants";
-import { loadFaceApiModels, loadFaceCache, areModelsLoaded, uploadEmbeddings } from "@/lib/faceCache";
+import { loadFaceCache, uploadEmbeddings } from "@/lib/faceCache";
 import {
   getLandmarker,
   getLandmarkerSync,
@@ -30,7 +30,7 @@ import {
   initEdgeFace,
   getEdgeFaceDescriptor as getEdgeFaceDescriptorFn,
 } from "@/lib/edgefaceEngine";
-import * as faceapi from "face-api.js";
+
 
 const TARGET_EMBEDDINGS = 8;
 
@@ -89,45 +89,49 @@ export default function StudentRegisterFace() {
     isMounted.current = true;
     isIOSDevice.current = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
-    if (isLandmarkerLoaded()) {
-      setFaceLandmarker(getLandmarkerSync());
-      setAiLoaded(true);
-    } else {
-      const init = async () => {
-        try {
+    const init = async () => {
+      try {
+        const alreadyBooted = isLandmarkerLoaded();
+
+        if (!alreadyBooted) {
           startGlobalLoading("Warming AI Engines...");
-          // Regular users don't need the heavy face database (Face Cache) or Face-API
-          // They only need Landmarks, GhostFace, and EdgeFace for registration.
-          const promises: Promise<any>[] = [
-            getLandmarker(updateProgress),
-            initGhostFace(updateProgress),
-            initEdgeFace(updateProgress),
-          ];
-
-          if (isAdmin || isKiosk) {
-            promises.push(loadFaceCache());
-            promises.push(loadFaceApiModels());
-          }
-
-          await Promise.all(promises);
-
-          if (isMounted.current) {
-            setFaceLandmarker(getLandmarkerSync());
-            setAiLoaded(true);
-          }
-        } catch (e) {
-          console.error("Failed to initialize AI engine", e);
-        } finally {
-          stopGlobalLoading();
         }
-      };
-      init();
-    }
+
+        // Always ensure the landmarker is ready (no-op if already loaded).
+        await getLandmarker(alreadyBooted ? undefined : updateProgress);
+
+        // Load only the selected model — not both simultaneously.
+        // On iOS, loading EdgeFace + GhostFace together peaks at ~49MB of raw
+        // ArrayBuffers in RAM, frequently triggering a Jetsam kill before any
+        // inference even starts. The unselected model's initPromise guard means
+        // this call is a no-op if it was already loaded (e.g., after model switch).
+        const selectedModelInit =
+          modelType === "edgeface"
+            ? initEdgeFace(alreadyBooted ? undefined : updateProgress)
+            : initGhostFace(alreadyBooted ? undefined : updateProgress);
+        await selectedModelInit;
+
+        if (isAdmin || isKiosk) {
+          await loadFaceCache();
+        }
+
+        if (isMounted.current) {
+          setFaceLandmarker(getLandmarkerSync());
+          setAiLoaded(true);
+        }
+      } catch (e) {
+        console.error("Failed to initialize AI engine", e);
+      } finally {
+        stopGlobalLoading();
+      }
+    };
+
+    init();
 
     return () => {
       isMounted.current = false;
     };
-  }, []);
+  }, [modelType]);
 
   const resetEnrollment = () => {
     setCollectedEmbeddings([]);
@@ -153,9 +157,6 @@ export default function StudentRegisterFace() {
     setIsCapturing(false);
 
     try {
-      if ((faceapi as any).tf && (faceapi as any).tf.engine) {
-        (faceapi as any).tf.engine().startScope();
-      }
 
       if (!studentData?.$id) throw new Error("Student ID lost during session");
 
@@ -194,9 +195,7 @@ export default function StudentRegisterFace() {
       setEnrollmentStatus("idle");
     } finally {
       setIsSubmitting(false);
-      if ((faceapi as any).tf && (faceapi as any).tf.engine) {
-        (faceapi as any).tf.engine().endScope();
-      }
+
     }
   };
 
@@ -204,8 +203,6 @@ export default function StudentRegisterFace() {
     if (!webcamRef.current?.video || enrollmentStatus !== "scanning") return;
     await new Promise((r) => setTimeout(r, 10));
 
-    const tf = (faceapi as any).tf;
-    if (tf && tf.engine) tf.engine().startScope();
 
     try {
       const video = webcamRef.current.video;
@@ -286,12 +283,6 @@ export default function StudentRegisterFace() {
       });
     } catch (err) {
       console.error("Extraction error:", err);
-    } finally {
-      try {
-        if (tf && tf.engine) {
-          tf.engine().endScope();
-        }
-      } catch (e) {}
     }
   }, [enrollmentStatus, modelType, handleEnrollmentComplete]);
 
