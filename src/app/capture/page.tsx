@@ -14,6 +14,9 @@ import {
   CheckCircle,
   RefreshCw,
   AlertCircle,
+  Database,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import ReactWebcam from "react-webcam";
 import {
@@ -52,9 +55,20 @@ import {
   initEdgeFace,
   getEdgeFaceDescriptor as getEdgeFaceDescriptorFn,
 } from "@/lib/edgefaceEngine";
+import { performIncrementalSync } from "@/lib/faceCache";
 
 const SSD_OPTIONS = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.2 });
 
+/**
+ * CAPTURE PAGE — KIOSK TOUCHLESS RECOGNITION
+ * 
+ * This is the primary interface for students to check-in/out of the hostel.
+ * It coordinates a complex real-time pipeline:
+ * 1. MediaPipe: Handles sub-millisecond face tracking and alignment.
+ * 2. Adaptive AI: Swaps between Face-API, GhostFaceNet, and EdgeFace models.
+ * 3. Offline Resilience: Queues transactions if the network drops.
+ * 4. Movement Logic: Automatically detects if a student is departing or returning.
+ */
 function CaptureContent() {
   const {
     user,
@@ -129,6 +143,12 @@ function CaptureContent() {
   const lastScanTime = useRef<number>(0);
   const lastDetectTime = useRef<number>(0);
   const lastLogTime = useRef<number>(0);
+
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [notification, setNotification] = useState<{
+    message: string;
+    type: "success" | "error";
+  } | null>(null);
 
   const webcamRef = useRef<ReactWebcam>(null);
 
@@ -1182,6 +1202,74 @@ function CaptureContent() {
   return (
     <GradientBackground>
       <Navigation />
+
+      {/* Non-Blocking Notification Toast */}
+      <AnimatePresence>
+        {notification && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className={`fixed top-24 right-6 z-[100] p-4 rounded-2xl border backdrop-blur-xl shadow-2xl flex items-center gap-3 min-w-[320px] max-w-md ${
+              notification.type === "success"
+                ? "bg-green-500/10 border-green-500/30 text-green-400 shadow-green-500/5"
+                : "bg-red-500/10 border-red-500/30 text-red-400 shadow-red-500/5"
+            }`}
+          >
+            <div
+              className={`p-2 rounded-xl ${notification.type === "success" ? "bg-green-500/20" : "bg-red-500/20"}`}
+            >
+              {notification.type === "success" ? (
+                <CheckCircle2 size={18} />
+              ) : (
+                <XCircle size={18} />
+              )}
+            </div>
+            <div className="flex-1">
+              <p className="text-xs font-semibold text-foreground/90">
+                {notification.message}
+              </p>
+            </div>
+            <button
+              onClick={() => setNotification(null)}
+              className="p-1 rounded-full text-foreground/40 hover:text-foreground hover:bg-white/10 transition-colors"
+            >
+              <XCircle size={16} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Manual Sync Button for Admins/Kiosks */}
+      {(isAdmin || isKiosk) && (
+        <div className="fixed top-24 right-4 sm:right-8 z-50">
+          <button
+            onClick={async () => {
+              setIsSyncing(true);
+              try {
+                await performIncrementalSync();
+                setNotification({
+                  message: "Biometric database synced successfully!",
+                  type: "success",
+                });
+              } catch (e) {
+                setNotification({
+                  message: "Sync failed. Check console for details.",
+                  type: "error",
+                });
+              } finally {
+                setIsSyncing(false);
+                setTimeout(() => setNotification(null), 5000);
+              }
+            }}
+            disabled={isSyncing}
+            className="flex items-center space-x-2 px-4 py-2 bg-secondary/10 hover:bg-secondary/20 text-secondary rounded-xl text-[10px] font-black uppercase tracking-widest transition-all backdrop-blur-md border border-secondary/20 shadow-lg disabled:opacity-50"
+          >
+            <Database size={14} className={isSyncing ? "animate-spin" : ""} />
+            <span>{isSyncing ? "Syncing..." : "Sync Biometrics"}</span>
+          </button>
+        </div>
+      )}
 
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 pt-36 sm:pt-40 pb-12 flex flex-col">
         <header className="mb-8 flex flex-col sm:flex-row items-center justify-between gap-4">

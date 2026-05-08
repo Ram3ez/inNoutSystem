@@ -17,6 +17,16 @@ import Link from 'next/link';
 import { GradientBackground } from '@/components/GradientBackground';
 import { purgeAndFullSync, isCacheLoaded, areModelsLoaded } from '@/lib/faceCache';
 
+/**
+ * SYSTEM HEALTH & MAINTENANCE PORTAL
+ * 
+ * Provides administrative diagnostics and cache orchestration tools.
+ * Features:
+ * 1. Forced Synchronization: Purges local IndexedDB and triggers a full biometric fetch.
+ * 2. Hardware Diagnostics: Monitors JS Heap usage and platform metadata.
+ * 3. Network Heartbeat: Live monitoring of connectivity status.
+ * 4. Cache Verification: Checks integrity of persistent biometric descriptors and AI models.
+ */
 export default function SystemPage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState('');
@@ -26,6 +36,10 @@ export default function SystemPage() {
     online: true,
     memory: 'Unknown'
   });
+  const [notification, setNotification] = useState<{
+    message: string;
+    type: "success" | "error";
+  } | null>(null);
 
   useEffect(() => {
     setSysInfo({
@@ -56,7 +70,8 @@ export default function SystemPage() {
       });
     } catch (e) {
       console.error(e);
-      alert("Sync failed. Check console.");
+      setNotification({ message: "Sync failed. Check console.", type: "error" });
+      setTimeout(() => setNotification(null), 5000);
     } finally {
       setIsSyncing(false);
     }
@@ -203,6 +218,38 @@ export default function SystemPage() {
           </section>
         </main>
       </div>
+
+      {/* Notifications */}
+      <AnimatePresence>
+        {notification && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
+            className="fixed bottom-8 left-0 right-0 z-[200] flex justify-center px-6 pointer-events-none"
+          >
+            <div
+              className={`
+                flex items-center gap-3 px-6 py-4 rounded-2xl backdrop-blur-xl border shadow-2xl pointer-events-auto
+                ${
+                  notification.type === "success"
+                    ? "bg-success/10 border-success/20 text-success shadow-success/10"
+                    : "bg-red-500/10 border-red-500/20 text-red-500 shadow-red-500/10"
+                }
+              `}
+            >
+              {notification.type === "success" ? (
+                <CheckCircle2 size={20} />
+              ) : (
+                <ShieldAlert size={20} />
+              )}
+              <p className="text-sm font-black tracking-wide">
+                {notification.message}
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </GradientBackground>
   );
 }

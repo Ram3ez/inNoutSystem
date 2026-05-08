@@ -58,6 +58,10 @@ export default function CaretakerDashboard() {
   const [revealedPhones, setRevealedPhones] = useState<Record<string, boolean>>(
     {},
   );
+  const [notification, setNotification] = useState<{
+    message: string;
+    type: "success" | "error";
+  } | null>(null);
 
   const router = useRouter();
   const { startLoading } = useLoading();
@@ -293,7 +297,8 @@ export default function CaretakerDashboard() {
       setRequests((prev) => prev.filter((r) => r.$id !== requestId));
     } catch (error) {
       console.error("Action failed:", error);
-      alert("Failed to process request. Please try again.");
+      setNotification({ message: "Failed to process request. Please try again.", type: "error" });
+      setTimeout(() => setNotification(null), 5000);
     } finally {
       setIsActioning(null);
     }
@@ -712,6 +717,38 @@ export default function CaretakerDashboard() {
           </AnimatePresence>
         </div>
       </div>
+
+      {/* Notifications */}
+      <AnimatePresence>
+        {notification && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
+            className="fixed bottom-8 left-0 right-0 z-[100] flex justify-center px-6 pointer-events-none"
+          >
+            <div
+              className={`
+                flex items-center gap-3 px-6 py-4 rounded-2xl backdrop-blur-xl border shadow-2xl pointer-events-auto
+                ${
+                  notification.type === "success"
+                    ? "bg-success/10 border-success/20 text-success shadow-success/10"
+                    : "bg-red-500/10 border-red-500/20 text-red-500 shadow-red-500/10"
+                }
+              `}
+            >
+              {notification.type === "success" ? (
+                <CheckCircle2 size={20} />
+              ) : (
+                <XCircle size={20} />
+              )}
+              <p className="text-sm font-black tracking-wide">
+                {notification.message}
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </GradientBackground>
   );
 }

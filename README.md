@@ -80,12 +80,18 @@ A premium, touchless biometric hostel management system built for **NIT Puducher
     *   **Kiosk**: Dedicated touchless recognition interface.
     *   **Faculty/Caretaker**: Management of outings, leave approvals, and student records.
 
-### 8. Security Hardening & Obfuscated Caching
-*   **Obfuscated Session Cache**: All localized role, session, student, and admin states are stored in obfuscated keys and fully encrypted via `TextEncoder`/`TextDecoder` Base64 encoding. This completely prevents any student from tampering with privileges using Developer Tools.
-*   **Restricted Email Proxy**: Outbound parent and advisor notifications strictly require a valid, internal `X-API-Secret` header to execute, preventing any unauthorized API exploitation.
-*   **Leak-Free Async Timers**: Cleanup logic clears background warming timeouts on unmount, optimizing the application for performance and memory conservation.
+### 9. Adaptive Biometric Sync & Heartbeat
+*   **WebSocket Fallback Polling**: Implements a robust `Adaptive Polling` architecture. If `DISABLE_REALTIME` is enabled (common in restricted institutional networks), the system automatically falls back to a 60-second heartbeat for biometric cache updates.
+*   **Window Focus Optimization**: Polling frequency increases when the window gains focus, ensuring kiosks always have the latest identity descriptors before a student arrives.
+*   **Manual Trigger Gates**: Admins and Kiosk operators have gated access to force a "Manual Sync," bypassing polling intervals for urgent biometric updates.
+
+### 10. Unified Notification Standardization
+*   **Non-Blocking Feedback**: Replaced legacy browser `alert()` popups with a standardized, state-based toast notification system across all administrative and student portals.
+*   **High-Altitude Layering**: All notifications utilize a consistent `z-[100]` elevation, ensuring visibility above the "Top Layer" of modals and backdrop filters.
+*   **Aesthetic Continuity**: Notifications feature institutional glassmorphism, contextual Lucide-React iconography, and Framer Motion micro-animations for a premium UX feel.
 
 ---
+
 
 ## 🛠 Technology Stack
 
@@ -110,8 +116,11 @@ A premium, touchless biometric hostel management system built for **NIT Puducher
 4.  **Conflict Detection**: The system checks the `CONFLICT_GAP` between the best match and the runner-up to prevent identity confusion among lookalikes.
 5.  **Sync**: Successful matches update the `outing` or `leave` records via the `OfflineSyncManager`.
 
-### Centralized Calibration
-All AI sensitivities are centralized in `src/lib/constants.ts`, allowing for instant adjustment of matching thresholds, registration diversity requirements, and adaptive profile update scores for all three models (**GhostFaceNet**, **EdgeFace**, **Face-API**).
+### Adaptive Sync
+The `faceCache.ts` module manages a complex multi-tier caching strategy:
+- **Level 1 (Memory)**: High-speed JS objects for millisecond recognition.
+- **Level 2 (LocalStorage)**: Persistent descriptors to bridge browser restarts.
+- **Level 3 (Remote)**: Periodic polling (60s) or Manual Sync triggers to keep descriptors fresh across all campus kiosks.
 
 ---
 
@@ -146,6 +155,7 @@ All AI sensitivities are centralized in `src/lib/constants.ts`, allowing for ins
     ```env
     NEXT_PUBLIC_APPWRITE_ENDPOINT=YOUR_APPWRITE_ENDPOINT
     NEXT_PUBLIC_APPWRITE_PROJECT_ID=YOUR_PROJECT_ID
+    NEXT_PUBLIC_DISABLE_REALTIME=true # Set to true for environments without WebSockets
     ```
 
 4.  **Run Development Server**:

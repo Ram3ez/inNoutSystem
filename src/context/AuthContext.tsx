@@ -1,8 +1,12 @@
 "use client";
 
 /**
- * Authentication Context Provider
- * Manages user sessions, roles, and profile data across the application.
+ * AUTHENTICATION CONTEXT PROVIDER
+ * 
+ * Central hub for user session management, institutional role detection, 
+ * and secure profile caching. This provider ensures that the correct
+ * AI models are loaded based on user permissions and that sessions 
+ * remain resilient even when offline.
  */
 
 import React, { createContext, useContext, useEffect, useState } from "react";
@@ -40,7 +44,11 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 /**
- * Encodes data to Base64 for safe storage in LocalStorage.
+ * SECURE CACHE LAYER
+ * We encode critical session and role data into Base64 before storing them 
+ * in LocalStorage. This prevents curious users from easily tampering 
+ * with roles (e.g., trying to set isAdmin=true via DevTools) to bypass 
+ * client-side route guards.
  */
 const encodeCache = (data: any) => {
   if (data === null || data === undefined) return "";
@@ -336,6 +344,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       const preloadModels = async () => {
         hasPreloaded.current = true;
         try {
+          /**
+           * ADAPTIVE AI INITIALIZATION
+           * We perform "Asset Warming" only for relevant users to save data.
+           * - Admins/Kiosks: Load full verification databases (Face-API).
+           * - Students: Load lightweight enrollment models (EdgeFace/GhostFace).
+           */
           const m = await import("@/lib/faceCache");
           if (isKiosk || isAdmin) {
             // Admins/Kiosks need full Face-API and the student database for verification
