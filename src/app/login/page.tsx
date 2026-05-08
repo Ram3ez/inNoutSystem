@@ -87,25 +87,35 @@ export default function LoginPage() {
               transition={{ delay: 0.5 }}
               className="space-y-6"
             >
-              <button
-                onClick={() => {
-                  startLoading(); // Trigger global progress bar
-                  loginWithGoogle();
-                }}
-                disabled={isLoading}
-                className="group relative w-full h-16 bg-primary text-background rounded-2xl flex items-center justify-center transition-all hover:bg-primary/95 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none shadow-xl shadow-primary/20 overflow-hidden"
-              >
-                {isLoading ? (
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <div className="flex items-center space-x-3">
-                    <LogIn size={20} className="text-background" />
-                    <span className="text-background font-bold tracking-widest text-sm uppercase">
-                      Continue with Google
-                    </span>
-                  </div>
-                )}
-              </button>
+              <div className="space-y-3">
+                <button
+                  onClick={() => {
+                    startLoading(); // Trigger global progress bar
+                    loginWithGoogle();
+                  }}
+                  disabled={isLoading}
+                  className="group relative w-full h-16 bg-primary text-background rounded-2xl flex items-center justify-center transition-all hover:bg-primary/95 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none shadow-xl shadow-primary/20 overflow-hidden"
+                >
+                  {isLoading ? (
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <div className="flex items-center space-x-3">
+                      <LogIn size={20} className="text-background" />
+                      <span className="text-background font-bold tracking-widest text-sm uppercase">
+                        Continue with Google
+                      </span>
+                    </div>
+                  )}
+                </button>
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.6 }}
+                  className="text-[10px] text-primary/40 font-medium tracking-wide"
+                >
+                  Access restricted to <span className="text-primary/60 font-bold italic">@nitpy.ac.in</span> accounts
+                </motion.p>
+              </div>
 
               <div className="flex items-center justify-center space-x-4 pt-4">
                 <div className="h-[1px] flex-1 bg-primary/10" />
