@@ -17,6 +17,39 @@ This is a **Next.js 16+** application using the **App Router** architecture. It 
 
 ## Directory Structure
 
+```text
+src/
+├── app/                  # Next.js App Router (Pages & API)
+│   ├── admin/            # Administrative console
+│   ├── capture/          # Kiosk biometric recognition page
+│   ├── faculty/          # Faculty Advisor dashboard
+│   ├── caretaker/        # Hostel Caretaker dashboard
+│   ├── register-face/    # Self-service student face enrollment
+│   ├── live-status/      # Real-time movement monitor
+│   └── system/           # System health & maintenance
+├── components/           # Shared UI Components (Glassmorphism)
+│   ├── GradientBackground.tsx
+│   ├── Navigation.tsx
+│   └── LoadingIndicator.tsx
+├── context/              # Global State Management
+│   ├── AuthContext.tsx   # RBAC & Appwrite Session management
+│   └── LoadingContext.tsx # Global progress & navigation loading
+├── lib/                  # Core Business & AI Logic
+│   ├── aiEngine.ts       # MediaPipe Landmarker initialization
+│   ├── ghostfaceEngine.ts # GhostFaceNet descriptor extraction
+│   ├── edgefaceEngine.ts  # EdgeFace descriptor extraction
+│   ├── faceCache.ts      # Biometric database sync & local caching
+│   ├── appwrite.ts       # Backend client configuration
+│   └── constants.ts      # Global thresholds, durations & IST settings
+├── workers/              # Multithreaded AI Workers
+│   ├── faceSearch.worker.ts # Background identity matching
+│   ├── ghostface.worker.ts # Offloaded ONNX inference
+│   └── edgeface.worker.ts  # Offloaded ONNX inference
+└── types/                # TypeScript Interface definitions
+```
+
+### Detailed Breakdown
+
 ### `src/app/`
 Contains the application's pages and API routes using the Next.js App Router.
 - `api/`: Backend API endpoints (e.g., email service, Appwrite proxy).

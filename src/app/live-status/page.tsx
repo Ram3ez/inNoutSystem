@@ -27,6 +27,10 @@ export default function LiveStatusPage() {
     const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
     const [isLoadingDetails, setIsLoadingDetails] = useState(false);
     const isFetchingRef = useRef(false);
+    const [notification, setNotification] = useState<{
+        message: string;
+        type: "success" | "error";
+    } | null>(null);
 
     useEffect(() => {
         if (!authLoading) {
@@ -54,7 +58,8 @@ export default function LiveStatusPage() {
             setSelectedStudent(student as unknown as Student);
         } catch (error) {
             console.error("Failed to fetch student details:", error);
-            alert("Could not load contact details for this student.");
+            setNotification({ message: "Could not load contact details for this student.", type: "error" });
+            setTimeout(() => setNotification(null), 5000);
         } finally {
             setIsLoadingDetails(false);
         }
@@ -364,6 +369,38 @@ export default function LiveStatusPage() {
                     )}
                 </AnimatePresence>
             </main>
+
+            {/* Notifications */}
+            <AnimatePresence>
+                {notification && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 50, scale: 0.9 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
+                        className="fixed bottom-8 left-0 right-0 z-[200] flex justify-center px-6 pointer-events-none"
+                    >
+                        <div
+                            className={`
+                                flex items-center gap-3 px-6 py-4 rounded-2xl backdrop-blur-xl border shadow-2xl pointer-events-auto
+                                ${
+                                    notification.type === "success"
+                                        ? "bg-success/10 border-success/20 text-success shadow-success/10"
+                                        : "bg-red-500/10 border-red-500/20 text-red-500 shadow-red-500/10"
+                                }
+                            `}
+                        >
+                            {notification.type === "success" ? (
+                                <CheckCircle2 size={20} />
+                            ) : (
+                                <AlertCircle size={20} />
+                            )}
+                            <p className="text-sm font-black tracking-wide">
+                                {notification.message}
+                            </p>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </GradientBackground>
     );
 }

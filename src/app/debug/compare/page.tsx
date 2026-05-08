@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useRef, useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import ReactWebcam from "react-webcam";
 import {
   ArrowLeft,
@@ -8,6 +9,7 @@ import {
   Table,
   Cpu,
   ShieldCheck,
+  ShieldAlert,
   RefreshCw,
 } from "lucide-react";
 import Link from "next/link";
@@ -41,6 +43,10 @@ export default function CompareLab() {
   const [imgSrc, setImgSrc] = useState<string | null>(null);
 
   const [status, setStatus] = useState("");
+  const [notification, setNotification] = useState<{
+    message: string;
+    type: "success" | "error";
+  } | null>(null);
 
   useEffect(() => {
     const init = async () => {
@@ -79,7 +85,8 @@ export default function CompareLab() {
     }
 
     if (!video || video.videoWidth === 0) {
-      alert("Camera timed out or reported 0px resolution. Please refresh.");
+      setNotification({ message: "Camera timed out or reported 0px resolution. Please refresh.", type: "error" });
+      setTimeout(() => setNotification(null), 5000);
       setIsAnalyzing(false);
       setStatus("");
       return;
@@ -277,7 +284,8 @@ export default function CompareLab() {
       }
     } catch (e: any) {
       console.error(e);
-      alert(`Analysis failed: ${e.message || e}`);
+      setNotification({ message: `Analysis failed: ${e.message || e}`, type: "error" });
+      setTimeout(() => setNotification(null), 5000);
       setStatus("Error: Check Console");
     } finally {
       setIsAnalyzing(false);
@@ -536,6 +544,38 @@ export default function CompareLab() {
           </div>
         </div>
       </div>
+
+      {/* Notifications */}
+      <AnimatePresence>
+        {notification && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
+            className="fixed bottom-8 left-0 right-0 z-[200] flex justify-center px-6 pointer-events-none"
+          >
+            <div
+              className={`
+                flex items-center gap-3 px-6 py-4 rounded-2xl backdrop-blur-xl border shadow-2xl pointer-events-auto
+                ${
+                  notification.type === "success"
+                    ? "bg-success/10 border-success/20 text-success shadow-success/10"
+                    : "bg-red-500/10 border-red-500/20 text-red-500 shadow-red-500/10"
+                }
+              `}
+            >
+              {notification.type === "success" ? (
+                <ShieldCheck size={20} />
+              ) : (
+                <ShieldAlert size={20} className="text-red-500" />
+              )}
+              <p className="text-sm font-black tracking-wide">
+                {notification.message}
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </GradientBackground>
   );
 }

@@ -1,7 +1,16 @@
 /**
- * Face Cache & Biometric Synchronization Library
- * Handles IndexedDB persistence, incremental cloud sync, and
- * background worker offloading for large-scale searching.
+ * FACE CACHE & BIOMETRIC SYNCHRONIZATION LIBRARY
+ * 
+ * This module acts as the central state manager for all facial identities in the system.
+ * It manages three levels of storage:
+ * 1. Memory Cache: For ultra-fast matching during live camera scans.
+ * 2. Background Workers: Offloads heavy vector comparisons to keep the UI at 60fps.
+ * 3. Persistence: Handles incremental cloud sync from Appwrite TablesDB.
+ * 
+ * MODELS SUPPORTED:
+ * - Face-API (128-d descriptors)
+ * - GhostFaceNet (512-d descriptors)
+ * - EdgeFace (512-d descriptors)
  */
 "use client";
 
@@ -14,24 +23,29 @@ import {
   realtime,
 } from "@/lib/appwrite";
 import { Query } from "appwrite";
-import { DB_ID, COLLECTIONS, BIOMETRIC_THRESHOLDS } from "./constants";
+import { DB_ID, COLLECTIONS, BIOMETRIC_THRESHOLDS, DISABLE_REALTIME } from "./constants";
 
 // @ts-ignore
 import * as faceapi from "face-api.js";
 
-// In-Memory State
+// In-Memory State for lightning-fast matching
 let memoryCache: Record<string, Float32Array[]> = {};
 let memoryCacheGhost: Record<string, Float32Array[]> = {};
 let memoryCacheEdge: Record<string, Float32Array[]> = {};
 let isLoaded = false;
 let isLoading = false;
 
+/** Accessor for legacy Face-API descriptors */
 export function getMemoryCache() {
   return memoryCache;
 }
+
+/** Accessor for high-precision GhostFaceNet descriptors */
 export function getMemoryCacheGhost() {
   return memoryCacheGhost;
 }
+
+/** Accessor for lightweight EdgeFace descriptors */
 export function getMemoryCacheEdge() {
   return memoryCacheEdge;
 }
@@ -59,10 +73,11 @@ export interface RecognitionResult {
   potentialMatch?: string | null;
 }
 
-// ---------------------------------------------------------
-// WORKER INITIALIZATION
-// ---------------------------------------------------------
-
+/**
+ * Spawns a dedicated Web Worker to handle facial vector searching.
+ * This prevents the main UI thread from freezing when comparing a face 
+ * against thousands of student identities in the database.
+ */
 function initSearchWorker() {
   if (typeof window === "undefined" || searchWorker) return;
   searchWorker = new Worker(new URL("./faceSearch.worker.ts", import.meta.url));
@@ -287,21 +302,49 @@ function initSyncListeners() {
   if (typeof window === "undefined" || isSyncInitialized) return;
   isSyncInitialized = true;
 
-  // Catch-up when back online
-  window.addEventListener("online", () => {
-    console.log("[🌐 NETWORK] Connection restored. Syncing...");
+  // Catch-up when back online or window gains focus
+  const syncHandler = () => {
+    console.log("[🌐 NETWORK] Syncing biometric database...");
     performIncrementalSync();
+  };
+
+  window.addEventListener("online", syncHandler);
+  window.addEventListener("focus", syncHandler);
+
+  // Background Heartbeat (60 seconds)
+  // Polls more frequently when active, slower when backgrounded
+  let pollingInterval: NodeJS.Timeout;
+  
+  const startPolling = () => {
+    clearInterval(pollingInterval);
+    pollingInterval = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        performIncrementalSync();
+      }
+    }, 60 * 1000);
+  };
+
+  startPolling();
+
+  // Slow down polling when tab is hidden
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      clearInterval(pollingInterval);
+      pollingInterval = setInterval(() => {
+        performIncrementalSync();
+      }, 5 * 60 * 1000); // 5 minutes when hidden
+    } else {
+      startPolling();
+      performIncrementalSync(); // Instant sync on return
+    }
   });
 
-  // Background Heartbeat (10 mins)
-  setInterval(
-    () => {
-      performIncrementalSync();
-    },
-    10 * 60 * 1000,
-  );
+  if (DISABLE_REALTIME) {
+    console.log("[🚫 REALTIME] WebSockets disabled. Using Adaptive Polling fallback.");
+    return;
+  }
 
-  // Realtime Subscriptions
+  // Realtime Subscriptions (Only if not disabled)
   const setupRealtime = (
     coll: string,
     cache: Record<string, Float32Array[]>,

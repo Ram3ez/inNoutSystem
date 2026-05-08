@@ -1,10 +1,24 @@
 /**
- * Global Constants and Utility Functions
- * This file contains database IDs, collection names, team IDs, and biometric configuration.
+ * GLOBAL CONFIGURATION & SENSITIVITY HUB
+ * 
+ * This module centralizes all environment-specific constants, database schemas, 
+ * institutional thresholds, and AI sensitivity settings.
+ * 
+ * CORE RESPONSIBILITIES:
+ * 1. Appwrite Schema Mapping (Collections, Teams, Storage).
+ * 2. Biometric Thresholds (Distance metrics, Diversity requirements, Conflict gaps).
+ * 3. Temporal Constraints (Gender-based outing restrictions, IST timezone normalization).
+ * 4. Adaptive Sync (WebSocket toggle, Heartbeat intervals).
  */
 
 // Appwrite Database ID
 export const DB_ID = "69cb970a000853f23489";
+
+/**
+ * Sync Configuration
+ * Used to toggle between Realtime (WebSockets) and Adaptive Polling.
+ */
+export const DISABLE_REALTIME = process.env.NEXT_PUBLIC_DISABLE_REALTIME?.toString().trim() === 'true';
 
 /**
  * Appwrite Collection IDs

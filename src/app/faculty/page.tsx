@@ -414,7 +414,8 @@ export default function FacultyDashboard() {
       setRequests((prev) => prev.filter((r) => r.$id !== requestId));
     } catch (error) {
       console.error("Action failed:", error);
-      alert("Failed to process request. Please try again.");
+      setNotification({ message: "Failed to process request. Please try again.", type: "error" });
+      setTimeout(() => setNotification(null), 5000);
     } finally {
       setIsActioning(null);
     }
@@ -455,7 +456,8 @@ export default function FacultyDashboard() {
       setParentRequests((prev) => prev.filter((s) => s.$id !== studentId));
     } catch (error) {
       console.error("Failed to approve/reject parent details:", error);
-      alert("Failed to process action. Please try again.");
+      setNotification({ message: "Failed to process action. Please try again.", type: "error" });
+      setTimeout(() => setNotification(null), 5000);
     } finally {
       setIsActioning(null);
     }
