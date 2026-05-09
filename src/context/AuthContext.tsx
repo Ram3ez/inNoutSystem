@@ -192,10 +192,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         setIsCaretaker(caretakerStatus);
       }
 
-      // Check if profile exists in database based on email format
+      // Intelligent Role Detection:
+      // The system infers whether a user is a Student or Staff based purely on their email format.
+      // This eliminates the need for separate login portals or manual role assignment.
       if (currentUser.email) {
         const profileId = currentUser.email.split("@")[0].toUpperCase();
-        // Regex for student IDs (e.g., CS21B1234)
+        // Regex for standard NIT Puducherry student Roll Numbers (e.g., CS21B1001)
+        // Format: 2 Letters (Dept) + 2 Numbers (Year) + 1 Letter (Course) + 4 Numbers (ID)
         const isStudentEmail = /^[A-Z]{2}[0-9]{2}[A-Z][0-9]{4}$/.test(
           profileId,
         );

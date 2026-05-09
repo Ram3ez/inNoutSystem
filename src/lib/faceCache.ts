@@ -83,6 +83,13 @@ function initSearchWorker() {
   };
 }
 
+/**
+ * Initializes a full dataset synchronization with the background worker.
+ * We flatten all embedding arrays into a single, massive contiguous Float32Array
+ * buffer in JavaScript. This allows us to pass gigabytes of vector data to the 
+ * Web Worker instantaneously via "Transferable Objects", bypassing the standard 
+ * structured clone algorithm which would otherwise crash the UI thread.
+ */
 function syncWorkerFull(
   modelType: "ghostface" | "edgeface",
   data: Record<string, Float32Array[]>,
@@ -98,6 +105,7 @@ function syncWorkerFull(
     }
   }
 
+  // Allocate a single contiguous block of memory
   const flattened = new Float32Array(totalCount * dim);
   const mapping: { id: string; count: number }[] = [];
 

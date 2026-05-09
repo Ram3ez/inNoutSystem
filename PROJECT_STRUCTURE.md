@@ -93,18 +93,32 @@ Static assets.
 
 ---
 
-## Key Workflows
+## Key Workflows & Data Flow
 
-### Biometric Registration
-1. User captures multiple frames of their face.
-2. `aiEngine` extracts landmarks.
-3. `ghostfaceEngine` or `edgefaceEngine` generates embeddings.
-4. Embeddings are stored in Appwrite for future verification.
+### Biometric Registration Pipeline
+1. **Capture Segment**: User captures multiple frames of their face from different angles using `src/app/register-face/page.tsx`.
+2. **Alignment & Verification**: `aiEngine.ts` extracts facial landmarks using MediaPipe. It enforces stability, pose diversity, and lighting conditions.
+3. **Extraction**: The aligned face frame is passed to either `ghostface.worker.ts` or `edgeface.worker.ts`. The ONNX models generate a 512-dimensional embedding vector.
+4. **Storage**: Vectors are pushed to `facial_embeddings`, `facial_embeddings_new` (GhostFaceNet), or `facial_embeddings_edge` Appwrite collections.
 
-### Offline Mode
-1. Data is cached in IndexedDB via `idb.ts`.
-2. Mutations are queued in `offlineQueue.ts` if the user is offline.
-3. `syncService.ts` automatically pushes queued items when a connection is restored.
+### Biometric Recognition (Kiosk Mode)
+1. **Cache Loading**: On startup, `faceCache.ts` loads all embeddings from Appwrite into memory.
+2. **Continuous Scanning**: `src/app/capture/page.tsx` continuously feeds webcam frames into MediaPipe.
+3. **Matching**: Detected faces are vectorized and compared against the in-memory cache using cosine similarity (via `faceSearch.worker.ts`).
+4. **Consensus**: The system requires multiple consecutive matches (temporal consensus) to prevent false positives before logging an `outing` or `leave` timestamp.
+
+### Offline-First Architecture & Sync
+1. **Local Mutations**: If the kiosk loses internet, successful biometric matches are stored locally using IndexedDB (`src/lib/idb.ts`).
+2. **Queuing**: Un-synced records are placed in an offline queue (`src/lib/offlineQueue.ts`).
+3. **Background Sync**: `OfflineSyncManager.tsx` and `syncService.ts` monitor network status (`navigator.onLine`). When restored, they automatically batch-upload the queued transactions to Appwrite TablesDB.
+
+---
+
+## Database Schema Overview
+
+The full Appwrite Database schema mapping is located in the root `README.md`. 
+For TypeScript definitions, refer strictly to `src/types/models.ts`. 
+Database collection IDs and environmental IDs are centrally managed in `src/lib/constants.ts`.
 
 ---
 

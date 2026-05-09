@@ -189,8 +189,11 @@ export default function FacultyDashboard() {
     if (!user?.email) return;
     setIsLoading(true);
     try {
-      // Fetch all pending and approved leaves for faculty
-      // We filter by email in the frontend to support multiple advisors per assignment
+      // Fetch all relevant data concurrently to minimize network waterfalls.
+      // - Pending leaves waiting for faculty approval
+      // - Active leaves (already approved)
+      // - Students waiting for parent contact verification
+      // - Faculty assignments matching the current logged-in user
       const [
         pendingRows,
         activeRows,
@@ -211,6 +214,8 @@ export default function FacultyDashboard() {
         ]),
       ]);
 
+      // Filters leave requests to only show those where the current faculty
+      // is listed as an approver in the comma/space separated `faculty_id` string.
       const isMyRequest = (req: any) => {
         if (!req.faculty_id) return false;
         const approvers = req.faculty_id
