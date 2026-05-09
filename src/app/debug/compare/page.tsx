@@ -21,9 +21,9 @@ import {
   getMemoryCacheEdge,
 } from "@/lib/faceCache";
 import { BIOMETRIC_THRESHOLDS } from "@/lib/constants";
-import { getLandmarker, getLandmarkerSync } from "@/lib/aiEngine";
-import { initGhostFace, getGhostFaceDescriptor } from "@/lib/ghostfaceEngine";
-import { initEdgeFace, getEdgeFaceDescriptor as getEdgeFaceDescriptorFn } from "@/lib/edgefaceEngine";
+import { getLandmarker, getLandmarkerSync, disposeLandmarker } from "@/lib/aiEngine";
+import { initGhostFace, getGhostFaceDescriptor, disposeGhostFace } from "@/lib/ghostfaceEngine";
+import { initEdgeFace, getEdgeFaceDescriptor as getEdgeFaceDescriptorFn, disposeEdgeFace } from "@/lib/edgefaceEngine";
 import { GradientBackground } from "@/components/GradientBackground";
 
 interface CompareResult {
@@ -46,19 +46,26 @@ export default function CompareLab() {
   } | null>(null);
 
   useEffect(() => {
+    let isMounted = true;
     const init = async () => {
       setStatus("Synchronizing Biometric Database...");
       await loadFaceCache();
+      if (!isMounted) return;
       setStatus("Warming Up Landmarker...");
       await getLandmarker();
-      setStatus("Initializing GhostFace Engine...");
-      await initGhostFace();
-      setStatus("Initializing EdgeFace Engine...");
-      await initEdgeFace();
+      if (!isMounted) return;
       setIsReady(true);
       setStatus("");
     };
     init();
+
+    return () => {
+      isMounted = false;
+      // Aggressively clean up memory to prevent iOS Jetsam crashes
+      disposeLandmarker();
+      disposeEdgeFace();
+      disposeGhostFace();
+    };
   }, []);
 
   const analyze = async () => {
@@ -151,19 +158,27 @@ export default function CompareLab() {
           height: (maxY - minY) * sh,
         };
 
+        // --- 1b. GHOSTFACE (Sequential Inference) ---
+        setStatus("AI Step 1b: Initializing GhostFace Engine...");
+        await initGhostFace();
         const ghostDescriptor = await getGhostFaceDescriptor(
           cropCanvas,
           mpBox,
           mpLandmarks,
           false,
         );
+        await disposeGhostFace(); // FREE MEMORY IMMEDIATELY
 
+        // --- 1c. EDGEFACE (Sequential Inference) ---
+        setStatus("AI Step 1c: Initializing EdgeFace Engine...");
+        await initEdgeFace();
         const edgeDescriptor = await getEdgeFaceDescriptorFn(
           cropCanvas,
           mpBox,
           mpLandmarks,
           false,
         );
+        await disposeEdgeFace(); // FREE MEMORY IMMEDIATELY
 
         if (!ghostDescriptor) throw new Error("GhostFace engine failed");
         if (!edgeDescriptor) throw new Error("EdgeFace engine failed");
