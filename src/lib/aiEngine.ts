@@ -114,3 +114,21 @@ export function isLandmarkerLoaded(): boolean {
 export function getLandmarkerSync(): FaceLandmarker | null {
   return landmarkerInstance;
 }
+
+/**
+ * Safely disposes of the MediaPipe Face Landmarker to free up WebGL context and WASM memory.
+ * Call this when navigating away from biometric-intensive pages.
+ */
+export async function disposeLandmarker(): Promise<void> {
+  if (landmarkerInitPromise) {
+    try {
+      const instance = await landmarkerInitPromise;
+      instance.close();
+      console.log("[🧠 ENGINE] MediaPipe Landmarker disposed.");
+    } catch (e) {
+      console.error("[🧠 ENGINE] Error disposing MediaPipe Landmarker", e);
+    }
+  }
+  landmarkerInstance = null;
+  landmarkerInitPromise = null;
+}

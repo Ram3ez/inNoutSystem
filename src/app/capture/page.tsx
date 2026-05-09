@@ -44,13 +44,15 @@ import {
   getLandmarker,
   isLandmarkerLoaded,
   getLandmarkerSync,
+  disposeLandmarker,
 } from "@/lib/aiEngine";
 
 import { addToOfflineQueue, isSystemOnline } from "@/lib/offlineQueue";
-import { initGhostFace, getGhostFaceDescriptor } from "@/lib/ghostfaceEngine";
+import { initGhostFace, getGhostFaceDescriptor, disposeGhostFace } from "@/lib/ghostfaceEngine";
 import {
   initEdgeFace,
   getEdgeFaceDescriptor as getEdgeFaceDescriptorFn,
+  disposeEdgeFace,
 } from "@/lib/edgefaceEngine";
 import { performIncrementalSync } from "@/lib/faceCache";
 
@@ -193,6 +195,10 @@ function CaptureContent() {
 
     return () => {
       isMounted.current = false;
+      // Aggressively clean up memory to prevent iOS Jetsam crashes
+      disposeLandmarker();
+      disposeEdgeFace();
+      disposeGhostFace();
     };
   }, []);
 
