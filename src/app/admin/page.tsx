@@ -1004,46 +1004,48 @@ export default function AdminPortal() {
               </button>
             </div>
 
-            <button
-              onClick={async () => {
-                setIsSyncing(true);
-                try {
-                  await performIncrementalSync();
-                  setNotification({
-                    message: "Biometric database synced successfully!",
-                    type: "success",
-                  });
-                } catch (e) {
-                  setNotification({
-                    message: "Sync failed. Check console for details.",
-                    type: "error",
-                  });
-                } finally {
-                  setIsSyncing(false);
-                  setTimeout(() => setNotification(null), 5000);
-                }
-              }}
-              disabled={isSyncing}
-              className="flex items-center space-x-2 px-4 py-2.5 bg-secondary/10 hover:bg-secondary/20 text-secondary rounded-xl text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
-              title="Force Sync Biometric Database"
-            >
-              <Database size={14} className={isSyncing ? "animate-spin" : ""} />
-              <span>{isSyncing ? "Syncing..." : "Sync Biometrics"}</span>
-            </button>
-
             {activeTab === "students" && (
-              <div className="relative group w-full sm:w-64">
-                <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-primary/20 group-focus-within:text-secondary transition-colors">
-                  <Search size={18} />
+              <>
+                <button
+                  onClick={async () => {
+                    setIsSyncing(true);
+                    try {
+                      await performIncrementalSync();
+                      setNotification({
+                        message: "Biometric database synced successfully!",
+                        type: "success",
+                      });
+                    } catch (e) {
+                      setNotification({
+                        message: "Sync failed. Check console for details.",
+                        type: "error",
+                      });
+                    } finally {
+                      setIsSyncing(false);
+                      setTimeout(() => setNotification(null), 5000);
+                    }
+                  }}
+                  disabled={isSyncing}
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-secondary/10 hover:bg-secondary/20 text-secondary rounded-xl text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
+                  title="Force Sync Biometric Database"
+                >
+                  <Database size={14} className={isSyncing ? "animate-spin" : ""} />
+                  <span>{isSyncing ? "Syncing..." : "Sync Biometrics"}</span>
+                </button>
+
+                <div className="relative group w-full sm:w-64">
+                  <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-primary/20 group-focus-within:text-secondary transition-colors">
+                    <Search size={18} />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="SEARCH..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full bg-surface border border-primary/10 rounded-2xl h-12 pl-12 pr-4 text-primary text-sm focus:outline-none focus:border-secondary/50 transition-all uppercase placeholder:text-primary/10"
+                  />
                 </div>
-                <input
-                  type="text"
-                  placeholder="SEARCH..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full bg-surface border border-primary/10 rounded-2xl h-12 pl-12 pr-4 text-primary text-sm focus:outline-none focus:border-secondary/50 transition-all uppercase placeholder:text-primary/10"
-                />
-              </div>
+              </>
             )}
           </div>
         </header>

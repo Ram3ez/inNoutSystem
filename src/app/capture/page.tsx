@@ -1229,9 +1229,9 @@ function CaptureContent() {
                 setModelType("ghostface");
                 setAiLoaded(true);
               }}
-              className={`px-3 sm:px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all duration-300 ${
+              className={`flex-1 sm:flex-none px-3 sm:px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all duration-300 ${
                 modelType === "ghostface"
-                  ? "bg-secondary text-background shadow-lg scale-105"
+                  ? "bg-secondary text-background shadow-md"
                   : "text-primary/40 hover:text-primary hover:bg-primary/5"
               }`}
             >
@@ -1245,9 +1245,9 @@ function CaptureContent() {
                 setModelType("edgeface");
                 setAiLoaded(true);
               }}
-              className={`px-3 sm:px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all duration-300 ${
+              className={`flex-1 sm:flex-none px-3 sm:px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all duration-300 ${
                 modelType === "edgeface"
-                  ? "bg-secondary text-background shadow-lg scale-105"
+                  ? "bg-secondary text-background shadow-md"
                   : "text-primary/40 hover:text-primary hover:bg-primary/5"
               }`}
             >
