@@ -655,6 +655,13 @@ export default function AdminPortal() {
     leavesDateType,
   ]);
 
+  /**
+   * Generates a CSV report for Outings or Leaves.
+   * Features:
+   * 1. Dynamic Boundary Calculations: Shifts boundaries correctly based on IST (+05:30) to avoid timezone-shifted records.
+   * 2. Cross-Collection Fetching: Combines records from the active collection (e.g., `outing`) and the archive collection (e.g., `outing_archive`).
+   * 3. Intelligent Filenaming: Formats the output filename based on the exact period selected.
+   */
   const handleDownloadReport = async (
     type: "outings" | "leaves",
     duration: "day" | "week" | "month",
@@ -663,10 +670,11 @@ export default function AdminPortal() {
     const reportId = `${type}-${duration}`;
     setIsDownloadingReport(reportId);
     try {
-      const tz = "+05:30";
+      const tz = "+05:30"; // Enforce Indian Standard Time for all database range queries
       let startDate: Date;
       let endDate: Date;
 
+      // Calculate the precise boundaries for the selected duration
       if (duration === "day") {
         startDate = new Date(`${selectedDate}T00:00:00${tz}`);
         endDate = new Date(`${selectedDate}T23:59:59.999${tz}`);
@@ -687,7 +695,7 @@ export default function AdminPortal() {
       const startISO = startDate.toISOString();
       const endISO = endDate.toISOString();
 
-      // 1. Fetch Students for names
+      // 1. Fetch all students to map Roll Numbers to Names in the CSV
       const studentsList = await fetchAllRows<Student>(
         DB_ID,
         COLLECTIONS.STUDENTS,
@@ -697,7 +705,7 @@ export default function AdminPortal() {
       let reportData: any[] = [];
       const dateAttr = type === "outings" ? "out_time" : "proposed_exit_date";
 
-      // 2. Fetch from main collection
+      // 2. Fetch records from the active main collection
       const mainColl =
         type === "outings" ? COLLECTIONS.OUTING : COLLECTIONS.LEAVE;
       const mainRows = await fetchAllRows<any>(DB_ID, mainColl, [
@@ -706,7 +714,7 @@ export default function AdminPortal() {
       ]);
       reportData = [...mainRows];
 
-      // 3. Fetch from archive collection
+      // 3. Fetch records from the historical archive collection
       const archiveColl =
         type === "outings"
           ? COLLECTIONS.OUTING_ARCHIVE

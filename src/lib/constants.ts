@@ -70,13 +70,18 @@ export const API_SECRET = "9b0f44358a9807567ecb5107e3240742f36d0a7a";
 /**
  * Biometric Configuration
  * Defines thresholds for matching, diversity, and adaptive updates for different AI models.
+ * Used primarily in `ghostface.worker.ts`, `edgeface.worker.ts`, and `faceCache.ts`.
  */
 export const BIOMETRIC_THRESHOLDS = {
   GHOSTFACE: {
-    MATCH: 0.58, // Recognition sensitivity (Higher = stricter)
-    DIVERSITY: 0.8, // Minimum diversity between registration frames
-    ADAPTIVE_UPDATE: 0.8, // Score required to auto-update profile
-    CONFLICT_GAP: 0.05, // Gap between best and second best to be considered a conflict
+    /** Cosine similarity threshold for a positive match. Higher means stricter matching. */
+    MATCH: 0.58, 
+    /** Minimum required distance between frames during registration to ensure diverse angles are captured. */
+    DIVERSITY: 0.8, 
+    /** If a recognized face scores above this threshold, the system may adaptively update their stored embedding. */
+    ADAPTIVE_UPDATE: 0.8, 
+    /** The minimum required difference in score between the #1 match and the #2 match to confidently avoid a false positive. */
+    CONFLICT_GAP: 0.05, 
   },
   FACE_API: {
     MATCH: 0.969,
@@ -84,9 +89,10 @@ export const BIOMETRIC_THRESHOLDS = {
     CONFLICT_GAP: 0.05,
   },
   EDGEFACE: {
-    MATCH: 0.6, // Recognition sensitivity for EdgeFace
-    DIVERSITY: 0.89, // Minimum diversity between registration frames
-    ADAPTIVE_UPDATE: 0.7, // Score required to auto-update profile
+    /** Cosine similarity threshold for EdgeFace. Calibrated differently than GhostFaceNet. */
+    MATCH: 0.6, 
+    DIVERSITY: 0.89, 
+    ADAPTIVE_UPDATE: 0.7, 
     CONFLICT_GAP: 0.05,
   },
 } as const;

@@ -112,12 +112,15 @@ export default function CaretakerDashboard() {
     if (!user?.email) return;
     setIsLoading(true);
     try {
-      // Fetch all pending requests for caretakers
-      // We filter by email in the frontend to support multiple caretakers per assignment
+      // Fetch all pending requests for caretakers globally across all hostels.
+      // We do not filter by caretaker email at the DB level to handle legacy
+      // records and complex multi-caretaker assignment logic efficiently.
       const allPending = await fetchAllRows(DB_ID, COLLECTIONS.LEAVE, [
         Query.equal("status", "pending_caretaker")
       ]);
 
+      // Filters leave requests to only show those where the current caretaker
+      // is listed as an approver in the comma/space separated `caretaker_id` string.
       const isMyRequest = (req: any) => {
         if (!req.caretaker_id) return false;
         // Support exact match or space/comma separated list
