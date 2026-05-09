@@ -614,7 +614,7 @@ export default function RegisterFacePage() {
     <GradientBackground>
       <Navigation />
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 pt-36 sm:pt-40 pb-12 relative z-10">
-        <header className="mb-12 flex items-center justify-between">
+        <header className="mb-12 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
           <div className="flex items-center space-x-2 sm:space-x-4">
             <button
               onClick={() => {
@@ -634,15 +634,15 @@ export default function RegisterFacePage() {
               </h1>
             </div>
           </div>
-          <div className="flex items-center space-x-6">
+          <div className="flex w-full md:w-auto items-center justify-center md:justify-end gap-6 mt-6 md:mt-0">
                         {/* Model Selector */}
-            <div className="flex bg-primary/5 p-1 rounded-2xl border border-primary/10 shadow-inner">
+            <div className="flex w-full sm:w-auto items-center justify-center bg-primary/5 p-1 rounded-2xl border border-primary/10 shadow-inner">
               <button
                 type="button"
                 onClick={() => setModelType("ghostface")}
-                className={`px-3 sm:px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all duration-300 ${
+                className={`flex-1 sm:flex-none flex items-center justify-center px-4 h-8 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all duration-300 ${
                   modelType === "ghostface"
-                    ? "bg-secondary text-background shadow-lg scale-105"
+                    ? "bg-secondary text-background shadow-md"
                     : "text-primary/40 hover:text-primary hover:bg-primary/5"
                 }`}
               >
@@ -657,9 +657,9 @@ export default function RegisterFacePage() {
                   setModelType("edgeface");
                   setAiLoaded(true);
                 }}
-                className={`px-3 sm:px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all duration-300 ${
+                className={`flex-1 sm:flex-none flex items-center justify-center px-4 h-8 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all duration-300 ${
                   modelType === "edgeface"
-                    ? "bg-secondary text-background shadow-lg scale-105"
+                    ? "bg-secondary text-background shadow-md"
                     : "text-primary/40 hover:text-primary hover:bg-primary/5"
                 }`}
               >
