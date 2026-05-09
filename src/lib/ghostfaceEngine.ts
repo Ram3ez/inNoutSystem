@@ -306,3 +306,27 @@ function drawSimpleCrop(ctx: CanvasRenderingContext2D, source: any, box: any) {
     112,
   );
 }
+
+/**
+ * Safely terminates the GhostFace Web Worker and releases its memory.
+ */
+export async function disposeGhostFace(): Promise<void> {
+  if (initPromise) {
+    try {
+      await initPromise; // Wait for init to finish before killing
+    } catch (e) {
+      // Ignore init errors during disposal
+    }
+  }
+  
+  if (worker) {
+    worker.terminate();
+    console.log("[🧠 ENGINE] GhostFace Worker terminated.");
+  }
+  
+  // Clear pending requests to prevent memory leaks in the map
+  pendingRequests.clear();
+  
+  worker = null;
+  initPromise = null;
+}

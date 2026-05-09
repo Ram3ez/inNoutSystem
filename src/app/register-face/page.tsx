@@ -24,11 +24,13 @@ import {
   getLandmarker,
   getLandmarkerSync,
   isLandmarkerLoaded,
+  disposeLandmarker,
 } from "@/lib/aiEngine";
-import { initGhostFace, getGhostFaceDescriptor } from "@/lib/ghostfaceEngine";
+import { initGhostFace, getGhostFaceDescriptor, disposeGhostFace } from "@/lib/ghostfaceEngine";
 import {
   initEdgeFace,
   getEdgeFaceDescriptor as getEdgeFaceDescriptorFn,
+  disposeEdgeFace,
 } from "@/lib/edgefaceEngine";
 
 
@@ -130,6 +132,10 @@ export default function StudentRegisterFace() {
 
     return () => {
       isMounted.current = false;
+      // Aggressively clean up memory to prevent iOS Jetsam crashes
+      disposeLandmarker();
+      disposeEdgeFace();
+      disposeGhostFace();
     };
   }, [modelType]);
 
