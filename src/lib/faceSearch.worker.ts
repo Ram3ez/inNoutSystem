@@ -107,7 +107,7 @@ self.onmessage = (e: MessageEvent) => {
       type: 'SEARCH_RESULT',
       requestId,
       result: {
-        rollNo: finalMatch,
+        rollNo: conflictWith ? "Unknown" : finalMatch,
         score: bestScore,
         conflictWith,
         conflictScore,

@@ -39,7 +39,7 @@ async function initSession(modelBuffer?: ArrayBuffer): Promise<ort.InferenceSess
           graphOptimizationLevel: "all",
         });
       } else {
-        s = await ort.InferenceSession.create("/models/edgeface.onnx", {
+        s = await ort.InferenceSession.create("/models/edgeface_fp16.onnx", {
           executionProviders: ["wasm"],
           graphOptimizationLevel: "all",
         });

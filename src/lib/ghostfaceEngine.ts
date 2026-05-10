@@ -35,7 +35,7 @@ export async function initGhostFace(updateProgress?: (p: number, s: string) => v
       // Step 2 – Download the GhostFace model binary with progress.
       if (updateProgress) updateProgress(40, "Downloading Recognition Model...");
       const modelBuffer = await fetchWithProgress(
-        "/models/ghostfacenet.onnx",
+        "/models/ghostfacenet_fp16.onnx",
         (p) => updateProgress?.(40 + p * 0.6, "Downloading Recognition Model...")
       );
 
@@ -185,45 +185,9 @@ export async function getGhostFaceDescriptor(
       ctx.translate(-mx, -my);
       ctx.drawImage(source, 0, 0);
       ctx.restore();
-
+      
       l = lCorner;
       r = rCorner;
-    } else if (landmarks && landmarks.getLeftEye && landmarks.getRightEye) {
-      // CASE 2: FACE-API LANDMARKS (Pixel coordinates)
-      // Calculate the average (centroid) of the multi-point eye landmarks.
-      const leftEyePoints = landmarks.getLeftEye();
-      const rightEyePoints = landmarks.getRightEye();
-      if (leftEyePoints?.length > 0 && rightEyePoints?.length > 0) {
-        l = {
-          x: leftEyePoints.reduce((s: any, p: any) => s + p.x, 0) / leftEyePoints.length,
-          y: leftEyePoints.reduce((s: any, p: any) => s + p.y, 0) / leftEyePoints.length,
-        };
-        r = {
-          x: rightEyePoints.reduce((s: any, p: any) => s + p.x, 0) / rightEyePoints.length,
-          y: rightEyePoints.reduce((s: any, p: any) => s + p.y, 0) / rightEyePoints.length,
-        };
-      }
-    }
-
-    // Apply the same affine logic for Case 2 if points were found
-    if (l && r && !Array.isArray(landmarks)) {
-      const dy = r.y - l.y;
-      const dx = r.x - l.x;
-      const angle = Math.atan2(dy, dx);
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const mx = (l.x + r.x) / 2;
-      const my = (l.y + r.y) / 2;
-
-      const desiredEyeDist = 51.5;
-      const scale = desiredEyeDist / dist;
-
-      ctx.save();
-      ctx.translate(56, 48);
-      ctx.rotate(-angle);
-      ctx.scale(scale, scale);
-      ctx.translate(-mx, -my);
-      ctx.drawImage(source, 0, 0);
-      ctx.restore();
     } else if (!l || !r) {
       // FALLBACK: Simple bounding-box crop if landmarks are missing or failed.
       drawSimpleCrop(ctx, source, box);

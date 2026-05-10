@@ -146,13 +146,6 @@ function syncWorkerSingle(
   });
 }
 
-// ---------------------------------------------------------
-// MODEL LOADING
-// ---------------------------------------------------------
-
-export async function loadFaceApiModels() {
-  // No-op — Face-API has been removed. Kept for backwards compat with any callers.
-}
 
 // ---------------------------------------------------------
 // SYNCHRONIZATION LOGIC

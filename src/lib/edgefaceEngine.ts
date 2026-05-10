@@ -36,7 +36,7 @@ export async function initEdgeFace(updateProgress?: (p: number, s: string) => vo
       // Step 2 – Download the EdgeFace model binary with progress.
       if (updateProgress) updateProgress(40, "Downloading Edge Model...");
       const modelBuffer = await fetchWithProgress(
-        "/models/edgeface.onnx",
+        "/models/edgeface_fp16.onnx",
         (p) => updateProgress?.(40 + p * 0.6, "Downloading Edge Model...")
       );
 

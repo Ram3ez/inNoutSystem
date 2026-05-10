@@ -10,7 +10,7 @@ This is a **Next.js 16+** application using the **App Router** architecture. It 
 - **Framework**: Next.js (React)
 - **Backend-as-a-Service**: Appwrite (Authentication, Database, Storage)
 - **Styling**: Vanilla CSS / Tailwind CSS (depending on configuration)
-- **AI/Biometrics**: MediaPipe, ONNX Runtime (EdgeFace, GhostFaceNet), Face-API.js
+- **AI/Biometrics**: MediaPipe, ONNX Runtime (EdgeFace, GhostFaceNet)
 - **Offline Support**: IndexedDB, Service Workers (PWA)
 
 ---

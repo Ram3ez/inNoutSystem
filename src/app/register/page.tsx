@@ -33,7 +33,6 @@ import { ID } from "appwrite";
 import { generateAugmentations } from "@/lib/augmentFace";
 import {
   uploadEmbeddings,
-  loadFaceApiModels,
   loadFaceCache,
   isUserRegisteredFor,
 } from "@/lib/faceCache";
@@ -57,7 +56,6 @@ const TARGET_EMBEDDINGS = 8;
  * student faces into the system. It supports three different AI models:
  * - EdgeFace (Lightweight, Recommended)
  * - GhostFaceNet (High-Precision)
- * - Face-API (Legacy Fallback)
  * 
  * WORKFLOW:
  * 1. Student Selection: Search for students without registered biometric profiles.
@@ -706,7 +704,7 @@ export default function RegisterFacePage() {
                   <span className="text-[10px] font-bold uppercase tracking-widest text-primary/60">
                     Showing students pending{" "}
                     <span className="text-secondary">
-                      {modelType === "ghostface" ? "GhostFaceNet" : modelType === "edgeface" ? "EdgeFace" : "Face-API"}
+                      {modelType === "ghostface" ? "GhostFaceNet" : "EdgeFace"}
                     </span>{" "}
                     enrollment
                   </span>

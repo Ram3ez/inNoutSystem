@@ -63,7 +63,7 @@ import { performIncrementalSync } from "@/lib/faceCache";
  * This is the primary interface for students to check-in/out of the hostel.
  * It coordinates a complex real-time pipeline:
  * 1. MediaPipe: Handles sub-millisecond face tracking and alignment.
- * 2. Adaptive AI: Swaps between Face-API, GhostFaceNet, and EdgeFace models.
+ * 2. Adaptive AI: Swaps between GhostFaceNet and EdgeFace models.
  * 3. Offline Resilience: Queues transactions if the network drops.
  * 4. Movement Logic: Automatically detects if a student is departing or returning.
  */
