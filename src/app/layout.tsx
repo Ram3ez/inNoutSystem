@@ -13,7 +13,6 @@ import { LoadingProvider } from "@/context/LoadingContext";
 import { OfflineSyncManager } from "@/components/OfflineSyncManager";
 import { Suspense } from "react";
 
-
 export const metadata: Metadata = {
   title: "NITPY Hostel System",
   description: "Advanced biometric hostel management system",
@@ -76,19 +75,35 @@ export default function RootLayout({
                     Subtle brand signature footer.
                     Visible only after scrolling and designed to be non-obtrusive.
                 */}
-                <footer className="w-full py-10 mt-auto text-center opacity-[0.1] pointer-events-none select-none">
-                  <p className="text-[10px] font-black tracking-[0.5em] uppercase text-primary">
-                    built by Rameez
-                  </p>
+                <footer className="w-full py-10 mt-auto text-center opacity-[0.35] md:opacity-[0.3] transition-opacity hover:opacity-100 select-none px-6">
+                  <div className="flex flex-col md:flex-row items-center justify-center gap-1 md:gap-0 text-[9px] font-black tracking-[0.2em] uppercase text-primary/80">
+                    <a
+                      href="https://www.github.com/Ram3ez"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:text-secondary transition-colors"
+                    >
+                      Rameez Mohammad
+                    </a>
+                    <span className="hidden md:inline mx-3 text-primary/30">
+                      |
+                    </span>
+                    <a
+                      href="https://www.nitpy.ac.in"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:text-secondary transition-colors underline decoration-primary/20 underline-offset-4 md:no-underline"
+                    >
+                      National Institute of Technology, Puducherry
+                    </a>
+                  </div>
                 </footer>
                 <OfflineSyncManager />
               </AuthProvider>
             </LoadingProvider>
           </Suspense>
         </ThemeProvider>
-
       </body>
     </html>
-
   );
 }
