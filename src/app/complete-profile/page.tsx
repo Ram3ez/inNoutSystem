@@ -184,7 +184,6 @@ export default function CompleteProfilePage() {
             year: year,
             course: course,
             is_out: false,
-            faceRegistered: false,
             pending_parent_name: parentName.trim(),
             pending_parent_phone: parentPhone ? parseInt(parentPhone) : null,
             pending_parent_email: parentEmail.trim().toLowerCase(),

@@ -26,8 +26,7 @@ export interface Student extends Models.Document {
     is_out: boolean; 
     /** True if the student is currently outside the hostel on an approved long-term leave. */
     is_on_leave: boolean; 
-    /** Legacy face-api.js registration status. (Deprecated) */
-    faceRegistered: boolean; 
+
     /** GhostFaceNet ONNX model registration status. High-precision vector. */
     ghostface_registered?: boolean; 
     /** EdgeFace ONNX model registration status. Optimized lightweight vector. */

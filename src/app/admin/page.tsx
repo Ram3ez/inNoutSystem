@@ -811,10 +811,11 @@ export default function AdminPortal() {
           : COLLECTIONS.FACIAL_EMBEDDINGS_EDGE;
 
       try {
-        await tablesDB.deleteRow({
+        await tablesDB.updateRow({
           databaseId: DB_ID,
           tableId: tableId,
           rowId: studentId,
+          data: { embeddings: "[]" },
         });
       } catch (dbErr: any) {
         if (dbErr.code !== 404) {

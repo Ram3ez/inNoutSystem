@@ -31,7 +31,7 @@ import { useRouter } from "next/navigation";
 import { databases, tablesDB, fetchAllRows, Query } from "@/lib/appwrite";
 import { format } from "date-fns";
 import { formatToIST } from "@/lib/constants";
-import { loadFaceApiModels, loadFaceCache } from "@/lib/faceCache";
+import { loadFaceCache } from "@/lib/faceCache";
 import { getLandmarker } from "@/lib/aiEngine";
 
 export default function Dashboard() {

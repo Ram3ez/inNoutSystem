@@ -1,9 +1,9 @@
 /**
  * GLOBAL CONFIGURATION & SENSITIVITY HUB
- * 
- * This module centralizes all environment-specific constants, database schemas, 
+ *
+ * This module centralizes all environment-specific constants, database schemas,
  * institutional thresholds, and AI sensitivity settings.
- * 
+ *
  * CORE RESPONSIBILITIES:
  * 1. Appwrite Schema Mapping (Collections, Teams, Storage).
  * 2. Biometric Thresholds (Distance metrics, Diversity requirements, Conflict gaps).
@@ -18,7 +18,8 @@ export const DB_ID = "69cb970a000853f23489";
  * Sync Configuration
  * Used to toggle between Realtime (WebSockets) and Adaptive Polling.
  */
-export const DISABLE_REALTIME = process.env.NEXT_PUBLIC_DISABLE_REALTIME?.toString().trim() === 'true';
+export const DISABLE_REALTIME =
+  process.env.NEXT_PUBLIC_DISABLE_REALTIME?.toString().trim() === "true";
 
 /**
  * Appwrite Collection IDs
@@ -75,24 +76,19 @@ export const API_SECRET = "9b0f44358a9807567ecb5107e3240742f36d0a7a";
 export const BIOMETRIC_THRESHOLDS = {
   GHOSTFACE: {
     /** Cosine similarity threshold for a positive match. Higher means stricter matching. */
-    MATCH: 0.58, 
+    MATCH: 0.6,
     /** Minimum required distance between frames during registration to ensure diverse angles are captured. */
-    DIVERSITY: 0.8, 
+    DIVERSITY: 0.8,
     /** If a recognized face scores above this threshold, the system may adaptively update their stored embedding. */
-    ADAPTIVE_UPDATE: 0.8, 
+    ADAPTIVE_UPDATE: 0.8,
     /** The minimum required difference in score between the #1 match and the #2 match to confidently avoid a false positive. */
-    CONFLICT_GAP: 0.05, 
-  },
-  FACE_API: {
-    MATCH: 0.969,
-    DIVERSITY: 0.97,
     CONFLICT_GAP: 0.05,
   },
   EDGEFACE: {
     /** Cosine similarity threshold for EdgeFace. Calibrated differently than GhostFaceNet. */
-    MATCH: 0.6, 
-    DIVERSITY: 0.89, 
-    ADAPTIVE_UPDATE: 0.7, 
+    MATCH: 0.62,
+    DIVERSITY: 0.89,
+    ADAPTIVE_UPDATE: 0.7,
     CONFLICT_GAP: 0.05,
   },
 } as const;
@@ -169,4 +165,3 @@ export function formatToISTFull(
     return "Invalid Date";
   }
 }
-
