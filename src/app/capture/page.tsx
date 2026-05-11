@@ -85,11 +85,11 @@ function CaptureContent() {
   } = useLoading();
   const actionType = searchParams.get("type") || "Capture";
 
-  const serverLog = (action: string, message: string) => {
+  const serverLog = (action: string, message: string, userId?: string, level: string = "low") => {
     fetch("/api/log", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, message }),
+      body: JSON.stringify({ action, message, userId, level }),
     }).catch(() => {});
   };
 
@@ -490,9 +490,10 @@ function CaptureContent() {
           });
           dbMessage = "LEAVE RETURN SUCCESSFUL & ARCHIVED";
 
+          const scoreStr = lastMatchData?.rollNo === rollNumber ? ` (${(lastMatchData.score * 100).toFixed(1)}%)` : "";
           await logTransaction({
             action: "LEAVE_RETURN",
-            message: `Student ${rollNumber} returned from leave.`,
+            message: `Student ${rollNumber} returned from leave${scoreStr}.`,
             userId: rollNumber,
             metadata: { leaveId: latestLeave.$id },
           });
@@ -538,9 +539,10 @@ function CaptureContent() {
           });
           dbMessage = "LEAVE DEPARTURE SUCCESSFUL";
 
+          const scoreStr = lastMatchData?.rollNo === rollNumber ? ` (${(lastMatchData.score * 100).toFixed(1)}%)` : "";
           await logTransaction({
             action: "LEAVE_EXIT",
-            message: `Student ${rollNumber} departed on leave.`,
+            message: `Student ${rollNumber} departed on leave${scoreStr}.`,
             userId: rollNumber,
             metadata: { leaveId: latestLeave.$id },
           });
@@ -583,9 +585,10 @@ function CaptureContent() {
 
           dbMessage = "CHECK-IN SUCCESSFUL & ARCHIVED";
 
+          const scoreStr = lastMatchData?.rollNo === rollNumber ? ` (${(lastMatchData.score * 100).toFixed(1)}%)` : "";
           await logTransaction({
             action: "OUTING_ENTRY",
-            message: `Student ${rollNumber} checked in from outing.`,
+            message: `Student ${rollNumber} checked in from outing${scoreStr}.`,
             userId: rollNumber,
             metadata: { outingId: openOuting.$id },
           });
@@ -654,9 +657,10 @@ function CaptureContent() {
 
           dbMessage = "CHECK-OUT SUCCESSFUL";
 
+          const scoreStr = lastMatchData?.rollNo === rollNumber ? ` (${(lastMatchData.score * 100).toFixed(1)}%)` : "";
           await logTransaction({
             action: "OUTING_EXIT",
-            message: `Student ${rollNumber} checked out for outing.`,
+            message: `Student ${rollNumber} checked out for outing${scoreStr}.`,
             userId: rollNumber,
           });
         }
@@ -967,6 +971,8 @@ function CaptureContent() {
         serverLog(
           "RECOGNITION",
           `Confirmed: ${match.rollNo} (${(match.score * 100).toFixed(1)}%) (${targetConsensus}-frame consensus)`,
+          match.rollNo,
+          "low"
         );
         console.log(
           `[🧠 RECOGNITION] Confirmed: ${match.rollNo} (${(match.score * 100).toFixed(1)}%) (${targetConsensus}-frame)`,

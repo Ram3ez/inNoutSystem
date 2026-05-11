@@ -14,46 +14,50 @@ export async function POST(req: Request) {
   try {
     const { action, message, userId, userName, metadata, level = "low" } = await req.json();
     
-    // Log to server console for visibility
+    // Log to server console for visibility (always happens)
     console.log(`\n\x1b[36m[📱 ${action} | ${level.toUpperCase()}]\x1b[0m ${userName || 'System'} (${userId || 'N/A'}): ${message}\n`);
 
     /**
-     * Primary Storage: Appwrite TablesDB
-     * This powers the /audit-logs administrative dashboard.
-     * Metadata is stringified to fit standard relational columns.
+     * Selective Persistence
+     * We only save high-value events (Outing, Leave, Adaptive updates) to the DB/File.
+     * High-frequency events (Recognition, Conflict) are only shown in the terminal.
      */
-    await serverTablesDB.createRow({
-      databaseId: DB_ID,
-      tableId: COLLECTIONS.AUDIT_LOGS,
-      rowId: ID.unique(),
-      data: {
-        timestamp: formatToISTFull(new Date()),
-        action,
-        message,
-        user_id: userId || 'SYSTEM',
-        user_name: userName || 'SYSTEM',
-        metadata: metadata ? JSON.stringify(metadata) : null,
-        level,
-      },
-    });
+    const skipPersistence = ["RECOGNITION", "CONFLICT"].includes(action);
 
-    /**
-     * Secondary Storage: Local File System
-     * Records raw logs to /logs/audit.log on the server.
-     * Useful for forensic analysis or if database connectivity is intermittent.
-     */
-    try {
-      const logDir = path.join(process.cwd(), 'logs');
-      if (!fs.existsSync(logDir)) {
-        fs.mkdirSync(logDir, { recursive: true });
+    if (!skipPersistence) {
+      /**
+       * Primary Storage: Appwrite TablesDB
+       */
+      await serverTablesDB.createRow({
+        databaseId: DB_ID,
+        tableId: COLLECTIONS.AUDIT_LOGS,
+        rowId: ID.unique(),
+        data: {
+          timestamp: formatToISTFull(new Date()),
+          action,
+          message,
+          user_id: userId || 'SYSTEM',
+          user_name: userName || 'SYSTEM',
+          metadata: metadata ? JSON.stringify(metadata) : null,
+          level,
+        },
+      });
+
+      /**
+       * Secondary Storage: Local File System
+       */
+      try {
+        const logDir = path.join(process.cwd(), 'logs');
+        if (!fs.existsSync(logDir)) {
+          fs.mkdirSync(logDir, { recursive: true });
+        }
+        const logPath = path.join(logDir, 'audit.log');
+        const istTime = formatToISTFull(new Date());
+        const logLine = `[${istTime}] [${level.toUpperCase()}] [${action}] ${userName || 'System'} (${userId || 'N/A'}): ${message}${metadata ? ' | Metadata: ' + JSON.stringify(metadata) : ''}\n`;
+        fs.appendFileSync(logPath, logLine);
+      } catch (fileErr) {
+        console.error("Local File Logging Error:", fileErr);
       }
-      const logPath = path.join(logDir, 'audit.log');
-      const istTime = formatToISTFull(new Date());
-      const logLine = `[${istTime}] [${level.toUpperCase()}] [${action}] ${userName || 'System'} (${userId || 'N/A'}): ${message}${metadata ? ' | Metadata: ' + JSON.stringify(metadata) : ''}\n`;
-      fs.appendFileSync(logPath, logLine);
-    } catch (fileErr) {
-      console.error("Local File Logging Error:", fileErr);
-      // We don't fail the request if file logging fails, as DB logging is the primary source
     }
   
       return NextResponse.json({ success: true });
