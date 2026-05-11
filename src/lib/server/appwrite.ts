@@ -35,7 +35,11 @@ if (!process.env.APPWRITE_API_KEY) {
 
 const createAdminClient = () => {
   const client = new Client()
-    .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || "")
+    .setEndpoint(
+      process.env.INTERNAL_APPWRITE_ENDPOINT ||
+        process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT ||
+        "",
+    )
     .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || "")
     .setKey(process.env.APPWRITE_API_KEY || "")
     .setSelfSigned(true); // Allow self-signed or internal SSL certificates
