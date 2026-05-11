@@ -51,6 +51,8 @@ let syncInProgress = false;
 let modelsLoaded = false;
 let modelsLoadingPromise: Promise<void> | null = null;
 let faceCacheLoadingPromise: Promise<void> | null = null;
+let isGhostWorkerSynced = false;
+let isEdgeWorkerSynced = false;
 
 /**
  * Recognition Data Interface
@@ -93,8 +95,13 @@ function initSearchWorker() {
 function syncWorkerFull(
   modelType: "ghostface" | "edgeface",
   data: Record<string, Float32Array[]>,
-) {
+): Promise<void> {
   if (!searchWorker) initSearchWorker();
+  
+  // Guard: Avoid redundant full transfers if already synced
+  if (modelType === "ghostface" && isGhostWorkerSynced) return Promise.resolve();
+  if (modelType === "edgeface" && isEdgeWorkerSynced) return Promise.resolve();
+
   const dim = 512;
 
   // Calculate total size for allocation by only counting valid-length embeddings
@@ -125,13 +132,27 @@ function syncWorkerFull(
     }
   }
 
-  searchWorker?.postMessage(
-    {
-      type: "SET_FULL_CACHE",
-      payload: { modelType, flattenedData: flattened, mapping },
-    },
-    [flattened.buffer],
-  );
+  return new Promise<void>((resolve) => {
+    // We use a one-time message handler to confirm the worker finished loading
+    const tempHandler = (e: MessageEvent) => {
+      if (e.data.type === "CACHE_LOAD_DONE" && e.data.modelType === modelType) {
+        searchWorker?.removeEventListener("message", tempHandler);
+        if (modelType === "ghostface") isGhostWorkerSynced = true;
+        if (modelType === "edgeface") isEdgeWorkerSynced = true;
+        resolve();
+      }
+    };
+    searchWorker?.addEventListener("message", tempHandler);
+
+    console.log(`[🔄 SYNC] Transferring full ${modelType} cache to worker...`);
+    searchWorker?.postMessage(
+      {
+        type: "SET_FULL_CACHE",
+        payload: { modelType, flattenedData: flattened, mapping },
+      },
+      [flattened.buffer],
+    );
+  });
 }
 
 function syncWorkerSingle(
@@ -140,6 +161,10 @@ function syncWorkerSingle(
   embeddings: Float32Array[],
 ) {
   if (!searchWorker) initSearchWorker();
+  
+  // Invalidate sync flag for this model since we are doing an incremental update
+  // Actually, incremental doesn't invalidate a full sync, but ensures consistency.
+  
   searchWorker?.postMessage({
     type: "SYNC_CACHE",
     payload: { modelType, data: { id: studentId, embeddings } },
@@ -360,11 +385,13 @@ function initSyncListeners() {
  */
 export async function loadFaceCache() {
   if (isLoaded) {
-    // Re-verify worker state even if memory thinks we are loaded.
-    // This handles cases where client-side navigation might leave a stale worker.
-    syncWorkerFull("ghostface", memoryCacheGhost);
-    syncWorkerFull("edgeface", memoryCacheEdge);
-    performIncrementalSync();
+    // Re-verify worker state and WAIT for it to be ready.
+    // This is critical for fast navigation.
+    await Promise.all([
+      syncWorkerFull("ghostface", memoryCacheGhost),
+      syncWorkerFull("edgeface", memoryCacheEdge),
+    ]);
+    performIncrementalSync(); // This can be backgrounded
     return;
   }
   if (faceCacheLoadingPromise) return faceCacheLoadingPromise;
@@ -393,9 +420,11 @@ export async function loadFaceCache() {
         loadFromDisk("embeddings_edge", memoryCacheEdge),
       ]);
 
-      // Seed worker
-      syncWorkerFull("ghostface", memoryCacheGhost);
-      syncWorkerFull("edgeface", memoryCacheEdge);
+      // Seed worker and WAIT for it to be ready
+      await Promise.all([
+        syncWorkerFull("ghostface", memoryCacheGhost),
+        syncWorkerFull("edgeface", memoryCacheEdge),
+      ]);
 
       // Final catch-up
       await performIncrementalSync();

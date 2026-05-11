@@ -46,6 +46,8 @@ self.onmessage = (e: MessageEvent) => {
       }
       target.set(id, studentEmbeddings);
     }
+    
+    self.postMessage({ type: 'CACHE_LOAD_DONE', modelType });
     return;
   }
 
