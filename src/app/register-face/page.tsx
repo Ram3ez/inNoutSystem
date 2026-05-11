@@ -236,14 +236,22 @@ export default function StudentRegisterFace() {
         height: (maxY - minY) * sh,
       };
 
-      descriptor =
+      const result =
         modelType === "ghostface"
           ? await getGhostFaceDescriptor(video, box, landmarks, false)
-          : await getEdgeFaceDescriptorFn(video, box, landmarks, false);
+          : { descriptor: await getEdgeFaceDescriptorFn(video, box, landmarks, false), quality: { isGood: true } };
+
+      descriptor = (result as any).descriptor || result;
+      const quality = (result as any).quality || { isGood: true };
+
+      if (!quality.isGood) {
+        setDetectionFeedback(`QUALITY: ${quality.reason?.replace('_', ' ')}`);
+        return;
+      }
 
       let isAllZeros = true;
-      for (let i = 0; i < descriptor.length; i++) {
-        if (descriptor[i] !== 0) {
+      for (let i = 0; i < (descriptor as Float32Array).length; i++) {
+        if ((descriptor as Float32Array)[i] !== 0) {
           isAllZeros = false;
           break;
         }
@@ -251,7 +259,7 @@ export default function StudentRegisterFace() {
       if (isAllZeros) return;
 
       if (!descriptor) return;
-      const d = new Float32Array(descriptor);
+      const d = new Float32Array(descriptor as Float32Array);
 
       setCollectedEmbeddings((prev) => {
         if (prev.length >= TARGET_EMBEDDINGS) return prev;
@@ -320,7 +328,8 @@ export default function StudentRegisterFace() {
             );
           }, 0) / landmarks.length;
 
-        const stable = movement < 0.05;
+        const stabilityThreshold = isIOSDevice.current ? 0.08 : 0.05;
+        const stable = movement < stabilityThreshold;
         setIsStable(stable);
         if (!stable) {
           setDetectionFeedback("Please Hold Still...");
@@ -649,7 +658,10 @@ export default function StudentRegisterFace() {
 
           {/* Camera View Area */}
           <div className="md:col-span-7 flex flex-col">
-            <div className="relative flex-1 aspect-video md:aspect-auto bg-black rounded-[2.5rem] overflow-hidden border border-primary/10 shadow-2xl flex items-center justify-center min-h-[360px]">
+            <div 
+              className="relative flex-1 bg-black rounded-[2.5rem] overflow-hidden border border-primary/10 shadow-2xl flex items-center justify-center min-h-[360px] md:aspect-video"
+              style={{ transform: 'translateZ(0)', WebkitMaskImage: '-webkit-radial-gradient(white, black)' }}
+            >
               {enrollmentStatus === "scanning" && (
                 <div className="absolute inset-0 z-0">
                   <ReactWebcam
@@ -668,15 +680,15 @@ export default function StudentRegisterFace() {
               )}
 
               {enrollmentStatus === "idle" && (
-                <div className="absolute inset-0 bg-primary/[0.03] backdrop-blur-sm flex flex-col items-center justify-center space-y-4 p-8 border border-primary/5 rounded-[2.5rem] z-10 text-center">
+                <div className="absolute inset-0 bg-primary/[0.03] backdrop-blur-sm flex flex-col items-center justify-center space-y-4 p-6 border border-primary/5 rounded-[2.5rem] z-10 text-center">
                   <div className="w-16 h-16 bg-primary/5 rounded-3xl flex items-center justify-center border border-primary/10 text-primary/20">
                     <ScanFace size={36} />
                   </div>
-                  <div className="max-w-xs space-y-2">
+                  <div className="w-full max-w-[240px] space-y-2">
                     <p className="text-xs font-bold text-primary uppercase tracking-widest leading-normal">
                       Camera Standby
                     </p>
-                    <p className="text-[10px] text-primary/40 font-bold uppercase tracking-wide leading-relaxed">
+                    <p className="text-[9px] sm:text-[10px] text-primary/40 font-bold uppercase tracking-wide leading-relaxed">
                       Select your neural model and click Start Enrollment to
                       wake up the biometric camera
                     </p>

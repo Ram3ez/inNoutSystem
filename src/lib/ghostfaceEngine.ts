@@ -113,7 +113,8 @@ export async function getGhostFaceDescriptor(
   box: { x: number; y: number; width: number; height: number },
   landmarks?: any,
   flip: boolean = false,
-): Promise<Float32Array> {
+): Promise<{ descriptor: Float32Array; quality: { isGood: boolean; reason?: string } }> {
+  const skipResult = { descriptor: new Float32Array(512), quality: { isGood: false } };
   // Reuse single canvas instance to prevent memory leaks
   if (!sharedCropCanvas) {
     sharedCropCanvas = document.createElement("canvas");
@@ -131,7 +132,7 @@ export async function getGhostFaceDescriptor(
     (source as any).naturalHeight ||
     source.height;
 
-  if (!sw || !sh) return new Float32Array(512);
+  if (!sw || !sh) return { descriptor: new Float32Array(512), quality: { isGood: false, reason: "NO_STREAM" } };
 
   ctx.clearRect(0, 0, 112, 112);
 
@@ -203,10 +204,11 @@ export async function getGhostFaceDescriptor(
     const quality = checkFaceQuality(ctx);
     if (!quality.isGood) {
       console.warn(`[🧠 ENGINE] Skipping frame: ${quality.reason}`);
-      return new Float32Array(512); // Zeroed descriptor signals a skip to the caller
+      return { descriptor: new Float32Array(512), quality }; 
     }
 
-  return extractGhostFaceEmbedding(sharedCropCanvas);
+  const descriptor = await extractGhostFaceEmbedding(sharedCropCanvas);
+  return { descriptor, quality };
 }
 
 /**
@@ -231,7 +233,7 @@ function checkFaceQuality(ctx: CanvasRenderingContext2D): {
   }
   const avgBrightness = totalBrightness / pixels;
 
-  if (avgBrightness < 45) return { isGood: false, reason: "UNDER_EXPOSED" };
+  if (avgBrightness < 30) return { isGood: false, reason: "UNDER_EXPOSED" };
   if (avgBrightness > 250) return { isGood: false, reason: "OVER_EXPOSED" };
 
   // 2. Simple Blur Detection (Edge Intensity)
@@ -249,8 +251,8 @@ function checkFaceQuality(ctx: CanvasRenderingContext2D): {
   }
   const stdDev = Math.sqrt(variance / pixels);
 
-  // If stdDev is very low, the image is very "flat" (likely blurry or out of focus)
-  if (stdDev < 15) return { isGood: false, reason: "MOTION_BLUR" };
+  // Relaxed stdDev for mobile front cameras (aggressive denoising can lower this)
+  if (stdDev < 7) return { isGood: false, reason: "MOTION_BLUR" };
 
   return { isGood: true };
 }

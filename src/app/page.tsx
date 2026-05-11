@@ -7,7 +7,6 @@
  * Also handles background "warming" of AI models for improved UX.
  */
 
-
 import React from "react";
 import { motion } from "framer-motion";
 import {
@@ -59,7 +58,11 @@ export default function Dashboard() {
   React.useEffect(() => {
     if (typeof window !== "undefined") {
       const searchParams = new URLSearchParams(window.location.search);
-      if (searchParams.has('membershipId') && searchParams.has('userId') && searchParams.has('secret')) {
+      if (
+        searchParams.has("membershipId") &&
+        searchParams.has("userId") &&
+        searchParams.has("secret")
+      ) {
         router.push(`/accept-invite?${searchParams.toString()}`);
       }
     }
@@ -128,7 +131,6 @@ export default function Dashboard() {
 
   if (!user || isRegistrationRequired) return null;
 
-
   return (
     <GradientBackground>
       <Navigation />
@@ -146,91 +148,130 @@ export default function Dashboard() {
               </p>
             )}
             <h1 className="text-2xl sm:text-4xl font-bold text-primary tracking-tight leading-tight uppercase">
-              {isKiosk ? "KIOSK" : (user.name || "Student")}
+              {isKiosk ? "KIOSK" : user.name || "Student"}
             </h1>
-            {!isAdmin && !isKiosk && !isFaculty && !isCaretaker && studentData && (
-              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mt-3">
-                <span className="text-secondary font-black text-[10px] uppercase tracking-widest bg-secondary/10 px-3 py-1 rounded-full border border-secondary/20">
-                  {studentData.course === 'b.tech' ? 'B.Tech' : 
-                   studentData.course === 'm.tech' ? 'M.Tech' : 
-                   studentData.course === 'bsc' ? 'B.Sc' : 
-                   studentData.course === 'msc' ? 'M.Sc' : 
-                   studentData.course}
-                </span>
-                <span className="text-primary/60 font-bold text-[10px] uppercase tracking-widest bg-primary/5 px-3 py-1 rounded-full border border-primary/10">
-                  {studentData.year}YR • {studentData.department}
-                </span>
-                {studentData.parent_verification_status && (
-                  <span className={`font-black text-[10px] uppercase tracking-widest px-3 py-1 rounded-full border ${
-                    studentData.parent_verification_status === 'pending_approval' 
-                      ? 'bg-secondary/10 text-secondary border-secondary/20' 
-                      : studentData.parent_verification_status === 'verified' 
-                      ? 'bg-green-500/10 text-green-500 border-green-500/20' 
-                      : studentData.parent_verification_status === 'rejected' 
-                      ? 'bg-red-500/10 text-red-500 border-red-500/20' 
-                      : 'bg-primary/5 text-primary/60 border-primary/10'
-                  }`}>
-                    Parents: {
-                      studentData.parent_verification_status === 'pending_approval' ? 'Pending Approval' :
-                      studentData.parent_verification_status === 'verified' ? 'Approved' :
-                      studentData.parent_verification_status === 'rejected' ? 'Rejected' :
-                      studentData.parent_verification_status
-                    }
+            {!isAdmin &&
+              !isKiosk &&
+              !isFaculty &&
+              !isCaretaker &&
+              studentData && (
+                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mt-3">
+                  <span className="text-secondary font-black text-[10px] uppercase tracking-widest bg-secondary/10 px-3 py-1 rounded-full border border-secondary/20">
+                    {studentData.course === "b.tech"
+                      ? "B.Tech"
+                      : studentData.course === "m.tech"
+                        ? "M.Tech"
+                        : studentData.course === "bsc"
+                          ? "B.Sc"
+                          : studentData.course === "msc"
+                            ? "M.Sc"
+                            : studentData.course}
                   </span>
-                )}
-              </div>
-            )}
+                  <span className="text-primary/60 font-bold text-[10px] uppercase tracking-widest bg-primary/5 px-3 py-1 rounded-full border border-primary/10">
+                    {studentData.year}YR • {studentData.department}
+                  </span>
+                  {studentData.parent_verification_status && (
+                    <span
+                      className={`font-black text-[10px] uppercase tracking-widest px-3 py-1 rounded-full border ${
+                        studentData.parent_verification_status ===
+                        "pending_approval"
+                          ? "bg-secondary/10 text-secondary border-secondary/20"
+                          : studentData.parent_verification_status ===
+                              "verified"
+                            ? "bg-green-500/10 text-green-500 border-green-500/20"
+                            : studentData.parent_verification_status ===
+                                "rejected"
+                              ? "bg-red-500/10 text-red-500 border-red-500/20"
+                              : "bg-primary/5 text-primary/60 border-primary/10"
+                      }`}
+                    >
+                      Parents:{" "}
+                      {studentData.parent_verification_status ===
+                      "pending_approval"
+                        ? "Pending Approval"
+                        : studentData.parent_verification_status === "verified"
+                          ? "Approved"
+                          : studentData.parent_verification_status ===
+                              "rejected"
+                            ? "Rejected"
+                            : studentData.parent_verification_status}
+                    </span>
+                  )}
+                </div>
+              )}
           </motion.div>
         </header>
 
-        {!isAdmin && !isKiosk && !isFaculty && !isCaretaker && isStudent && !((studentData as any)?.edgeface_registered && (studentData as any)?.ghostface_registered) && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-8 p-6 bg-secondary/10 border border-secondary/20 rounded-2xl flex items-center space-x-4 text-secondary"
-          >
-            <AlertCircle size={24} />
-            <div className="flex flex-col space-y-1">
-              <span className="font-bold uppercase tracking-tight text-sm sm:text-base leading-tight">
-                Missing Biometric Data — Registration for BOTH Models Required
-              </span>
-              <p className="text-[10px] font-bold uppercase opacity-80 leading-tight">
-                Please register on your own using the "Register Face" card below. If you face any errors, contact Rameez Mohammad (CS23B1053).
-              </p>
-            </div>
-          </motion.div>
-        )}
+        {!isAdmin &&
+          !isKiosk &&
+          !isFaculty &&
+          !isCaretaker &&
+          isStudent &&
+          !(
+            (studentData as any)?.edgeface_registered &&
+            (studentData as any)?.ghostface_registered
+          ) && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-8 p-6 bg-secondary/10 border border-secondary/20 rounded-2xl flex items-center space-x-4 text-secondary"
+            >
+              <AlertCircle size={24} />
+              <div className="flex flex-col space-y-1">
+                <span className="font-bold uppercase tracking-tight text-sm sm:text-base leading-tight">
+                  Missing Biometric Data — Registration for BOTH Models Required
+                </span>
+                <p className="text-[10px] font-bold uppercase opacity-80 leading-tight">
+                  Please register on your own using the "Register Face" card
+                  below. If you face any errors, contact Rameez Mohammad
+                  (CS23B1053).
+                </p>
+              </div>
+            </motion.div>
+          )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
-          {(isAdmin || isKiosk) && (
+          {isKiosk && (
             <>
               <ActionCard
                 title="Outing"
                 subtitle="Short Duration Entry/Exit"
                 icon={<Footprints className="text-secondary" size={32} />}
                 delay={0.1}
-                onClick={() => { startLoading(); router.push("/capture?type=Outing"); }}
+                onClick={() => {
+                  startLoading();
+                  router.push("/capture?type=Outing");
+                }}
               />
               <ActionCard
                 title="Leave"
                 subtitle="Long Duration Leave Entry/Exit"
                 icon={<Home className="text-secondary" size={32} />}
                 delay={0.12}
-                onClick={() => { startLoading(); router.push("/capture?type=Leave"); }}
+                onClick={() => {
+                  startLoading();
+                  router.push("/capture?type=Leave");
+                }}
               />
               <ActionCard
                 title="Register Face"
                 subtitle="New Student Enrollment"
                 icon={<ScanFace className="text-secondary" size={32} />}
                 delay={0.15}
-                onClick={() => { startLoading(); router.push("/register"); }}
+                onClick={() => {
+                  startLoading();
+                  router.push("/register");
+                }}
               />
               <ActionCard
                 title="Live Monitor"
                 subtitle="Active Outing Tracking"
                 icon={<Activity className="text-secondary" size={32} />}
                 delay={0.2}
-                onClick={() => { startLoading(); router.push("/live-status"); }}
+                onClick={() => {
+                  startLoading();
+                  router.push("/live-status");
+                }}
               />
             </>
           )}
@@ -241,32 +282,45 @@ export default function Dashboard() {
                 subtitle="Academic or Personal Leave"
                 icon={<Home className="text-primary/20" size={32} />}
                 delay={0.25}
-                onClick={() => { startLoading(); router.push("/leave"); }}
+                onClick={() => {
+                  startLoading();
+                  router.push("/leave");
+                }}
               />
               <ActionCard
                 title="My Leaves"
                 subtitle="Track Leave Approvals"
                 icon={<Activity className="text-primary/20" size={32} />}
                 delay={0.28}
-                onClick={() => { startLoading(); router.push("/my-leaves"); }}
+                onClick={() => {
+                  startLoading();
+                  router.push("/my-leaves");
+                }}
               />
               <ActionCard
                 title="Settings"
                 subtitle="Manage Parent Details"
                 icon={<ShieldCheck className="text-primary/20" size={32} />}
                 delay={0.31}
-                onClick={() => { startLoading(); router.push("/settings"); }}
+                onClick={() => {
+                  startLoading();
+                  router.push("/settings");
+                }}
               />
               <ActionCard
                 title="Register Face"
                 subtitle={
-                  (studentData as any)?.edgeface_registered && (studentData as any)?.ghostface_registered
+                  (studentData as any)?.edgeface_registered &&
+                  (studentData as any)?.ghostface_registered
                     ? "Face fully registered (Locked)"
                     : "Register Face Data"
                 }
                 icon={<ScanFace className="text-primary/20" size={32} />}
                 delay={0.33}
-                onClick={() => { startLoading(); router.push("/register-face"); }}
+                onClick={() => {
+                  startLoading();
+                  router.push("/register-face");
+                }}
               />
             </>
           )}
@@ -277,14 +331,20 @@ export default function Dashboard() {
                 subtitle="Administrative Console"
                 icon={<ShieldCheck className="text-secondary" size={32} />}
                 delay={0.3}
-                onClick={() => { startLoading(); router.push("/admin"); }}
+                onClick={() => {
+                  startLoading();
+                  router.push("/admin");
+                }}
               />
               <ActionCard
                 title="Audit Logs"
                 subtitle="System Transaction History"
                 icon={<Activity className="text-secondary" size={32} />}
                 delay={0.32}
-                onClick={() => { startLoading(); router.push("/audit-logs"); }}
+                onClick={() => {
+                  startLoading();
+                  router.push("/audit-logs");
+                }}
               />
             </>
           )}
@@ -294,7 +354,10 @@ export default function Dashboard() {
               subtitle="Leave Management Console"
               icon={<ShieldCheck className="text-secondary" size={32} />}
               delay={0.35}
-              onClick={() => { startLoading(); router.push("/caretaker"); }}
+              onClick={() => {
+                startLoading();
+                router.push("/caretaker");
+              }}
             />
           )}
           {isFaculty && (
@@ -303,7 +366,10 @@ export default function Dashboard() {
               subtitle="Leave Management Console"
               icon={<UserCheck className="text-secondary" size={32} />}
               delay={0.4}
-              onClick={() => { startLoading(); router.push("/faculty"); }}
+              onClick={() => {
+                startLoading();
+                router.push("/faculty");
+              }}
             />
           )}
         </div>
@@ -315,81 +381,86 @@ export default function Dashboard() {
           className="space-y-6"
         >
           {/* Personal History for Students */}
-          {!isAdmin && !isKiosk && !isFaculty && !isCaretaker && isStudent && outings.length > 0 && (
-            <>
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-primary uppercase tracking-widest">
-                  Current Outing Status
-                </h2>
-                <div className="h-px flex-1 bg-primary/5 mx-6" />
-                <Footprints className="text-primary/20" size={20} />
-              </div>
-
-              {isOutingsLoading ? (
-                <div className="flex justify-center p-12 bg-surface rounded-3xl border border-primary/5 shadow-sm">
-                  <LoadingIndicator size="sm" />
+          {!isAdmin &&
+            !isKiosk &&
+            !isFaculty &&
+            !isCaretaker &&
+            isStudent &&
+            outings.length > 0 && (
+              <>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-bold text-primary uppercase tracking-widest">
+                    Current Outing Status
+                  </h2>
+                  <div className="h-px flex-1 bg-primary/5 mx-6" />
+                  <Footprints className="text-primary/20" size={20} />
                 </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-4">
-                  {outings.map((outing, idx) => (
-                    <motion.div
-                      key={outing.$id}
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: 0.1 * idx }}
-                      className="bg-surface hover:bg-primary/5 border border-primary/5 p-4 sm:p-6 rounded-3xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all group shadow-sm hover:shadow-md"
-                    >
-                      <div className="flex items-center space-x-4 w-full sm:w-auto">
-                        <div
-                          className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${outing.in_time ? "bg-primary/10 text-primary" : "bg-secondary/10 text-secondary"}`}
-                        >
-                          <ScanFace size={24} />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-primary font-bold uppercase text-sm tracking-tight">
-                            {outing.in_time
-                              ? "Completed Outing"
-                              : "Currently Out"}
-                          </p>
-                          <p className="text-primary/60 text-[9px] font-bold uppercase tracking-widest leading-none mt-1">
-                            ID: {outing.$id.slice(-8)}
-                          </p>
-                        </div>
-                      </div>
 
-                      <div className="flex flex-col sm:flex-row gap-4 sm:gap-12">
-                        <div className="space-y-1">
-                          <p className="text-[10px] text-primary/60 font-bold uppercase tracking-widest">
-                            Exit
-                          </p>
-                          <p className="text-primary/80 font-bold text-sm">
-                            {formatToIST(outing.out_time)}
-                          </p>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-[10px] text-primary/60 font-bold uppercase tracking-widest">
-                            Entry
-                          </p>
-                          {outing.in_time ? (
-                            <p className="text-primary/80 font-bold text-sm">
-                              {formatToIST(outing.in_time)}
+                {isOutingsLoading ? (
+                  <div className="flex justify-center p-12 bg-surface rounded-3xl border border-primary/5 shadow-sm">
+                    <LoadingIndicator size="sm" />
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-4">
+                    {outings.map((outing, idx) => (
+                      <motion.div
+                        key={outing.$id}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.1 * idx }}
+                        className="bg-surface hover:bg-primary/5 border border-primary/5 p-4 sm:p-6 rounded-3xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all group shadow-sm hover:shadow-md"
+                      >
+                        <div className="flex items-center space-x-4 w-full sm:w-auto">
+                          <div
+                            className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${outing.in_time ? "bg-primary/10 text-primary" : "bg-secondary/10 text-secondary"}`}
+                          >
+                            <ScanFace size={24} />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-primary font-bold uppercase text-sm tracking-tight">
+                              {outing.in_time
+                                ? "Completed Outing"
+                                : "Currently Out"}
                             </p>
-                          ) : (
-                            <div className="flex items-center space-x-2 text-secondary">
-                              <AlertCircle size={14} />
-                              <p className="font-bold text-xs uppercase tracking-tighter">
-                                Still Out
-                              </p>
-                            </div>
-                          )}
+                            <p className="text-primary/60 text-[9px] font-bold uppercase tracking-widest leading-none mt-1">
+                              ID: {outing.$id.slice(-8)}
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
+
+                        <div className="flex flex-col sm:flex-row gap-4 sm:gap-12">
+                          <div className="space-y-1">
+                            <p className="text-[10px] text-primary/60 font-bold uppercase tracking-widest">
+                              Exit
+                            </p>
+                            <p className="text-primary/80 font-bold text-sm">
+                              {formatToIST(outing.out_time)}
+                            </p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-[10px] text-primary/60 font-bold uppercase tracking-widest">
+                              Entry
+                            </p>
+                            {outing.in_time ? (
+                              <p className="text-primary/80 font-bold text-sm">
+                                {formatToIST(outing.in_time)}
+                              </p>
+                            ) : (
+                              <div className="flex items-center space-x-2 text-secondary">
+                                <AlertCircle size={14} />
+                                <p className="font-bold text-xs uppercase tracking-tighter">
+                                  Still Out
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
         </motion.section>
       </main>
     </GradientBackground>
@@ -432,7 +503,9 @@ function ActionCard({
           <h2 className="text-xl sm:text-2xl font-bold text-primary mb-1 uppercase leading-none">
             {title}
           </h2>
-          <p className="text-primary/60 text-[10px] sm:text-sm font-bold uppercase tracking-wide">{subtitle}</p>
+          <p className="text-primary/60 text-[10px] sm:text-sm font-bold uppercase tracking-wide">
+            {subtitle}
+          </p>
         </div>
       </div>
 
@@ -444,4 +517,3 @@ function ActionCard({
     </motion.button>
   );
 }
-

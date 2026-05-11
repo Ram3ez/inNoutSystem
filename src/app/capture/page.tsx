@@ -752,84 +752,7 @@ function CaptureContent() {
     }
   };
 
-  const processResults = (result: FaceLandmarkerResult) => {
-    if (result.faceLandmarks.length === 0) {
-      setIsFaceValid(false);
-      setLivenessScore(0);
-      setDetectionFeedback("Scanning for Face...");
-      return;
-    }
 
-    const landmarks = result.faceLandmarks[0];
-    const blendshapes = result.faceBlendshapes?.[0]?.categories || [];
-
-    // --- 1. Stability & Motion: Blur Detection ---
-    if (lastLandmarks.current) {
-      const movement =
-        landmarks.reduce((acc, curr, idx) => {
-          const last = lastLandmarks.current[idx];
-          if (!last) return acc;
-          return (
-            acc +
-            Math.sqrt(
-              Math.pow(curr.x - last.x, 2) + Math.pow(curr.y - last.y, 2),
-            )
-          );
-        }, 0) / landmarks.length;
-
-      const stable = movement < 0.05; // Increased for throttled frame rate stability
-      setIsStable(stable);
-      if (!stable) {
-        setIsFaceValid(false);
-        setDetectionFeedback("Please Hold Still");
-        lastLandmarks.current = landmarks;
-        return;
-      }
-    }
-    lastLandmarks.current = landmarks;
-
-    // --- 3. Positioning (Yaw & Pitch) ---
-    const nose = landmarks[1];
-    const leftEye = landmarks[33];
-    const rightEye = landmarks[263];
-    const forehead = landmarks[10];
-    const chin = landmarks[152];
-
-    const yaw =
-      (nose.x - (leftEye.x + rightEye.x) / 2) / (rightEye.x - leftEye.x);
-    const pitch =
-      (nose.y - (leftEye.y + rightEye.y) / 2) / (chin.y - forehead.y);
-
-    const isCentered = Math.abs(yaw) < 0.4 && Math.abs(pitch) < 0.4;
-
-    if (!isCentered) {
-      setDetectionFeedback("Look Directly at Camera");
-      setIsFaceValid(false);
-    } else {
-      setDetectionFeedback("Hold Steady...");
-      setIsFaceValid(true);
-
-      // --- 4. AUTO-TRIGGER RECOGNITION ---
-      // We only trigger if not already scanning, not processing a result,
-      // and no dialogs are open.
-      if (
-        !isScanning &&
-        !imgSrc &&
-        !isProcessing &&
-        !resultDialog &&
-        !confirmationData
-      ) {
-        // iOS Stability Fix: Throttling
-        // Only trigger recognition if at least 100ms has passed since the last attempt.
-        // This limits recognition to ~10 FPS, preventing VRAM exhaustion.
-        const now = Date.now();
-        if (!lastScanTime.current || now - lastScanTime.current > 100) {
-          lastScanTime.current = now;
-          triggerLiveScan();
-        }
-      }
-    }
-  };
 
   const processLiveFrame = useCallback(
     async (videoElement: HTMLVideoElement) => {
@@ -857,6 +780,7 @@ function CaptureContent() {
         }
 
         let descriptor: Float32Array;
+        let quality: { isGood: boolean; reason?: string } = { isGood: true, reason: "" };
 
         // Use MediaPipe cached landmarks for alignment (GhostFace & EdgeFace only).
         // If MediaPipe hasn't produced a result yet (first frame), skip this scan.
@@ -875,12 +799,21 @@ function CaptureContent() {
           ? mpResult.faceBoundingBoxes[0]
           : { x: 0, y: 0, width: 0, height: 0 };
 
-        descriptor =
-          modelType === "ghostface"
-            ? await getGhostFaceDescriptor(videoElement, box, landmarks, false)
-            : await getEdgeFaceDescriptorFn(videoElement, box, landmarks, false);
+        if (modelType === "ghostface") {
+          const res = await getGhostFaceDescriptor(videoElement, box, landmarks, false);
+          descriptor = res.descriptor;
+          quality = res.quality;
+        } else {
+          descriptor = await getEdgeFaceDescriptorFn(videoElement, box, landmarks, false);
+        }
 
         if (!isMounted.current) return;
+
+        if (!quality.isGood) {
+          setDetectionFeedback(`QUALITY: ${quality.reason?.replace('_', ' ')}`);
+          setIsScanning(false);
+          return;
+        }
 
         const match = await getBestMatch(descriptor, modelType);
 
@@ -991,6 +924,89 @@ function CaptureContent() {
       processLiveFrame(video);
     }
   }, [webcamRef, processLiveFrame]);
+
+  const processResults = useCallback(
+    (result: FaceLandmarkerResult) => {
+      if (result.faceLandmarks.length === 0) {
+        setIsFaceValid(false);
+        setLivenessScore(0);
+        setDetectionFeedback("Scanning for Face...");
+        return;
+      }
+
+      const landmarks = result.faceLandmarks[0];
+      const blendshapes = result.faceBlendshapes?.[0]?.categories || [];
+
+      // --- 1. Stability & Motion: Blur Detection ---
+      if (lastLandmarks.current) {
+        const movement =
+          landmarks.reduce((acc, curr, idx) => {
+            const last = lastLandmarks.current[idx];
+            if (!last) return acc;
+            return (
+              acc +
+              Math.sqrt(
+                Math.pow(curr.x - last.x, 2) + Math.pow(curr.y - last.y, 2),
+              )
+            );
+          }, 0) / landmarks.length;
+
+        const stabilityThreshold = isIOSDevice.current ? 0.08 : 0.05;
+        const stable = movement < stabilityThreshold;
+        setIsStable(stable);
+        if (!stable) {
+          setIsFaceValid(false);
+          setDetectionFeedback("Please Hold Still");
+          lastLandmarks.current = landmarks;
+          return;
+        }
+      }
+      lastLandmarks.current = landmarks;
+
+      // --- 3. Positioning (Yaw & Pitch) ---
+      const nose = landmarks[1];
+      const leftEye = landmarks[33];
+      const rightEye = landmarks[263];
+      const forehead = landmarks[10];
+      const chin = landmarks[152];
+
+      const yaw =
+        (nose.x - (leftEye.x + rightEye.x) / 2) / (rightEye.x - leftEye.x);
+      const pitch =
+        (nose.y - (leftEye.y + rightEye.y) / 2) / (chin.y - forehead.y);
+
+      const isCentered = Math.abs(yaw) < 0.4 && Math.abs(pitch) < 0.4;
+
+      if (!isCentered) {
+        setDetectionFeedback("Look Directly at Camera");
+        setIsFaceValid(false);
+      } else {
+        setDetectionFeedback("Hold Steady...");
+        setIsFaceValid(true);
+
+        // --- 4. AUTO-TRIGGER RECOGNITION ---
+        // We only trigger if not already scanning, not processing a result,
+        // and no dialogs are open.
+        if (
+          !isScanning &&
+          !imgSrc &&
+          !isProcessing &&
+          !resultDialog &&
+          !confirmationData
+        ) {
+          // iOS Stability Fix: Throttling
+          // Only trigger recognition if at least 100ms has passed since the last attempt.
+          // This limits recognition to ~10 FPS, preventing VRAM exhaustion.
+          const now = Date.now();
+          if (!lastScanTime.current || now - lastScanTime.current > 100) {
+            lastScanTime.current = now;
+            triggerLiveScan();
+          }
+        }
+      }
+    },
+    [triggerLiveScan, imgSrc, isProcessing, resultDialog, confirmationData, isScanning],
+  );
 
   // Detection Loop
   useEffect(() => {
@@ -1287,8 +1303,11 @@ function CaptureContent() {
           </div>
         </header>
 
-        <div className="flex-1 flex flex-col items-center">
-          <div className="relative w-full max-w-2xl rounded-3xl overflow-hidden bg-black border border-white/5 shadow-2xl aspect-[4/3] sm:aspect-video flex items-center justify-center">
+        <div className="flex-1 flex flex-col items-center w-full">
+          <div 
+            className="relative w-full max-w-2xl rounded-3xl overflow-hidden bg-black border border-white/5 shadow-2xl aspect-auto sm:aspect-video flex items-center justify-center min-h-[320px] sm:min-h-0"
+            style={{ transform: 'translateZ(0)', WebkitMaskImage: '-webkit-radial-gradient(white, black)' }}
+          >
             {imgSrc ? (
               <img
                 src={imgSrc}

@@ -168,12 +168,16 @@ export default function CompareLab() {
         // --- 1b. GHOSTFACE (Sequential Inference) ---
         setStatus("AI Step 1b: Initializing GhostFace Engine...");
         await initGhostFace();
-        const ghostDescriptor = await getGhostFaceDescriptor(
+        const ghostResult = await getGhostFaceDescriptor(
           cropCanvas,
           mpBox,
           mpLandmarks,
           false,
         );
+        const ghostDescriptor = ghostResult.descriptor;
+        if (!ghostResult.quality.isGood) {
+          throw new Error(`GhostFace Quality Guard: ${ghostResult.quality.reason}`);
+        }
         await disposeGhostFace(); // FREE MEMORY IMMEDIATELY
 
         // --- 1c. EDGEFACE (Sequential Inference) ---

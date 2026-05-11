@@ -318,10 +318,19 @@ export default function RegisterFacePage() {
           height: (maxY - minY) * sh,
         };
 
-        descriptor = modelType === "ghostface"
+        const result = modelType === "ghostface"
           ? await getGhostFaceDescriptor(video, box, landmarks, false)
-          : await getEdgeFaceDescriptorFn(video, box, landmarks, false);
+          : { descriptor: await getEdgeFaceDescriptorFn(video, box, landmarks, false), quality: { isGood: true } };
 
+        descriptor = (result as any).descriptor || result;
+        const quality = (result as any).quality || { isGood: true };
+
+        if (!quality.isGood) {
+          setDetectionFeedback(`QUALITY: ${quality.reason?.replace('_', ' ')}`);
+          return;
+        }
+
+        if (!descriptor) return;
         let isAllZeros = true;
         for (let i = 0; i < descriptor.length; i++) {
           if (descriptor[i] !== 0) {
