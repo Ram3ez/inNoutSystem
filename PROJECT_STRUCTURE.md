@@ -46,6 +46,11 @@ src/
 │   ├── faceSearch.worker.ts # Background identity matching
 │   ├── ghostface.worker.ts # Offloaded ONNX inference
 │   └── edgeface.worker.ts  # Offloaded ONNX inference
+├── scripts/              # Server management & deployment scripts
+│   ├── pmScript          # PM2 initialization command
+│   ├── moveScript.sh     # Asset synchronization after build
+│   ├── backup.sh         # Appwrite Docker backup utility
+│   └── restore.sh        # Appwrite Docker restore utility
 └── types/                # TypeScript Interface definitions
 ```
 

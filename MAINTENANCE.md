@@ -14,7 +14,7 @@ The Appwrite instance runs inside Docker containers. The `appwrite` folder on th
 > Always maintain a copy of your `.env` and `docker-compose.yml` files. These contain critical server configurations and encryption keys. Losing these may result in permanent data loss. **Note**: These files are automatically copied to the `backup` folder when running `backup.sh`.
 
 #### **Creating a Backup**
-1. Ensure `backup.sh` is placed inside the `appwrite` folder on the server.
+1. Ensure `backup.sh` (from the `scripts/` folder) is placed inside the `appwrite` folder on the server.
 2. Execute the script:
    ```bash
    ./backup.sh
@@ -30,7 +30,7 @@ The Appwrite instance runs inside Docker containers. The `appwrite` folder on th
    ```bash
    tar -xvzf backup.tar.gz
    ```
-2. Ensure `restore.sh` is placed inside the `appwrite` folder (**not** inside the extracted `backup` folder).
+2. Ensure `restore.sh` (from the `scripts/` folder) is placed inside the `appwrite` folder (**not** inside the extracted `backup` folder).
 3. Run the restore script:
    ```bash
    ./restore.sh
@@ -54,7 +54,7 @@ The Appwrite instance runs inside Docker containers. The `appwrite` folder on th
 The Next.js application is deployed as a standalone server managed by PM2 for high availability.
 
 ### 🏁 Initial Setup
-To start the server for the first time and save the process list:
+To start the server for the first time (the command is also saved in `scripts/pmScript`):
 ```bash
 PORT=3000 pm2 start .next/standalone/server.js --name "hostelSystem"
 pm2 save
@@ -68,9 +68,9 @@ Every time you make code changes and rebuild the application, follow this sequen
    npm run build
    ```
 2. **Sync Assets**:
-   Run the `moveScript.sh` (located in the repo root) to copy the `public` and `static` folders to the standalone directory:
+   Run the `moveScript.sh` (located in the `scripts/` folder) to copy the `public` and `static` folders to the standalone directory:
    ```bash
-   ./moveScript.sh
+   ./scripts/moveScript.sh
    ```
 3. **Reload the Server**:
    ```bash
