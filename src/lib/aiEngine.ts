@@ -33,16 +33,11 @@ export async function getLandmarker(updateProgress?: (p: number, s: string) => v
     // in parallel here so the SW caches them before MediaPipe requests them.
     // On iOS we prioritize the nosimd variant since SIMD is restricted.
     if (updateProgress) updateProgress(0, "Downloading Vision Runtime...");
-    const wasmFiles = isIOS
-      ? [
-          "/mediapipe/wasm/vision_wasm_nosimd_internal.wasm",
-          "/mediapipe/wasm/vision_wasm_nosimd_internal.js",
-        ]
-      : [
-          "/mediapipe/wasm/vision_wasm_internal.wasm",
-          "/mediapipe/wasm/vision_wasm_internal.js",
-          "/mediapipe/wasm/vision_wasm_module_internal.wasm",
-        ];
+    const wasmFiles = [
+      "/mediapipe/wasm/vision_wasm_internal.wasm",
+      "/mediapipe/wasm/vision_wasm_internal.js",
+      "/mediapipe/wasm/vision_wasm_module_internal.wasm",
+    ];
 
     let wasmLoaded = 0;
     await Promise.all(
@@ -75,7 +70,7 @@ export async function getLandmarker(updateProgress?: (p: number, s: string) => v
       landmarker = await FaceLandmarker.createFromOptions(vision, {
         baseOptions: {
           modelAssetBuffer: new Uint8Array(modelBuffer),
-          delegate: isIOS ? "CPU" : "GPU",
+          delegate: "CPU",
         },
         runningMode: "VIDEO",
         outputFaceBlendshapes: false,

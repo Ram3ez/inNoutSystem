@@ -114,6 +114,7 @@ function CaptureContent() {
   const [detectionFeedback, setDetectionFeedback] =
     useState("Initializing AI...");
   const [isScanning, setIsScanning] = useState(false);
+  const lastScanTime = useRef<number>(0);
   const [aiLoaded, setAiLoaded] = useState(isAIReady() && isLandmarkerLoaded());
   const [modelType, setModelType] = useState<"ghostface" | "edgeface">("edgeface");
   const [showNotRecognized, setShowNotRecognized] = useState(false);
@@ -137,7 +138,7 @@ function CaptureContent() {
   } | null>(null);
 
   const failureBuffer = useRef<number>(0);
-  const lastScanTime = useRef<number>(0);
+
   const lastDetectTime = useRef<number>(0);
   const lastLogTime = useRef<number>(0);
 
@@ -189,10 +190,6 @@ function CaptureContent() {
 
     return () => {
       isMounted.current = false;
-      // Aggressively clean up memory to prevent iOS Jetsam crashes
-      disposeLandmarker();
-      disposeEdgeFace();
-      disposeGhostFace();
     };
   }, []);
 
@@ -821,7 +818,7 @@ function CaptureContent() {
         // DEBUG: Verify engine output
         if (match.rollNo !== "Unknown") {
           console.log(
-            `[🎯 ${modelType.toUpperCase()}] Match: ${match.rollNo} | Score: ${match.score.toFixed(4)}`,
+            `[🧠 ${modelType.toUpperCase()}] Match: ${match.rollNo} | Score: ${match.score.toFixed(4)}`,
           );
         }
 
@@ -833,7 +830,7 @@ function CaptureContent() {
           // If we fail to recognize after 5 consecutive attempts (~0.7s of face being present)
           if (failureBuffer.current >= 5) {
             console.log(
-              `[🚫 FAILURE] Threshold reached (${failureBuffer.current}). Showing Error Popup.`,
+              `[⚠️ FAILURE] Threshold reached (${failureBuffer.current}). Showing Error Popup.`,
             );
             failureBuffer.current = 0;
             setIsScanning(false);
@@ -844,17 +841,6 @@ function CaptureContent() {
               type: "error",
             });
             return;
-          }
-
-          // --- CONFLICT LOGGING (Only if Failure) ---
-          // Restricted to 'Unknown' state to prevent false positives during success.
-          const now = Date.now();
-          if (match.conflictWith && now - lastLogTime.current > 2000) {
-            lastLogTime.current = now;
-            serverLog(
-              "CONFLICT",
-              `Identity conflict: ${match.potentialMatch} (${(match.score * 100).toFixed(1)}%) vs ${match.conflictWith} (${((match.conflictScore || 0) * 100).toFixed(1)}%). Gap too small.`,
-            );
           }
 
           setIsScanning(false);
@@ -911,7 +897,6 @@ function CaptureContent() {
         handleRecognitionComplete(match.rollNo);
       } catch (err: any) {
         console.error("[⚠️ SCAN ERROR]", err);
-      } finally {
         setIsScanning(false);
       }
     },
@@ -1018,11 +1003,11 @@ function CaptureContent() {
     const detect = async () => {
       const now = performance.now();
       const throttleMs = isIOSDevice.current ? 200 : 100;
-      if (now - lastScanTime.current < throttleMs) {
+      if (now - lastDetectTime.current < throttleMs) {
         animationFrameId = requestAnimationFrame(detect);
         return;
       }
-      lastScanTime.current = now;
+      lastDetectTime.current = now;
 
       if (
         !isMounted.current ||
@@ -1051,8 +1036,13 @@ function CaptureContent() {
               );
               lastMediaPipeResult.current = result;
               processResults(result);
-            } catch (e) {
-              // MediaPipe detection skipped (stream likely closed)
+            } catch (err: any) {
+              const errMsg = String(err);
+              if (errMsg.includes("Aborted") || errMsg.includes("memory")) {
+                console.error("[⚠️ ENGINE CRASH] MediaPipe aborted. Reloading...");
+                window.location.reload(); 
+              }
+              console.error("[⚠️ DETECT ERROR]", err);
             }
           }
         }
@@ -1082,6 +1072,7 @@ function CaptureContent() {
     setIsFaceValid(false);
     setLivenessScore(0);
     setIsScanning(false);
+    setIsProcessing(false);
     consensusBuffer.current = { rollNo: "", count: 0 };
     failureBuffer.current = 0;
   };
@@ -1119,7 +1110,6 @@ function CaptureContent() {
       !resultDialog &&
       !isBarcodeModalOpen
     ) {
-      // Snappy loop: trigger scan every 150ms for temporal consensus
       timerId = setTimeout(() => {
         triggerLiveScan();
       }, 150);
