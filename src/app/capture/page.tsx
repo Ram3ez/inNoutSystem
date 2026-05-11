@@ -159,13 +159,6 @@ function CaptureContent() {
     isMounted.current = true;
     isIOSDevice.current = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
-    // Fast path: everything already loaded (e.g. navigated from another page)
-    if (isAIReady() && isLandmarkerLoaded()) {
-      setFaceLandmarker(getLandmarkerSync());
-      setAiLoaded(true);
-      return;
-    }
-
     const init = async () => {
       try {
         startGlobalLoading("Warming AI Engines...");
