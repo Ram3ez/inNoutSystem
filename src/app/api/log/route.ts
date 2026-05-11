@@ -22,7 +22,7 @@ export async function POST(req: Request) {
      * We only save high-value events (Outing, Leave, Adaptive updates) to the DB/File.
      * High-frequency events (Recognition, Conflict) are only shown in the terminal.
      */
-    const skipPersistence = ["RECOGNITION", "CONFLICT"].includes(action);
+    const skipPersistence = ["RECOGNITION", "CONFLICT", "STUDENT_REGISTRATION"].includes(action);
 
     if (!skipPersistence) {
       /**
