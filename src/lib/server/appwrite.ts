@@ -34,15 +34,24 @@ if (!process.env.APPWRITE_API_KEY) {
 }
 
 const createAdminClient = () => {
+  const endpoint =
+    process.env.INTERNAL_APPWRITE_ENDPOINT ||
+    process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT ||
+    "";
+  const projectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || "";
+  const apiKey = process.env.APPWRITE_API_KEY || "";
+
+  console.log(`[🛡️ DEBUG] Endpoint: "${endpoint}" (Length: ${endpoint.length})`);
+  console.log(`[🛡️ DEBUG] Project: "${projectId}" (Length: ${projectId.length})`);
+  console.log(
+    `[🛡️ DEBUG] API Key Loaded: ${apiKey ? "YES" : "NO"} (Length: ${apiKey.length})`,
+  );
+
   const client = new Client()
-    .setEndpoint(
-      process.env.INTERNAL_APPWRITE_ENDPOINT ||
-        process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT ||
-        "",
-    )
-    .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || "")
-    .setKey(process.env.APPWRITE_API_KEY || "")
-    .setSelfSigned(true); // Allow self-signed or internal SSL certificates
+    .setEndpoint(endpoint)
+    .setProject(projectId)
+    .setKey(apiKey)
+    .setSelfSigned(true);
 
   return {
     get tablesDB() {
