@@ -1015,17 +1015,14 @@ function CaptureContent() {
     const detect = async () => {
       const now = performance.now();
       const throttleMs = isIOSDevice.current ? 200 : 100;
-      if (now - lastDetectTime.current < throttleMs) {
+      if (now - lastScanTime.current < throttleMs) {
         animationFrameId = requestAnimationFrame(detect);
         return;
       }
-      lastDetectTime.current = now;
+      lastScanTime.current = now;
 
-      if (typeof window === "undefined" || !isMounted.current) return;
-
-      // Safety: Stop if tab is hidden or a dialog is open
       if (
-        document.visibilityState !== "visible" ||
+        !isMounted.current ||
         resultDialog ||
         confirmationData ||
         isBarcodeModalOpen

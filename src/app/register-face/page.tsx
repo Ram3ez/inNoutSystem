@@ -585,7 +585,13 @@ export default function StudentRegisterFace() {
                   </h3>
                   <div className="grid grid-cols-1 gap-3">
                     <button
-                      onClick={() => setModelType("edgeface")}
+                      onClick={async () => {
+                        if (modelType === "edgeface") return;
+                        setAiLoaded(false);
+                        await initEdgeFace();
+                        setModelType("edgeface");
+                        setAiLoaded(true);
+                      }}
                       disabled={isEdgeRegistered}
                       className={`flex items-center justify-between p-4 rounded-2xl border transition-all text-left ${
                         modelType === "edgeface"
@@ -609,7 +615,13 @@ export default function StudentRegisterFace() {
                     </button>
 
                     <button
-                      onClick={() => setModelType("ghostface")}
+                      onClick={async () => {
+                        if (modelType === "ghostface") return;
+                        setAiLoaded(false);
+                        await initGhostFace();
+                        setModelType("ghostface");
+                        setAiLoaded(true);
+                      }}
                       disabled={isGhostRegistered}
                       className={`flex items-center justify-between p-4 rounded-2xl border transition-all text-left ${
                         modelType === "ghostface"

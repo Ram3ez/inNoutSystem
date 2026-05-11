@@ -409,7 +409,8 @@ export default function RegisterFacePage() {
             );
           }, 0) / landmarks.length;
 
-        const stable = movement < 0.05;
+        const stabilityThreshold = isIOSDevice.current ? 0.08 : 0.05;
+        const stable = movement < stabilityThreshold;
         setIsStable(stable);
         if (!stable) {
           setDetectionFeedback("Please Hold Still...");
@@ -651,7 +652,13 @@ export default function RegisterFacePage() {
             <div className="flex w-full sm:w-auto items-center justify-center bg-primary/5 p-1 rounded-2xl border border-primary/10 shadow-inner">
               <button
                 type="button"
-                onClick={() => setModelType("ghostface")}
+                onClick={async () => {
+                  if (modelType === "ghostface") return;
+                  setAiLoaded(false);
+                  await initGhostFace();
+                  setModelType("ghostface");
+                  setAiLoaded(true);
+                }}
                 className={`flex-1 sm:flex-none flex items-center justify-center px-4 h-8 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all duration-300 ${
                   modelType === "ghostface"
                     ? "bg-secondary text-background shadow-md"
