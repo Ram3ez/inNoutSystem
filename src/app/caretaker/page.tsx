@@ -23,6 +23,7 @@ import { LoadingIndicator } from "@/components/LoadingIndicator";
 import { Navigation } from "@/components/Navigation";
 import { useRouter } from "next/navigation";
 import { useLoading } from "@/context/LoadingContext";
+import { logTransaction } from "@/lib/auditLogger";
 
 interface LeaveRequest {
   $id: string;
@@ -298,6 +299,14 @@ export default function CaretakerDashboard() {
 
       // Remove from local list
       setRequests((prev) => prev.filter((r) => r.$id !== requestId));
+
+      await logTransaction({
+        action: `LEAVE_${action.toUpperCase()}_CARETAKER`,
+        message: `Caretaker ${user?.name} ${action}d leave for student ${request.roll_no}.`,
+        userId: request.roll_no,
+        metadata: { requestId, action, nextStatus },
+        level: "medium"
+      });
     } catch (error) {
       console.error("Action failed:", error);
       setNotification({ message: "Failed to process request. Please try again.", type: "error" });

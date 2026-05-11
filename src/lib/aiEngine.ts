@@ -121,14 +121,15 @@ export function getLandmarkerSync(): FaceLandmarker | null {
  */
 export async function disposeLandmarker(): Promise<void> {
   if (landmarkerInitPromise) {
+    const promiseToClose = landmarkerInitPromise;
+    landmarkerInstance = null;
+    landmarkerInitPromise = null;
     try {
-      const instance = await landmarkerInitPromise;
+      const instance = await promiseToClose;
       instance.close();
       console.log("[🧠 ENGINE] MediaPipe Landmarker disposed.");
     } catch (e) {
       console.error("[🧠 ENGINE] Error disposing MediaPipe Landmarker", e);
     }
   }
-  landmarkerInstance = null;
-  landmarkerInitPromise = null;
 }

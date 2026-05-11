@@ -23,6 +23,7 @@ import { LoadingIndicator } from "@/components/LoadingIndicator";
 import { Navigation } from "@/components/Navigation";
 import { useRouter } from "next/navigation";
 import { useLoading } from "@/context/LoadingContext";
+import { logTransaction } from "@/lib/auditLogger";
 
 interface LeaveRequest {
   $id: string;
@@ -417,6 +418,14 @@ export default function FacultyDashboard() {
 
       // Remove from local list
       setRequests((prev) => prev.filter((r) => r.$id !== requestId));
+
+      await logTransaction({
+        action: `LEAVE_${action.toUpperCase()}_FACULTY`,
+        message: `Faculty Advisor ${user?.name} ${action}d leave for student ${request.roll_no}.`,
+        userId: request.roll_no,
+        metadata: { requestId, action },
+        level: "medium"
+      });
     } catch (error) {
       console.error("Action failed:", error);
       setNotification({ message: "Failed to process request. Please try again.", type: "error" });
@@ -459,6 +468,14 @@ export default function FacultyDashboard() {
       }
 
       setParentRequests((prev) => prev.filter((s) => s.$id !== studentId));
+
+      await logTransaction({
+        action: `PARENT_DETAIL_${action.toUpperCase()}_FACULTY`,
+        message: `Faculty Advisor ${user?.name} ${action}d parent details for student ${studentId}.`,
+        userId: studentId,
+        metadata: { studentId, action },
+        level: "medium"
+      });
     } catch (error) {
       console.error("Failed to approve/reject parent details:", error);
       setNotification({ message: "Failed to process action. Please try again.", type: "error" });

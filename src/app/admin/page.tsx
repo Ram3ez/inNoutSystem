@@ -39,10 +39,11 @@ import { teams as appwriteTeams } from "@/lib/appwrite";
 import { Models } from "appwrite";
 import { performIncrementalSync } from "@/lib/faceCache";
 import { CheckCircle2, XCircle } from "lucide-react";
+import { logTransaction } from "@/lib/auditLogger";
 
 /**
  * ADMIN PORTAL — CENTRALIZED COMMAND CENTER
- * 
+ *
  * This module provides total system oversight for institutional administrators.
  * Key features include:
  * 1. Student Management: Enrollment status, biometric verification, and account control.
@@ -244,13 +245,19 @@ export default function AdminPortal() {
             },
           });
         } catch (createErr: any) {
-          setNotification({ message: createErr.message || "Failed to create holiday", type: "error" });
+          setNotification({
+            message: createErr.message || "Failed to create holiday",
+            type: "error",
+          });
           setTimeout(() => setNotification(null), 5000);
           setIsHolidaysLoading(false);
           return;
         }
       } else {
-        setNotification({ message: err.message || "Failed to update holiday", type: "error" });
+        setNotification({
+          message: err.message || "Failed to update holiday",
+          type: "error",
+        });
         setTimeout(() => setNotification(null), 5000);
         setIsHolidaysLoading(false);
         return;
@@ -258,6 +265,14 @@ export default function AdminPortal() {
     }
     setIsHolidayFormOpen(false);
     setIsHolidaysLoading(false);
+
+    await logTransaction({
+      action: "CALENDAR_HOLIDAY_SET",
+      message: `Admin set holiday ${holidayName} on ${selectedHolidayDate}.`,
+      metadata: { holidayName, holidayDate: selectedHolidayDate, holidayType },
+      level: "high",
+    });
+
     fetchHolidays();
   };
 
@@ -270,9 +285,20 @@ export default function AdminPortal() {
         tableId: COLLECTIONS.HOLIDAYS,
         rowId: dateStr,
       });
+
+      await logTransaction({
+        action: "CALENDAR_HOLIDAY_DELETE",
+        message: `Admin deleted holiday for date ${dateStr}.`,
+        metadata: { holidayDate: dateStr },
+        level: "high",
+      });
+
       fetchHolidays();
     } catch (err: any) {
-      setNotification({ message: err.message || "Failed to delete holiday", type: "error" });
+      setNotification({
+        message: err.message || "Failed to delete holiday",
+        type: "error",
+      });
       setTimeout(() => setNotification(null), 5000);
       setIsHolidaysLoading(false);
     }
@@ -326,8 +352,19 @@ export default function AdminPortal() {
       setInviteEmail("");
       setInviteName("");
       fetchTeamMembers();
-      setNotification({ message: "Invitation sent successfully! User must accept to appear in list.", type: "success" });
+      setNotification({
+        message:
+          "Invitation sent successfully! User must accept to appear in list.",
+        type: "success",
+      });
       setTimeout(() => setNotification(null), 5000);
+
+      await logTransaction({
+        action: "TEAM_INVITE",
+        message: `Admin invited ${inviteEmail} (${inviteName}) to team ${teamId === TEAMS.FACULTY ? "Faculty" : "Caretaker"}.`,
+        metadata: { email: inviteEmail, teamId },
+        level: "high",
+      });
     } catch (error: any) {
       setInviteError(error.message);
     } finally {
@@ -341,8 +378,18 @@ export default function AdminPortal() {
     try {
       await appwriteTeams.deleteMembership({ teamId, membershipId });
       fetchTeamMembers();
+
+      await logTransaction({
+        action: "TEAM_REMOVE",
+        message: `Admin removed membership ${membershipId} from team ${teamId === TEAMS.FACULTY ? "Faculty" : "Caretaker"}.`,
+        metadata: { teamId, membershipId },
+        level: "high",
+      });
     } catch (error: any) {
-      setNotification({ message: "Failed to remove member: " + error.message, type: "error" });
+      setNotification({
+        message: "Failed to remove member: " + error.message,
+        type: "error",
+      });
       setTimeout(() => setNotification(null), 5000);
     } finally {
       setIsManagingTeam(false);
@@ -394,11 +441,53 @@ export default function AdminPortal() {
       }
     } catch (error) {
       console.error("Update failed:", error);
-      setNotification({ message: "Failed to update email. Ensure collection exists.", type: "error" });
+      setNotification({
+        message: "Failed to update email. Ensure collection exists.",
+        type: "error",
+      });
       setTimeout(() => setNotification(null), 5000);
     } finally {
       setIsSavingStaff(null);
     }
+
+    // Calculate diff for better logging
+    const oldEmailStr =
+      (collId === COLLECTIONS.CARETAKER
+        ? caretakerAssignments
+        : facultyAssignments
+      ).find((d) => d.$id === docId)?.email || "";
+
+    const oldEmails = oldEmailStr
+      .split(",")
+      .map((e: string) => e.trim().toUpperCase())
+      .filter(Boolean);
+    const newEmails = email
+      .split(",")
+      .map((e: string) => e.trim().toUpperCase())
+      .filter(Boolean);
+
+    const added = newEmails.filter((e: string) => !oldEmails.includes(e));
+    const removed = oldEmails.filter((e: string) => !newEmails.includes(e));
+
+    let logAction = "STAFF_ASSIGN_UPDATE";
+    let logMessage = `Admin updated staff assignment for ${collId === COLLECTIONS.CARETAKER ? "Caretaker" : "Faculty"} group ${docId}.`;
+
+    if (added.length > 0 && removed.length === 0) {
+      logAction = "STAFF_ASSIGN_ADD";
+      logMessage = `Admin added ${added.join(", ")} to ${collId === COLLECTIONS.CARETAKER ? "Caretaker" : "Faculty"} group ${docId}.`;
+    } else if (removed.length > 0 && added.length === 0) {
+      logAction = "STAFF_ASSIGN_REMOVE";
+      logMessage = `Admin removed ${removed.join(", ")} from ${collId === COLLECTIONS.CARETAKER ? "Caretaker" : "Faculty"} group ${docId}.`;
+    } else if (added.length > 0 && removed.length > 0) {
+      logMessage = `Admin updated staff in group ${docId}: Added (${added.join(", ")}), Removed (${removed.join(", ")}).`;
+    }
+
+    await logTransaction({
+      action: logAction,
+      message: logMessage,
+      metadata: { collId, docId, email, added, removed },
+      level: "high",
+    });
   };
 
   // Optimized search for thousands of students
@@ -783,7 +872,10 @@ export default function AdminPortal() {
       setExportConfig((prev) => ({ ...prev, isOpen: false }));
     } catch (error) {
       console.error("Failed to download report:", error);
-      setNotification({ message: "Failed to generate report. Please try again.", type: "error" });
+      setNotification({
+        message: "Failed to generate report. Please try again.",
+        type: "error",
+      });
       setTimeout(() => setNotification(null), 5000);
     } finally {
       setIsDownloadingReport(null);
@@ -838,6 +930,13 @@ export default function AdminPortal() {
       setStudents((prev) =>
         prev.map((s) => (s.$id === studentId ? { ...s, ...updateData } : s)),
       );
+
+      await logTransaction({
+        action: "FACE_DELETE",
+        message: `Admin deleted ${typeName} data for student ${studentId}.`,
+        metadata: { studentId, type },
+        level: "high",
+      });
     } catch (error: any) {
       setNotification({
         message: error.message || "An error occurred",
@@ -871,6 +970,13 @@ export default function AdminPortal() {
         ),
       );
       setBlockConfig((prev) => ({ ...prev, isOpen: false }));
+
+      await logTransaction({
+        action: "STUDENT_BLOCK_UPDATE",
+        message: `Admin updated block status for student ${studentId} until ${until || "UNBLOCKED"}.`,
+        metadata: { studentId, until },
+        level: "high",
+      });
     } catch (error) {
       console.error("Failed to block student:", error);
       setNotification({
@@ -1030,7 +1136,10 @@ export default function AdminPortal() {
                   className="flex items-center space-x-2 px-4 py-2.5 bg-secondary/10 hover:bg-secondary/20 text-secondary rounded-xl text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
                   title="Force Sync Biometric Database"
                 >
-                  <Database size={14} className={isSyncing ? "animate-spin" : ""} />
+                  <Database
+                    size={14}
+                    className={isSyncing ? "animate-spin" : ""}
+                  />
                   <span>{isSyncing ? "Syncing..." : "Sync Biometrics"}</span>
                 </button>
 

@@ -20,6 +20,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 import { DB_ID, COLLECTIONS } from "@/lib/constants";
+import { logTransaction } from "@/lib/auditLogger";
 
 export default function LeavePage() {
   const { user, studentData, isLoading: authLoading } = useAuth();
@@ -252,6 +253,19 @@ export default function LeavePage() {
           caretaker_approval: false,
           faculty_approval: false,
         }
+      });
+
+      await logTransaction({
+        action: "LEAVE_APPLY",
+        message: `Student ${studentData.$id} applied for leave to ${placeOfVisit}.`,
+        userId: studentData.$id,
+        metadata: {
+          reason,
+          placeOfVisit,
+          proposed_exit_date: departure.toISOString(),
+          proposed_in_date: returnDate.toISOString(),
+          requiresFaculty,
+        },
       });
 
       setIsSuccess(true);
