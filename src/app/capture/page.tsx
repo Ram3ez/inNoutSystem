@@ -197,6 +197,7 @@ function CaptureContent() {
   }, []);
 
   const handleRecognitionComplete = async (rawResult: string) => {
+    setIsProcessing(true);
     let rollNumber: string | null = null;
 
     if (rawResult.includes("(score:")) {
@@ -271,7 +272,7 @@ function CaptureContent() {
       setConfirmationData({ rollNo: rollNumber });
     } finally {
       setIsProcessing(false);
-      setIsScanning(false);
+      setIsScanning(false); // Safety reset for all paths
     }
   };
 
@@ -910,6 +911,7 @@ function CaptureContent() {
         handleRecognitionComplete(match.rollNo);
       } catch (err: any) {
         console.error("[⚠️ SCAN ERROR]", err);
+      } finally {
         setIsScanning(false);
       }
     },
