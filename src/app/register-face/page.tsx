@@ -328,7 +328,7 @@ export default function StudentRegisterFace() {
             );
           }, 0) / landmarks.length;
 
-        const stabilityThreshold = isIOSDevice.current ? 0.08 : 0.05;
+        const stabilityThreshold = isIOSDevice.current ? 0.15 : 0.05;
         const stable = movement < stabilityThreshold;
         setIsStable(stable);
         if (!stable) {
@@ -431,7 +431,7 @@ export default function StudentRegisterFace() {
       }
       lastScanTime.current = now;
 
-      if (faceLandmarker && webcamRef.current?.video?.readyState === 4) {
+      if (faceLandmarker && aiLoaded && webcamRef.current?.video?.readyState === 4) {
         const video = webcamRef.current.video;
         if (video.srcObject) {
           try {

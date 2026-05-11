@@ -11,13 +11,16 @@ ort.env.wasm.numThreads = 1;
 ort.env.wasm.simd = false;
 ort.env.wasm.proxy = false;
 
+const hasThreads = typeof SharedArrayBuffer !== "undefined";
+
 (ort.env.wasm.wasmPaths as any) = {
   "ort-wasm-simd-threaded.wasm": "/models/ort-wasm-simd-threaded.wasm",
-  "ort-wasm-simd.wasm": "/models/ort-wasm-simd-threaded.wasm",
-  "ort-wasm.wasm": "/models/ort-wasm-simd-threaded.wasm",
-  // Map each variant to its actual local file.
-  // Pre-downloaded by edgefaceEngine.ts before the worker starts,
-  // so these are served instantly from the SW cache.
+  "ort-wasm-simd.wasm": hasThreads
+    ? "/models/ort-wasm-simd-threaded.wasm"
+    : "/models/ort-wasm-simd.wasm",
+  "ort-wasm.wasm": hasThreads
+    ? "/models/ort-wasm-simd-threaded.wasm"
+    : "/models/ort-wasm.wasm",
   "ort-wasm-simd-threaded.jsep.wasm": "/models/ort-wasm-simd-threaded.jsep.wasm",
   "ort-wasm-simd-threaded.jspi.wasm": "/models/ort-wasm-simd-threaded.jspi.wasm",
 };

@@ -83,6 +83,12 @@ function initSearchWorker() {
       }
     }
   };
+  searchWorker.onerror = (err) => {
+    console.error("[👷 WORKER] Search Worker Crashed:", err);
+    searchWorker?.terminate();
+    searchWorker = null;
+    isLoaded = false;
+  };
 }
 
 /**
@@ -464,9 +470,29 @@ export async function getBestMatch(
       ? BIOMETRIC_THRESHOLDS.GHOSTFACE.CONFLICT_GAP
       : BIOMETRIC_THRESHOLDS.EDGEFACE.CONFLICT_GAP;
 
-  return new Promise((resolve) => {
-    searchRequests.set(requestId, resolve);
-    searchWorker?.postMessage({
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      searchRequests.delete(requestId);
+      // Safety: If worker hangs, we reset it
+      console.warn("[👷 WORKER] Recognition timeout. Resetting worker...");
+      searchWorker?.terminate();
+      searchWorker = null;
+      isLoaded = false;
+      reject(new Error("RECOGNITION_TIMEOUT"));
+    }, 4000); // Increased to 4s for slower mobile devices
+
+    searchRequests.set(requestId, (res: RecognitionResult) => {
+      clearTimeout(timeoutId);
+      resolve(res);
+    });
+
+    if (!searchWorker) {
+      clearTimeout(timeoutId);
+      reject(new Error("WORKER_NOT_INITIALIZED"));
+      return;
+    }
+
+    searchWorker.postMessage({
       type: "SEARCH",
       payload: {
         query: queryDescriptor,

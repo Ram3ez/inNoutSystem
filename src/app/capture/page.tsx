@@ -951,7 +951,7 @@ function CaptureContent() {
             );
           }, 0) / landmarks.length;
 
-        const stabilityThreshold = isIOSDevice.current ? 0.08 : 0.05;
+        const stabilityThreshold = isIOSDevice.current ? 0.15 : 0.05;
         const stable = movement < stabilityThreshold;
         setIsStable(stable);
         if (!stable) {
@@ -992,7 +992,8 @@ function CaptureContent() {
           !imgSrc &&
           !isProcessing &&
           !resultDialog &&
-          !confirmationData
+          !confirmationData &&
+          isAIReady()
         ) {
           // iOS Stability Fix: Throttling
           // Only trigger recognition if at least 100ms has passed since the last attempt.
@@ -1302,7 +1303,7 @@ function CaptureContent() {
 
         <div className="flex-1 flex flex-col items-center w-full">
           <div 
-            className="relative w-full max-w-2xl rounded-3xl overflow-hidden bg-black border border-white/5 shadow-2xl aspect-auto sm:aspect-video flex items-center justify-center min-h-[320px] sm:min-h-0"
+            className="relative w-full max-w-2xl aspect-video rounded-3xl overflow-hidden bg-black border border-white/5 shadow-2xl"
             style={{ transform: 'translateZ(0)', WebkitMaskImage: '-webkit-radial-gradient(white, black)' }}
           >
             {imgSrc ? (
@@ -1486,6 +1487,7 @@ function CaptureContent() {
                   <button
                     onClick={() => {
                       setResultDialog(null);
+                      if (!isAIReady()) loadFaceCache();
                       retake();
                     }}
                     className="w-full h-12 bg-primary text-background rounded-xl font-bold uppercase tracking-widest transition-all hover:bg-primary/90"

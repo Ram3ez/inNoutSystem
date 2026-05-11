@@ -25,12 +25,12 @@ export async function initGhostFace(updateProgress?: (p: number, s: string) => v
   initPromise = (async () => {
     try {
       // Step 1 – Pre-download the ONNX WASM runtime.
-      // ONNX Runtime fetches its .wasm file inside the Worker where there is no
-      // way to hook a progress callback. Downloading it here first shows a real
-      // progress bar AND warms the SW cache so the worker gets an instant hit.
+      const hasThreads = typeof SharedArrayBuffer !== "undefined";
+      const wasmFile = hasThreads ? "ort-wasm-simd-threaded.wasm" : "ort-wasm-simd.wasm";
+      
       if (updateProgress) updateProgress(0, "Downloading WASM Runtime...");
       await fetchWithProgress(
-        "/models/ort-wasm-simd-threaded.wasm",
+        `/models/${wasmFile}`,
         (p) => updateProgress?.(p * 0.4, "Downloading WASM Runtime...")
       );
 
@@ -83,9 +83,17 @@ export async function extractGhostFaceEmbedding(
   await initGhostFace();
   if (!worker) throw new Error("GhostFace Worker not initialized");
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const id = requestIdCounter++;
-    pendingRequests.set(id, resolve);
+    const timeoutId = setTimeout(() => {
+      pendingRequests.delete(id);
+      reject(new Error("GHOSTFACE_INFERENCE_TIMEOUT"));
+    }, 3000);
+
+    pendingRequests.set(id, (embedding: Float32Array) => {
+      clearTimeout(timeoutId);
+      resolve(embedding);
+    });
 
     let imageData: ImageData;
     if (canvas instanceof HTMLCanvasElement) {

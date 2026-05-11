@@ -409,7 +409,7 @@ export default function RegisterFacePage() {
             );
           }, 0) / landmarks.length;
 
-        const stabilityThreshold = isIOSDevice.current ? 0.08 : 0.05;
+        const stabilityThreshold = isIOSDevice.current ? 0.15 : 0.05;
         const stable = movement < stabilityThreshold;
         setIsStable(stable);
         if (!stable) {
@@ -909,7 +909,7 @@ export default function RegisterFacePage() {
 
               <div className="p-8 space-y-8">
                 <div className="flex justify-center">
-                  <div className="relative w-full max-w-xl aspect-[3/4] sm:aspect-[4/3] rounded-[2rem] overflow-hidden bg-black border border-white/5 shadow-inner">
+                  <div className="relative w-full max-w-xl aspect-video rounded-[2rem] overflow-hidden bg-black border border-white/5 shadow-inner">
                     <ReactWebcam
                       audio={false}
                       ref={webcamRef}

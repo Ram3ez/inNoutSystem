@@ -41,8 +41,20 @@ export async function fetchWithProgress(
     console.warn("[📦 CACHE] Cache API read failed:", e);
   }
 
-  // Network fetch — the service worker intercepts this and will cache the response.
-  const response = await fetch(url);
+  // Network fetch with timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s timeout
+
+  let response;
+  try {
+    response = await fetch(url, { signal: controller.signal });
+  } catch (e: any) {
+    if (e.name === "AbortError") throw new Error(`Download timeout for ${url}`);
+    throw e;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
   if (!response.ok) throw new Error(`Failed to fetch ${url}: ${response.statusText}`);
 
   const contentLength = response.headers.get("content-length");

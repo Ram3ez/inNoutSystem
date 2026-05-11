@@ -50,21 +50,34 @@ export const fetchAllRows = async <T extends any>(
   const LIMIT = 100;
   let hasMore = true;
 
-  while (hasMore) {
-    const response = await tablesDB.listRows({
-      databaseId,
-      tableId,
-      queries: [...queries, Query.limit(LIMIT), Query.offset(offset)],
-    });
+  const fetchWithTimeout = async () => {
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("DATABASE_FETCH_TIMEOUT")), 15000),
+    );
 
-    allRows = [...allRows, ...(response.rows as unknown as T[])];
+    while (hasMore) {
+      const fetchPromise = tablesDB.listRows({
+        databaseId,
+        tableId,
+        queries: [...queries, Query.limit(LIMIT), Query.offset(offset)],
+      });
 
-    if (response.rows.length < LIMIT) {
-      hasMore = false;
-    } else {
-      offset += LIMIT;
+      const response = (await Promise.race([
+        fetchPromise,
+        timeoutPromise,
+      ])) as any;
+
+      allRows = [...allRows, ...(response.rows as unknown as T[])];
+
+      if (response.rows.length < LIMIT) {
+        hasMore = false;
+      } else {
+        offset += LIMIT;
+      }
     }
-  }
+  };
+
+  await fetchWithTimeout();
 
   return allRows;
 };

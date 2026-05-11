@@ -25,13 +25,12 @@ export async function initEdgeFace(updateProgress?: (p: number, s: string) => vo
   initPromise = (async () => {
     try {
       // Step 1 – Pre-download the ONNX WASM runtime.
-      // ONNX Runtime fetches its .wasm file inside the Worker where there is no
-      // way to hook a progress callback. By downloading it here on the main thread
-      // first, we both show a real progress bar AND warm the SW cache so the
-      // worker gets a near-instant cache hit when it makes the same request.
+      const hasThreads = typeof SharedArrayBuffer !== "undefined";
+      const wasmFile = hasThreads ? "ort-wasm-simd-threaded.wasm" : "ort-wasm-simd.wasm";
+
       if (updateProgress) updateProgress(0, "Downloading WASM Runtime...");
       await fetchWithProgress(
-        "/models/ort-wasm-simd-threaded.wasm",
+        `/models/${wasmFile}`,
         (p) => updateProgress?.(p * 0.4, "Downloading WASM Runtime...")
       );
 
@@ -84,9 +83,17 @@ export async function extractEdgeFaceEmbedding(
   await initEdgeFace();
   if (!worker) throw new Error("EdgeFace Worker not initialized");
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const id = requestIdCounter++;
-    pendingRequests.set(id, resolve);
+    const timeoutId = setTimeout(() => {
+      pendingRequests.delete(id);
+      reject(new Error("EDGEFACE_INFERENCE_TIMEOUT"));
+    }, 3000);
+
+    pendingRequests.set(id, (embedding: Float32Array) => {
+      clearTimeout(timeoutId);
+      resolve(embedding);
+    });
 
     let imageData: ImageData;
     if (canvas instanceof HTMLCanvasElement) {
