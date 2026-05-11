@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * AuditLogsPage - System Observability Dashboard
  * 
