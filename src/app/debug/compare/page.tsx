@@ -51,8 +51,15 @@ export default function CompareLab() {
       setStatus("Synchronizing Biometric Database...");
       await loadFaceCache();
       if (!isMounted) return;
-      setStatus("Warming Up Landmarker...");
-      await getLandmarker();
+
+      setStatus("Warming AI Engines...");
+      // Pre-warm all engines for instant analysis
+      await Promise.all([
+        getLandmarker(),
+        initEdgeFace(),
+        initGhostFace()
+      ]);
+
       if (!isMounted) return;
       setIsReady(true);
       setStatus("");

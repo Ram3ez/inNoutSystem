@@ -94,24 +94,17 @@ export default function StudentRegisterFace() {
 
     const init = async () => {
       try {
-        const alreadyBooted = isLandmarkerLoaded();
+        startGlobalLoading("Warming AI Engines...");
 
-        if (!alreadyBooted) {
-          startGlobalLoading("Warming AI Engines...");
-        }
+        // Always ensure the landmarker is ready.
+        // The core engine now handles synchronization if a disposal is in progress.
+        await getLandmarker(updateProgress);
 
-        // Always ensure the landmarker is ready (no-op if already loaded).
-        await getLandmarker(alreadyBooted ? undefined : updateProgress);
-
-        // Load only the selected model — not both simultaneously.
-        // On iOS, loading EdgeFace + GhostFace together peaks at ~49MB of raw
-        // ArrayBuffers in RAM, frequently triggering a Jetsam kill before any
-        // inference even starts. The unselected model's initPromise guard means
-        // this call is a no-op if it was already loaded (e.g., after model switch).
+        // Load only the selected model — not both simultaneously for memory safety.
         const selectedModelInit =
           modelType === "edgeface"
-            ? initEdgeFace(alreadyBooted ? undefined : updateProgress)
-            : initGhostFace(alreadyBooted ? undefined : updateProgress);
+            ? initEdgeFace(updateProgress)
+            : initGhostFace(updateProgress);
         await selectedModelInit;
 
         if (isAdmin || isKiosk) {

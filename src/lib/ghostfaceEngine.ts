@@ -11,6 +11,7 @@ import { fetchWithProgress } from "./fetchProgress";
 
 let worker: Worker | null = null;
 let initPromise: Promise<any> | null = null;
+let disposePromise: Promise<void> | null = null;
 const pendingRequests = new Map<number, (embedding: Float32Array) => void>();
 let requestIdCounter = 0;
 
@@ -18,6 +19,7 @@ let requestIdCounter = 0;
  * Initializes the GhostFace Web Worker and warms up the model.
  */
 export async function initGhostFace(updateProgress?: (p: number, s: string) => void): Promise<void> {
+  if (disposePromise) await disposePromise;
   if (initPromise) return initPromise;
 
   initPromise = (async () => {
@@ -280,17 +282,23 @@ export async function disposeGhostFace(): Promise<void> {
     const w = worker;
     worker = null;
     initPromise = null;
-    try {
-      await p; // Wait for init to finish before killing
-    } catch (e) {
-      // Ignore init errors during disposal
-    }
-    if (w) {
-      w.terminate();
-      console.log("[🧠 ENGINE] GhostFace Worker terminated.");
-    }
+
+    disposePromise = (async () => {
+      try {
+        await p;
+        if (w) {
+          w.terminate();
+          console.log("[🧠 ENGINE] GhostFace Worker terminated.");
+        }
+      } catch (e) {
+      } finally {
+        disposePromise = null;
+      }
+    })();
+
+    return disposePromise;
   }
-  
+
   // Clear pending requests to prevent memory leaks in the map
   pendingRequests.clear();
 }
