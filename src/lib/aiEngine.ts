@@ -10,13 +10,17 @@ import { fetchWithProgress } from "./fetchProgress";
 
 let landmarkerInstance: FaceLandmarker | null = null;
 let landmarkerInitPromise: Promise<FaceLandmarker> | null = null;
+let landmarkerDisposePromise: Promise<void> | null = null;
 
 /**
  * Returns the singleton FaceLandmarker.
- * The first call initializes it; every subsequent call returns the cached instance instantly.
- * This prevents the "Warming Up" screen from appearing on every page navigation.
  */
 export async function getLandmarker(updateProgress?: (p: number, s: string) => void): Promise<FaceLandmarker> {
+  // If we are currently disposing, wait for it to finish before starting a new init
+  if (landmarkerDisposePromise) {
+    await landmarkerDisposePromise;
+  }
+
   if (landmarkerInstance) return landmarkerInstance;
   if (landmarkerInitPromise) return landmarkerInitPromise;
 
@@ -124,12 +128,19 @@ export async function disposeLandmarker(): Promise<void> {
     const promiseToClose = landmarkerInitPromise;
     landmarkerInstance = null;
     landmarkerInitPromise = null;
-    try {
-      const instance = await promiseToClose;
-      instance.close();
-      console.log("[🧠 ENGINE] MediaPipe Landmarker disposed.");
-    } catch (e) {
-      console.error("[🧠 ENGINE] Error disposing MediaPipe Landmarker", e);
-    }
+    
+    landmarkerDisposePromise = (async () => {
+      try {
+        const instance = await promiseToClose;
+        instance.close();
+        console.log("[🧠 ENGINE] MediaPipe Landmarker disposed.");
+      } catch (e) {
+        console.error("[🧠 ENGINE] Error disposing MediaPipe Landmarker", e);
+      } finally {
+        landmarkerDisposePromise = null;
+      }
+    })();
+    
+    return landmarkerDisposePromise;
   }
 }

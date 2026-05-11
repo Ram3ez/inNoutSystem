@@ -41,12 +41,6 @@ const createAdminClient = () => {
   const projectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || "";
   const apiKey = process.env.APPWRITE_API_KEY || "";
 
-  console.log(`[🛡️ DEBUG] Endpoint: "${endpoint}" (Length: ${endpoint.length})`);
-  console.log(`[🛡️ DEBUG] Project: "${projectId}" (Length: ${projectId.length})`);
-  console.log(
-    `[🛡️ DEBUG] API Key Loaded: ${apiKey ? "YES" : "NO"} (Length: ${apiKey.length})`,
-  );
-
   const client = new Client()
     .setEndpoint(endpoint)
     .setProject(projectId)

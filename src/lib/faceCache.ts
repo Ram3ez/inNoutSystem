@@ -360,6 +360,10 @@ function initSyncListeners() {
  */
 export async function loadFaceCache() {
   if (isLoaded) {
+    // Re-verify worker state even if memory thinks we are loaded.
+    // This handles cases where client-side navigation might leave a stale worker.
+    syncWorkerFull("ghostface", memoryCacheGhost);
+    syncWorkerFull("edgeface", memoryCacheEdge);
     performIncrementalSync();
     return;
   }
