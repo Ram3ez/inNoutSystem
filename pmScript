@@ -1,1 +1,2 @@
 #PORT=3000 pm2 start .next/standalone/server.js --name "hostelSystem"
+pm2 save

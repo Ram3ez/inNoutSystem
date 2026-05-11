@@ -109,6 +109,8 @@ Static assets.
 2. **Continuous Scanning**: `src/app/capture/page.tsx` continuously feeds webcam frames into MediaPipe.
 3. **Matching**: Detected faces are vectorized and compared against the in-memory cache using cosine similarity (via `faceSearch.worker.ts`).
 4. **Consensus**: The system requires multiple consecutive matches (temporal consensus) to prevent false positives before logging an `outing` or `leave` timestamp.
+5. **Stability & Concurrency**: Engines (`aiEngine`, `edgefaceEngine`, `ghostfaceEngine`) implement **Disposal Locks** to synchronize asynchronous cleanup and initialization, preventing race conditions during fast client-side navigation.
+6. **Selective Observability**: High-frequency events (Recognition/Conflict) are routed to terminal consoles only, while high-value transactions are persistently stored with identity attribution and confidence scores.
 
 ### Offline-First Architecture & Sync
 1. **Local Mutations**: If the kiosk loses internet, successful biometric matches are stored locally using IndexedDB (`src/lib/idb.ts`).
@@ -128,4 +130,11 @@ Database collection IDs and environmental IDs are centrally managed in `src/lib/
 ## Maintenance Notes
 - **Updating Models**: Replace files in `public/models/` and update paths in the respective engine files in `src/lib/`.
 - **Database Schema**: Collection IDs and field names are defined in `src/lib/constants.ts`.
-- **Environment Variables**: See `.env.local` for required keys (Appwrite endpoint, project ID, etc.).
+- **Environment Variables**: Defined in `.env.local`. Required keys for production:
+    ```env
+    NEXT_PUBLIC_APPWRITE_ENDPOINT=
+    NEXT_PUBLIC_APPWRITE_PROJECT_ID=
+    APPWRITE_API_KEY=
+    INTERNAL_APPWRITE_ENDPOINT=
+    NEXT_PUBLIC_DISABLE_REALTIME=
+    ```

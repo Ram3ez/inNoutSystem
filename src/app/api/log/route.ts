@@ -47,7 +47,14 @@ export async function POST(req: Request) {
        * Secondary Storage: Local File System
        */
       try {
-        const logDir = path.join(process.cwd(), 'logs');
+        // Find the true repository root, especially in standalone mode
+        let root = process.cwd();
+        if (root.includes(path.join('.next', 'standalone'))) {
+          // If CWD is inside standalone, the repo root is two levels up
+          root = path.join(root, '..', '..');
+        }
+        
+        const logDir = path.join(root, 'logs');
         if (!fs.existsSync(logDir)) {
           fs.mkdirSync(logDir, { recursive: true });
         }
