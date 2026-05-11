@@ -276,21 +276,21 @@ function drawSimpleCrop(ctx: CanvasRenderingContext2D, source: any, box: any) {
  */
 export async function disposeGhostFace(): Promise<void> {
   if (initPromise) {
+    const p = initPromise;
+    const w = worker;
+    worker = null;
+    initPromise = null;
     try {
-      await initPromise; // Wait for init to finish before killing
+      await p; // Wait for init to finish before killing
     } catch (e) {
       // Ignore init errors during disposal
     }
-  }
-  
-  if (worker) {
-    worker.terminate();
-    console.log("[🧠 ENGINE] GhostFace Worker terminated.");
+    if (w) {
+      w.terminate();
+      console.log("[🧠 ENGINE] GhostFace Worker terminated.");
+    }
   }
   
   // Clear pending requests to prevent memory leaks in the map
   pendingRequests.clear();
-  
-  worker = null;
-  initPromise = null;
 }

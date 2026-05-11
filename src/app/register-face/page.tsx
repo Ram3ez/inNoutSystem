@@ -20,6 +20,7 @@ import { useRouter } from "next/navigation";
 import { tablesDB } from "@/lib/appwrite";
 import { DB_ID, COLLECTIONS, BIOMETRIC_THRESHOLDS } from "@/lib/constants";
 import { loadFaceCache, uploadEmbeddings } from "@/lib/faceCache";
+import { logTransaction } from "@/lib/auditLogger";
 import {
   getLandmarker,
   getLandmarkerSync,
@@ -193,6 +194,14 @@ export default function StudentRegisterFace() {
       } catch (dbErr) {
         console.warn("Could not update status in student record", dbErr);
       }
+
+      await logTransaction({
+        action: "FACE_REGISTER",
+        message: `Student ${studentData.$id} registered facial biometrics for ${modelType}.`,
+        userId: studentData.$id,
+        metadata: { modelType },
+        level: "medium",
+      });
 
       setEnrollmentStatus("done");
       setSuccess(true);
@@ -721,20 +730,33 @@ export default function StudentRegisterFace() {
                       Enrollment Successful
                     </h3>
                     <p className="text-[10px] text-primary/40 font-bold uppercase tracking-wide leading-relaxed">
-                      Your identity profile has been locked into the system
-                      database
+                      {!(isEdgeRegistered && isGhostRegistered)
+                        ? "One model registered. You MUST register the second model for full system access."
+                        : "Both identity profiles have been locked into the system database"}
                     </p>
                   </div>
-                  <button
-                    onClick={() => {
-                      resetEnrollment();
-                      startGlobalLoading();
-                      router.push("/");
-                    }}
-                    className="px-6 py-3 bg-white text-black font-black uppercase text-xs tracking-widest rounded-2xl hover:bg-white/90 transition-all shadow-xl"
-                  >
-                    Return to Dashboard
-                  </button>
+                  <div className="flex flex-col gap-3 w-full max-w-xs">
+                    {!(isEdgeRegistered && isGhostRegistered) && (
+                      <button
+                        onClick={() => {
+                          resetEnrollment();
+                        }}
+                        className="px-6 py-3 bg-secondary text-white font-black uppercase text-xs tracking-widest rounded-2xl hover:bg-secondary/90 transition-all shadow-xl"
+                      >
+                        Enroll Second Model
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        resetEnrollment();
+                        startGlobalLoading();
+                        router.push("/");
+                      }}
+                      className="px-6 py-3 bg-white text-black font-black uppercase text-xs tracking-widest rounded-2xl hover:bg-white/90 transition-all shadow-xl"
+                    >
+                      Return to Dashboard
+                    </button>
+                  </div>
                 </div>
               )}
 

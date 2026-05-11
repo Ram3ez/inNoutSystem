@@ -23,6 +23,7 @@ import { useLoading } from "@/context/LoadingContext";
 import { Navigation } from "@/components/Navigation";
 import { useRouter } from "next/navigation";
 import { DB_ID, COLLECTIONS } from "@/lib/constants";
+import { logTransaction } from "@/lib/auditLogger";
 import Link from "next/link";
 
 export default function SettingsPage() {
@@ -100,6 +101,14 @@ export default function SettingsPage() {
         parent_verification_status: "pending_approval",
       };
       localStorage.setItem(CACHE_KEY_STUDENT, JSON.stringify(updatedStudent));
+
+      await logTransaction({
+        action: "PARENT_DETAIL_UPDATE_REQUEST",
+        message: `Student ${studentData.$id} submitted new parent details for approval.`,
+        userId: studentData.$id,
+        metadata: { parentName, parentPhone, parentEmail },
+        level: "medium"
+      });
 
       setIsSuccess(true);
       setTimeout(() => {

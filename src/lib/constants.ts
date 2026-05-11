@@ -38,6 +38,7 @@ export const COLLECTIONS = {
   FACIAL_EMBEDDINGS_EDGE: "facial_embeddings_edge",
   STAFF_DETAILS: "staff_details",
   HOLIDAYS: "holidays",
+  AUDIT_LOGS: "audit_logs",
 } as const;
 
 /**

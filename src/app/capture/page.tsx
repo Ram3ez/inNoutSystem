@@ -55,6 +55,7 @@ import {
   disposeEdgeFace,
 } from "@/lib/edgefaceEngine";
 import { performIncrementalSync } from "@/lib/faceCache";
+import { logTransaction } from "@/lib/auditLogger";
 
 
 /**
@@ -488,6 +489,13 @@ function CaptureContent() {
             data: { is_on_leave: false },
           });
           dbMessage = "LEAVE RETURN SUCCESSFUL & ARCHIVED";
+
+          await logTransaction({
+            action: "LEAVE_RETURN",
+            message: `Student ${rollNumber} returned from leave.`,
+            userId: rollNumber,
+            metadata: { leaveId: latestLeave.$id },
+          });
         } else if (!latestLeave.exit_date_time) {
           const today = new Date();
           const nowTime = new Date();
@@ -529,6 +537,13 @@ function CaptureContent() {
             data: { is_on_leave: true },
           });
           dbMessage = "LEAVE DEPARTURE SUCCESSFUL";
+
+          await logTransaction({
+            action: "LEAVE_EXIT",
+            message: `Student ${rollNumber} departed on leave.`,
+            userId: rollNumber,
+            metadata: { leaveId: latestLeave.$id },
+          });
         }
       } else {
         const { rows: documents } = await tablesDB.listRows({
@@ -567,6 +582,13 @@ function CaptureContent() {
           });
 
           dbMessage = "CHECK-IN SUCCESSFUL & ARCHIVED";
+
+          await logTransaction({
+            action: "OUTING_ENTRY",
+            message: `Student ${rollNumber} checked in from outing.`,
+            userId: rollNumber,
+            metadata: { outingId: openOuting.$id },
+          });
         } else {
           // Fetch student to retrieve gender
           const student = await tablesDB
@@ -631,6 +653,12 @@ function CaptureContent() {
           });
 
           dbMessage = "CHECK-OUT SUCCESSFUL";
+
+          await logTransaction({
+            action: "OUTING_EXIT",
+            message: `Student ${rollNumber} checked out for outing.`,
+            userId: rollNumber,
+          });
         }
       }
 

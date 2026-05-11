@@ -26,6 +26,7 @@ src/
 │   ├── caretaker/        # Hostel Caretaker dashboard
 │   ├── register-face/    # Self-service student face enrollment
 │   ├── live-status/      # Real-time movement monitor
+│   ├── audit-logs/       # System observability & transaction history
 │   └── system/           # System health & maintenance
 ├── components/           # Shared UI Components (Glassmorphism)
 │   ├── GradientBackground.tsx
@@ -58,6 +59,7 @@ Contains the application's pages and API routes using the Next.js App Router.
 - `faculty/` / `caretaker/`: Dashboards for specific staff roles.
 - `register-face/`: Biometric registration flow.
 - `leave/` / `my-leaves/`: Leave application and tracking.
+- `audit-logs/`: Administrative portal for viewing system logs.
 
 ### `src/components/`
 Reusable UI components.
@@ -80,6 +82,7 @@ Core business logic, AI engines, and utility functions.
 - `faceCache.ts`: Manages local storage of facial embeddings for fast matching.
 - `idb.ts`: IndexedDB wrapper for offline data storage.
 - `syncService.ts`: Logic for syncing offline changes to Appwrite.
+- `auditLogger.ts`: Standardized utility for recording system transactions.
 - `constants.ts`: Global constants, collection IDs, and biometric thresholds.
 
 ### `src/types/`

@@ -183,16 +183,21 @@ export default function Dashboard() {
           </motion.div>
         </header>
 
-        {!isAdmin && !isKiosk && !isFaculty && !isCaretaker && isStudent && !((studentData as any)?.edgeface_registered || (studentData as any)?.ghostface_registered) && (
+        {!isAdmin && !isKiosk && !isFaculty && !isCaretaker && isStudent && !((studentData as any)?.edgeface_registered && (studentData as any)?.ghostface_registered) && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             className="mb-8 p-6 bg-secondary/10 border border-secondary/20 rounded-2xl flex items-center space-x-4 text-secondary"
           >
             <AlertCircle size={24} />
-            <span className="font-bold uppercase tracking-tight text-sm sm:text-base leading-tight">
-              Missing Facial Data — Please Visit a Kiosk for Enrollment
-            </span>
+            <div className="flex flex-col space-y-1">
+              <span className="font-bold uppercase tracking-tight text-sm sm:text-base leading-tight">
+                Missing Biometric Data — Registration for BOTH Models Required
+              </span>
+              <p className="text-[10px] font-bold uppercase opacity-80 leading-tight">
+                Please register on your own using the "Register Face" card below. If you face any errors, contact Rameez Mohammad (CS23B1053).
+              </p>
+            </div>
           </motion.div>
         )}
 
@@ -266,13 +271,22 @@ export default function Dashboard() {
             </>
           )}
           {isAdmin && (
-            <ActionCard
-              title="Admin Portal"
-              subtitle="Administrative Console"
-              icon={<ShieldCheck className="text-secondary" size={32} />}
-              delay={0.3}
-              onClick={() => { startLoading(); router.push("/admin"); }}
-            />
+            <>
+              <ActionCard
+                title="Admin Portal"
+                subtitle="Administrative Console"
+                icon={<ShieldCheck className="text-secondary" size={32} />}
+                delay={0.3}
+                onClick={() => { startLoading(); router.push("/admin"); }}
+              />
+              <ActionCard
+                title="Audit Logs"
+                subtitle="System Transaction History"
+                icon={<Activity className="text-secondary" size={32} />}
+                delay={0.32}
+                onClick={() => { startLoading(); router.push("/audit-logs"); }}
+              />
+            </>
           )}
           {isCaretaker && (
             <ActionCard

@@ -43,6 +43,7 @@ import {
 } from "@/lib/aiEngine";
 import { initGhostFace, getGhostFaceDescriptor } from "@/lib/ghostfaceEngine";
 import { initEdgeFace, getEdgeFaceDescriptor as getEdgeFaceDescriptorFn } from "@/lib/edgefaceEngine";
+import { logTransaction } from "@/lib/auditLogger";
 
 
 
@@ -70,11 +71,7 @@ export default function RegisterFacePage() {
   const { startLoading: startGlobalLoading, stopLoading: stopGlobalLoading, updateProgress } = useLoading();
 
   const serverLog = (action: string, message: string) => {
-    fetch("/api/log", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, message }),
-    }).catch(() => {});
+    logTransaction({ action, message, level: "low" });
   };
 
   const [pendingStudents, setPendingStudents] = useState<any[]>([]);
@@ -273,6 +270,14 @@ export default function RegisterFacePage() {
       } catch (dbErr) {
         console.warn("Could not update registration status in DB", dbErr);
       }
+
+      await logTransaction({
+        action: "FACE_REGISTER_ADMIN",
+        message: `Admin/Kiosk ${user?.name} registered facial biometrics for student ${selectedRollNo} using ${modelType}.`,
+        userId: selectedRollNo,
+        metadata: { modelType, registeredBy: user?.email },
+        level: "high",
+      });
 
       setEnrollmentStatus("done");
       setSuccess(true);
