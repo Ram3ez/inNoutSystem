@@ -90,13 +90,17 @@ export default function AuditLogsPage() {
   };
 
   // Client-side filtering for search query (action, message, user)
-  const filteredLogs = logs.filter(
-    (log) =>
-      (log.action || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (log.message || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (log.user_name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (log.user_id || "").toLowerCase().includes(searchQuery.toLowerCase()),
-  );
+  const filteredLogs = logs.filter((log) => {
+    const query = searchQuery.toLowerCase();
+    const dateStr = formatToISTFull(log.$createdAt || log.timestamp).toLowerCase();
+    return (
+      (log.action || "").toLowerCase().includes(query) ||
+      (log.message || "").toLowerCase().includes(query) ||
+      (log.user_name || "").toLowerCase().includes(query) ||
+      (log.user_id || "").toLowerCase().includes(query) ||
+      dateStr.includes(query)
+    );
+  });
 
   if (authLoading || (user && !isAdmin)) {
     return (
