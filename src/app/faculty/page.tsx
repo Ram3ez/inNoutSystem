@@ -61,9 +61,9 @@ export default function FacultyDashboard() {
   const [activeLeaves, setActiveLeaves] = useState<LeaveRequest[]>([]);
   const [overdueLeaves, setOverdueLeaves] = useState<LeaveRequest[]>([]);
   const [parentRequests, setParentRequests] = useState<any[]>([]);
-  const [viewMode, setViewMode] = useState<"pending" | "active" | "parents" | "overdue">(
-    "pending",
-  );
+  const [viewMode, setViewMode] = useState<
+    "pending" | "active" | "parents" | "overdue"
+  >("pending");
   const [isLoading, setIsLoading] = useState(true);
   const [isActioning, setIsActioning] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -146,7 +146,7 @@ export default function FacultyDashboard() {
       const data = await response.json();
       if (data.success) {
         setNotification({
-          message: "Email sent to parent successfully via Direct SMTP!",
+          message: "Email sent to parent successfully.",
           type: "success",
         });
         try {
@@ -161,8 +161,16 @@ export default function FacultyDashboard() {
           });
 
           // Update local component state
-          setRequests(prev => prev.map(r => r.$id === req.$id ? { ...r, mail_sent: true } : r));
-          setActiveLeaves(prev => prev.map(r => r.$id === req.$id ? { ...r, mail_sent: true } : r));
+          setRequests((prev) =>
+            prev.map((r) =>
+              r.$id === req.$id ? { ...r, mail_sent: true } : r,
+            ),
+          );
+          setActiveLeaves((prev) =>
+            prev.map((r) =>
+              r.$id === req.$id ? { ...r, mail_sent: true } : r,
+            ),
+          );
         } catch (dbErr) {
           console.error("Failed to update mail_sent in DB:", dbErr);
         }
@@ -235,7 +243,15 @@ export default function FacultyDashboard() {
             const proposedIn = new Date(req.proposed_in_date);
             if (now.getTime() - proposedIn.getTime() > oneDayInMs) {
               try {
-                const { $id, $createdAt, $updatedAt, $databaseId, $collectionId, $permissions, ...cleanData } = req;
+                const {
+                  $id,
+                  $createdAt,
+                  $updatedAt,
+                  $databaseId,
+                  $collectionId,
+                  $permissions,
+                  ...cleanData
+                } = req;
                 await tablesDB.createRow({
                   databaseId: DB_ID,
                   tableId: COLLECTIONS.LEAVE_ARCHIVE,
@@ -249,7 +265,7 @@ export default function FacultyDashboard() {
                     is_extended: req.is_extended ?? false,
                     caretaker_id: req.caretaker_id || "N/A",
                     faculty_id: req.faculty_id || "N/A",
-                  }
+                  },
                 });
                 await tablesDB.deleteRow({
                   databaseId: DB_ID,
@@ -424,11 +440,14 @@ export default function FacultyDashboard() {
         message: `Faculty Advisor ${user?.name} ${action}d leave for student ${request.roll_no}.`,
         userId: request.roll_no,
         metadata: { requestId, action },
-        level: "medium"
+        level: "medium",
       });
     } catch (error) {
       console.error("Action failed:", error);
-      setNotification({ message: "Failed to process request. Please try again.", type: "error" });
+      setNotification({
+        message: "Failed to process request. Please try again.",
+        type: "error",
+      });
       setTimeout(() => setNotification(null), 5000);
     } finally {
       setIsActioning(null);
@@ -474,11 +493,14 @@ export default function FacultyDashboard() {
         message: `Faculty Advisor ${user?.name} ${action}d parent details for student ${studentId}.`,
         userId: studentId,
         metadata: { studentId, action },
-        level: "medium"
+        level: "medium",
       });
     } catch (error) {
       console.error("Failed to approve/reject parent details:", error);
-      setNotification({ message: "Failed to process action. Please try again.", type: "error" });
+      setNotification({
+        message: "Failed to process action. Please try again.",
+        type: "error",
+      });
       setTimeout(() => setNotification(null), 5000);
     } finally {
       setIsActioning(null);
@@ -675,7 +697,9 @@ export default function FacultyDashboard() {
           >
             Pending
             {requests.length > 0 && (
-              <span className={`min-w-[1.1rem] h-4 px-1.5 rounded-full flex items-center justify-center text-[8px] font-bold leading-none ${viewMode === "pending" ? "bg-background text-primary" : "bg-primary text-background"}`}>
+              <span
+                className={`min-w-[1.1rem] h-4 px-1.5 rounded-full flex items-center justify-center text-[8px] font-bold leading-none ${viewMode === "pending" ? "bg-background text-primary" : "bg-primary text-background"}`}
+              >
                 {requests.length}
               </span>
             )}
@@ -700,7 +724,9 @@ export default function FacultyDashboard() {
           >
             Parents
             {parentRequests.length > 0 && (
-              <span className={`min-w-[1.1rem] h-4 px-1.5 rounded-full flex items-center justify-center text-[8px] font-bold leading-none ${viewMode === "parents" ? "bg-background text-primary" : "bg-primary text-background"}`}>
+              <span
+                className={`min-w-[1.1rem] h-4 px-1.5 rounded-full flex items-center justify-center text-[8px] font-bold leading-none ${viewMode === "parents" ? "bg-background text-primary" : "bg-primary text-background"}`}
+              >
                 {parentRequests.length}
               </span>
             )}
@@ -917,34 +943,34 @@ export default function FacultyDashboard() {
                           </div>
                         </div>
                       </div>
-                        <div className="flex flex-col items-end gap-2">
-                          <div className="flex items-center gap-2">
-                            {req.is_extended && (
-                              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary/10 border border-secondary/20 text-secondary text-[9px] sm:text-[10px] font-black uppercase tracking-widest">
-                                <Clock size={12} />
-                                Extended
-                              </div>
-                            )}
-                            <div
-                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[9px] sm:text-[10px] font-black uppercase tracking-widest ${
-                                viewMode === "pending"
-                                  ? "bg-primary/5 border-primary/10 text-primary"
-                                  : "bg-green-500/10 border-green-500/20 text-green-500"
-                              }`}
-                            >
-                              {viewMode === "pending"
-                                ? "Pending Faculty Review"
-                                : req.faculty_approval
-                                  ? "Approved by You & Out"
-                                  : "Approved (Not Required) & Out"}
+                      <div className="flex flex-col items-end gap-2">
+                        <div className="flex items-center gap-2">
+                          {req.is_extended && (
+                            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary/10 border border-secondary/20 text-secondary text-[9px] sm:text-[10px] font-black uppercase tracking-widest">
+                              <Clock size={12} />
+                              Extended
                             </div>
+                          )}
+                          <div
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[9px] sm:text-[10px] font-black uppercase tracking-widest ${
+                              viewMode === "pending"
+                                ? "bg-primary/5 border-primary/10 text-primary"
+                                : "bg-green-500/10 border-green-500/20 text-green-500"
+                            }`}
+                          >
+                            {viewMode === "pending"
+                              ? "Pending Faculty Review"
+                              : req.faculty_approval
+                                ? "Approved by You & Out"
+                                : "Approved (Not Required) & Out"}
                           </div>
-                          <p className="text-[9px] text-primary/60 font-black tracking-widest uppercase">
-                            {expandedRequests[req.$id]
-                              ? "Click to collapse"
-                              : "Click to view details"}
-                          </p>
                         </div>
+                        <p className="text-[9px] text-primary/60 font-black tracking-widest uppercase">
+                          {expandedRequests[req.$id]
+                            ? "Click to collapse"
+                            : "Click to view details"}
+                        </p>
+                      </div>
                     </div>
 
                     <AnimatePresence>
@@ -1066,7 +1092,10 @@ export default function FacultyDashboard() {
                                         Call Parent
                                       </a>
                                       <button
-                                        disabled={isSendingEmail[req.$id] || req.mail_sent}
+                                        disabled={
+                                          isSendingEmail[req.$id] ||
+                                          req.mail_sent
+                                        }
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           handleEmailParent(req);
@@ -1074,7 +1103,11 @@ export default function FacultyDashboard() {
                                         className="px-4 py-2 bg-primary text-background disabled:bg-gray-400/20 disabled:text-gray-500/60 disabled:border disabled:border-gray-500/10 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:cursor-not-allowed disabled:hover:scale-100"
                                       >
                                         <Mail size={12} />
-                                        {isSendingEmail[req.$id] ? "Sending..." : (req.mail_sent ? "Email Sent" : "Email Parent")}
+                                        {isSendingEmail[req.$id]
+                                          ? "Sending..."
+                                          : req.mail_sent
+                                            ? "Email Sent"
+                                            : "Email Parent"}
                                       </button>
                                     </div>
                                   </div>
@@ -1191,7 +1224,9 @@ export default function FacultyDashboard() {
               </span>
               <button
                 disabled={currentPage === totalPages}
-                onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                onClick={() =>
+                  setCurrentPage((prev) => Math.min(totalPages, prev + 1))
+                }
                 className="px-6 py-3 bg-primary/10 text-primary text-[10px] font-black uppercase tracking-widest rounded-full hover:bg-primary hover:text-background disabled:opacity-50 transition-all cursor-pointer"
               >
                 Next
