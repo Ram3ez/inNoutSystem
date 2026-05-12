@@ -33,7 +33,6 @@ export const COLLECTIONS = {
   OUTING_ARCHIVE: "outing_archive",
   CARETAKER: "coll_caretaker",
   FACULTY: "coll_faculty",
-  FACIAL_EMBEDDINGS: "facial_embeddings",
   FACIAL_EMBEDDINGS_NEW: "facial_embeddings_new",
   FACIAL_EMBEDDINGS_EDGE: "facial_embeddings_edge",
   STAFF_DETAILS: "staff_details",

@@ -1,0 +1,28 @@
+# Dependencies
+node_modules
+.npm
+npm-debug.log
+
+# Next.js Build Output
+.next
+out
+build
+
+# Environment & Secrets
+.env
+.env*.local
+.vercel
+
+# Git
+.git
+.gitignore
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Documentation & IDEs
+.vscode
+.idea
+*.md
+LICENSE
