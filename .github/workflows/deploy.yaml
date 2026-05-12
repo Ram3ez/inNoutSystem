@@ -35,5 +35,8 @@ jobs:
         with:
           context: .
           push: true
-          # Use the new lowercase env variable here
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          build-args: |
+            NEXT_PUBLIC_APPWRITE_ENDPOINT=${{ secrets.NEXT_PUBLIC_APPWRITE_ENDPOINT }}
+            NEXT_PUBLIC_APPWRITE_PROJECT_ID=${{ secrets.NEXT_PUBLIC_APPWRITE_PROJECT_ID }}
+            NEXT_PUBLIC_DISABLE_REALTIME=${{ secrets.NEXT_PUBLIC_DISABLE_REALTIME }}
