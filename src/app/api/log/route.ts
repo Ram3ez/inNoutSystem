@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
-import { serverTablesDB } from '@/lib/server/appwrite';
+import { getServerTablesDB } from '@/lib/server/appwrite';
 import { DB_ID, COLLECTIONS, formatToISTFull } from '@/lib/constants';
 import { ID } from 'appwrite';
 import fs from 'fs';
@@ -29,7 +29,7 @@ export async function POST(req: Request) {
       /**
        * Primary Storage: Appwrite TablesDB
        */
-      await serverTablesDB.createRow({
+      await getServerTablesDB().createRow({
         databaseId: DB_ID,
         tableId: COLLECTIONS.AUDIT_LOGS,
         rowId: ID.unique(),

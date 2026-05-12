@@ -54,5 +54,9 @@ const createAdminClient = () => {
   };
 };
 
-const adminClient = createAdminClient();
-export const serverTablesDB = adminClient.tablesDB;
+/**
+ * Lazy-loaded Server TablesDB
+ * This ensures the client is only initialized when actually called at runtime,
+ * preventing build-time crashes when environment variables are missing.
+ */
+export const getServerTablesDB = () => createAdminClient().tablesDB;
