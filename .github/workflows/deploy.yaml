@@ -6,7 +6,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build-and-push:
@@ -18,6 +17,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # This step converts the repo name to lowercase
+      - name: Prepare Lowercase Image Name
+        run: |
+          echo "IMAGE_NAME=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -31,4 +35,5 @@ jobs:
         with:
           context: .
           push: true
+          # Use the new lowercase env variable here
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
