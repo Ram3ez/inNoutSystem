@@ -356,18 +356,6 @@ export default function Dashboard() {
               }}
             />
           )}
-          {isCaretaker && (
-            <ActionCard
-              title="test"
-              subtitle="Leave Management Console"
-              icon={<ShieldCheck className="text-secondary" size={32} />}
-              delay={0.35}
-              onClick={() => {
-                startLoading();
-                router.push("/test");
-              }}
-            />
-          )}
           {isFaculty && (
             <ActionCard
               title="Faculty Portal"
