@@ -54,4 +54,5 @@ const createAdminClient = () => {
   };
 };
 
-export const { tablesDB: serverTablesDB } = createAdminClient();
+const adminClient = createAdminClient();
+export const serverTablesDB = adminClient.tablesDB;

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+export const dynamic = 'force-dynamic';
 import { serverTablesDB } from '@/lib/server/appwrite';
 import { DB_ID, COLLECTIONS, formatToISTFull } from '@/lib/constants';
 import { ID } from 'appwrite';

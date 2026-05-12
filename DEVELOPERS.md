@@ -53,6 +53,32 @@ export default function MyPage() {
 
 ---
 
+## 🏠 Linking to the Homepage
+
+To add a new card to the main dashboard (`src/app/page.tsx`), use the `ActionCard` component. You must verify the user's role before rendering the card to prevent UI clutter.
+
+### Implementation Pattern:
+
+```tsx
+{isAdmin && (
+  <ActionCard
+    title="New Feature"
+    subtitle="Feature Description"
+    icon={<Code size={32} className="text-secondary" />}
+    delay={0.4}
+    onClick={() => {
+      startLoading(); // Always trigger global loader
+      router.push("/new-feature");
+    }}
+  />
+)}
+```
+
+> [!IMPORTANT]
+> Do **not** use semicolons `;` inside JSX curly braces `{}`. They will cause a syntax error in React.
+
+---
+
 ## 🔐 Authentication & Global State
 
 ### `useAuth` (The Power Hook)

@@ -44,9 +44,6 @@ The Appwrite instance runs inside Docker containers. The `appwrite` folder on th
 *   **Start/Restart**: `docker compose up -d`
 *   **Stop**: `docker compose down`
 
-> [!NOTE]
-> All external port mappings and network configurations for the Appwrite services are defined within the `docker-compose.yml` file.
-
 ---
 
 ## 🚀 Next.js Frontend (PM2)
@@ -89,3 +86,7 @@ Audit logs are stored in the **repository root** (outside the `.next` directory)
 
 *   **Audit Log Path**: `./logs/audit.log`
 *   **Console Logs**: Viewable via `pm2 logs hostelSystem`
+
+---
+
+_Created and Maintained for NIT Puducherry._
