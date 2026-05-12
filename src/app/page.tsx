@@ -16,7 +16,6 @@ import {
   ChevronRight,
   ScanFace,
   AlertCircle,
-  CheckCircle2,
   Activity,
   UserCheck,
 } from "lucide-react";
@@ -27,11 +26,8 @@ import { LoadingIndicator } from "@/components/LoadingIndicator";
 import { useLoading } from "@/context/LoadingContext";
 import { useRouter } from "next/navigation";
 
-import { databases, tablesDB, fetchAllRows, Query } from "@/lib/appwrite";
-import { format } from "date-fns";
+import { fetchAllRows, Query } from "@/lib/appwrite";
 import { formatToIST } from "@/lib/constants";
-import { loadFaceCache } from "@/lib/faceCache";
-import { getLandmarker } from "@/lib/aiEngine";
 
 export default function Dashboard() {
   const {

@@ -11,8 +11,10 @@ A premium, touchless biometric hostel management system built for **NIT Puducher
 ---
 
 ## 📖 Documentation
-*   [Server Maintenance & Deployment Guide](MAINTENANCE.md)
-*   [Project Structure & Maintenance Guide](PROJECT_STRUCTURE.md)
+
+- [Server Maintenance & Deployment Guide](MAINTENANCE.md)
+- [Project Structure & Maintenance Guide](PROJECT_STRUCTURE.md)
+- [Developer Onboarding & API Guide](DEVELOPERS.md)
 
 ---
 
@@ -108,11 +110,12 @@ A premium, touchless biometric hostel management system built for **NIT Puducher
 - **Biometric Audit Trails**: Critical transaction logs (Outing/Leave) now permanently capture the **biometric confidence score** (e.g., 98.5%) for forensic verification.
 - **Selective Persistence Registry**: Implements a dual-stream logging strategy. High-frequency debugging events (Recognition/Conflict) are ephemeral (console-only), while high-value transactions are persistently archived.
 
-### 11. Unified Notification Standardization
+### 11. Developer Experience & Standardization
 
-- **Non-Blocking Feedback**: Replaced legacy browser `alert()` popups with a standardized, state-based toast notification system across all administrative and student portals.
-- **High-Altitude Layering**: All notifications utilize a consistent `z-[100]` elevation, ensuring visibility above the "Top Layer" of modals and backdrop filters.
-- **Aesthetic Continuity**: Notifications feature institutional glassmorphism, contextual Lucide-React iconography, and Framer Motion micro-animations for a premium UX feel.
+- **`BasePage` UI Framework**: Introduced a standardized page wrapper that enforces the site's premium aesthetics (glassmorphism, animations) and manages theme consistency (Light/Dark mode) automatically.
+- **Automated RBAC Protection**: New pages can now be secured in seconds using boolean props like `requireAdmin`, `requireFaculty`, or `requireCaretaker`, with built-in silent redirects for unauthorized users.
+- **Reference Sandbox**: A dedicated `Demo.tsx` reference component provides developers with a complete blueprint for standard grid layouts, interactive elements, and micro-animations.
+- **Comprehensive API Documentation**: The new `DEVELOPERS.md` manual provides clear examples for using the Authentication API, global loading bars, and the system audit logging utility.
 
 ---
 

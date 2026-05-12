@@ -31,7 +31,10 @@ src/
 ├── components/           # Shared UI Components (Glassmorphism)
 │   ├── GradientBackground.tsx
 │   ├── Navigation.tsx
-│   └── LoadingIndicator.tsx
+│   ├── LoadingIndicator.tsx
+│   ├── BasePage.tsx          # Standardized layout wrapper
+│   └── Demo.tsx              # UI pattern reference
+├── DEVELOPERS.md             # Developer onboarding & API guide
 ├── context/              # Global State Management
 │   ├── AuthContext.tsx   # RBAC & Appwrite Session management
 │   └── LoadingContext.tsx # Global progress & navigation loading
@@ -71,6 +74,8 @@ Reusable UI components.
 - `Navigation.tsx`: Main sidebar/navbar.
 - `OfflineSyncManager.tsx`: Handles data synchronization when coming back online.
 - `LoadingIndicator.tsx`: Global or component-level loaders.
+- `BasePage.tsx`: Standardized layout wrapper with role-based protection.
+- `Demo.tsx`: Developer reference for UI patterns and design language.
 
 ### `src/context/`
 React Context providers for global state management.
@@ -118,9 +123,10 @@ Static assets.
 6. **Selective Observability**: High-frequency events (Recognition/Conflict) are routed to terminal consoles only, while high-value transactions are persistently stored with identity attribution and confidence scores.
 
 ### Offline-First Architecture & Sync
-1. **Local Mutations**: If the kiosk loses internet, successful biometric matches are stored locally using IndexedDB (`src/lib/idb.ts`).
-2. **Queuing**: Un-synced records are placed in an offline queue (`src/lib/offlineQueue.ts`).
-3. **Background Sync**: `OfflineSyncManager.tsx` and `syncService.ts` monitor network status (`navigator.onLine`). When restored, they automatically batch-upload the queued transactions to Appwrite TablesDB.
+1. **Local Mutations**: If the kiosk loses internet, successful biometric matches and administrative actions are stored locally using IndexedDB (`src/lib/idb.ts`) and `localStorage`.
+2. **Queuing**: Un-synced records, including biometric `outings` and system `audit_logs`, are placed in an offline queue (`src/lib/offlineQueue.ts`).
+3. **Background Sync**: `OfflineSyncManager.tsx` and `syncService.ts` monitor network status. When restored, they automatically batch-upload queued transactions and logs to Appwrite, ensuring audit integrity.
+4. **Visual Indicators**: A persistent "Offline Mode" badge (implemented in `OfflineSyncManager.tsx`) alerts users when they are disconnected and pending sync.
 
 ---
 

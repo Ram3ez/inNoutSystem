@@ -2,10 +2,10 @@
 
 /**
  * AuditLogsPage - System Observability Dashboard
- * 
- * This page provides a high-performance, responsive interface for administrators to 
+ *
+ * This page provides a high-performance, responsive interface for administrators to
  * monitor system transactions, security events, and administrative overrides.
- * 
+ *
  * Features:
  * - Dual-View Architecture: High-density Table for desktop, Card List for mobile.
  * - Severity Filtering: Real-time filtering by High/Medium/Low priority levels.
@@ -92,7 +92,9 @@ export default function AuditLogsPage() {
   // Client-side filtering for search query (action, message, user)
   const filteredLogs = logs.filter((log) => {
     const query = searchQuery.toLowerCase();
-    const dateStr = formatToISTFull(log.$createdAt || log.timestamp).toLowerCase();
+    const dateStr = formatToISTFull(
+      log.$createdAt || log.timestamp,
+    ).toLowerCase();
     return (
       (log.action || "").toLowerCase().includes(query) ||
       (log.message || "").toLowerCase().includes(query) ||
@@ -210,11 +212,21 @@ export default function AuditLogsPage() {
                 <table className="w-full border-collapse table-fixed">
                   <thead>
                     <tr className="border-b border-primary/5 bg-primary/[0.02]">
-                      <th className="w-[200px] px-6 py-6 text-left text-[10px] font-black text-primary/40 uppercase tracking-[0.2em]">Timestamp (IST)</th>
-                      <th className="w-[120px] px-6 py-6 text-left text-[10px] font-black text-primary/40 uppercase tracking-[0.2em]">Severity</th>
-                      <th className="w-[180px] px-6 py-6 text-left text-[10px] font-black text-primary/40 uppercase tracking-[0.2em]">Event Type</th>
-                      <th className="w-[220px] px-6 py-6 text-left text-[10px] font-black text-primary/40 uppercase tracking-[0.2em]">Origin User</th>
-                      <th className="px-6 py-6 text-left text-[10px] font-black text-primary/40 uppercase tracking-[0.2em]">Transaction Details</th>
+                      <th className="w-[200px] px-6 py-6 text-left text-[10px] font-black text-primary/40 uppercase tracking-[0.2em]">
+                        Timestamp (IST)
+                      </th>
+                      <th className="w-[120px] px-6 py-6 text-left text-[10px] font-black text-primary/40 uppercase tracking-[0.2em]">
+                        Severity
+                      </th>
+                      <th className="w-[180px] px-6 py-6 text-left text-[10px] font-black text-primary/40 uppercase tracking-[0.2em]">
+                        Event Type
+                      </th>
+                      <th className="w-[220px] px-6 py-6 text-left text-[10px] font-black text-primary/40 uppercase tracking-[0.2em]">
+                        Origin User
+                      </th>
+                      <th className="px-6 py-6 text-left text-[10px] font-black text-primary/40 uppercase tracking-[0.2em]">
+                        Transaction Details
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-primary/5">
@@ -230,27 +242,51 @@ export default function AuditLogsPage() {
                         <td className="px-6 py-6">
                           <div className="flex items-center space-x-2 text-primary/60">
                             <Clock size={14} className="text-secondary/50" />
-                            <span className="text-[10px] font-bold">{formatToISTFull(log.$createdAt || log.timestamp)}</span>
+                            <span className="text-[10px] font-bold">
+                              {formatToISTFull(log.$createdAt || log.timestamp)}
+                            </span>
                           </div>
                         </td>
                         <td className="px-6 py-6">
-                          <span className={`inline-block px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${
-                            log.level === "high" ? "bg-red-500/10 text-red-500 border-red-500/20" :
-                            log.level === "medium" ? "bg-amber-500/10 text-amber-500 border-amber-500/20" :
-                            "bg-blue-500/10 text-blue-500 border-blue-500/20"
-                          }`}>{log.level}</span>
+                          <span
+                            className={`inline-block px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${
+                              log.level === "high"
+                                ? "bg-red-500/10 text-red-500 border-red-500/20"
+                                : log.level === "medium"
+                                  ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                                  : "bg-blue-500/10 text-blue-500 border-blue-500/20"
+                            }`}
+                          >
+                            {log.level}
+                          </span>
                         </td>
                         <td className="px-6 py-6 overflow-hidden">
-                          <span className="block truncate px-3 py-1.5 bg-primary/5 rounded-lg text-[9px] font-black text-primary/70 uppercase tracking-widest border border-primary/5" title={log.action}>{log.action}</span>
+                          <span
+                            className="block truncate px-3 py-1.5 bg-primary/5 rounded-lg text-[9px] font-black text-primary/70 uppercase tracking-widest border border-primary/5"
+                            title={log.action}
+                          >
+                            {log.action}
+                          </span>
                         </td>
                         <td className="px-6 py-6">
                           <div className="flex items-center space-x-3">
-                            <div className="w-8 h-8 rounded-full bg-primary/5 flex items-center justify-center border border-primary/5"><User size={14} className="text-primary/30" /></div>
-                            <div className="truncate"><p className="text-[10px] font-black uppercase truncate">{log.user_name}</p><p className="text-[9px] font-bold text-primary/30 truncate uppercase">{log.user_id}</p></div>
+                            <div className="w-8 h-8 rounded-full bg-primary/5 flex items-center justify-center border border-primary/5">
+                              <User size={14} className="text-primary/30" />
+                            </div>
+                            <div className="truncate">
+                              <p className="text-[10px] font-black uppercase truncate">
+                                {log.user_name}
+                              </p>
+                              <p className="text-[9px] font-bold text-primary/30 truncate uppercase">
+                                {log.user_id}
+                              </p>
+                            </div>
                           </div>
                         </td>
                         <td className="px-6 py-6">
-                          <p className="text-xs text-primary/70 font-bold uppercase truncate">{log.message}</p>
+                          <p className="text-xs text-primary/70 font-bold uppercase truncate">
+                            {log.message}
+                          </p>
                         </td>
                       </motion.tr>
                     ))}
@@ -273,26 +309,43 @@ export default function AuditLogsPage() {
                     className="p-6 hover:bg-primary/[0.02] active:bg-primary/[0.05] transition-all cursor-pointer"
                   >
                     <div className="flex items-center justify-between mb-4">
-                      <span className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest border ${
-                        log.level === "high" ? "bg-red-500/10 text-red-500 border-red-500/20" :
-                        log.level === "medium" ? "bg-amber-500/10 text-amber-500 border-amber-500/20" :
-                        "bg-blue-500/10 text-blue-500 border-blue-500/20"
-                      }`}>{log.level}</span>
+                      <span
+                        className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest border ${
+                          log.level === "high"
+                            ? "bg-red-500/10 text-red-500 border-red-500/20"
+                            : log.level === "medium"
+                              ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                              : "bg-blue-500/10 text-blue-500 border-blue-500/20"
+                        }`}
+                      >
+                        {log.level}
+                      </span>
                       <div className="flex items-center space-x-2 text-primary/30">
                         <Clock size={12} />
-                        <span className="text-[9px] font-bold">{formatToISTFull(log.$createdAt || log.timestamp)}</span>
+                        <span className="text-[9px] font-bold">
+                          {formatToISTFull(log.$createdAt || log.timestamp)}
+                        </span>
                       </div>
                     </div>
                     <div className="flex items-center justify-between items-start gap-4">
                       <div className="space-y-3 flex-1">
-                        <div className="inline-block px-3 py-1.5 bg-primary/5 rounded-lg text-[10px] font-black text-secondary uppercase tracking-widest border border-primary/5">{log.action}</div>
-                        <p className="text-xs text-primary/80 font-bold leading-relaxed">{log.message}</p>
+                        <div className="inline-block px-3 py-1.5 bg-primary/5 rounded-lg text-[10px] font-black text-secondary uppercase tracking-widest border border-primary/5">
+                          {log.action}
+                        </div>
+                        <p className="text-xs text-primary/80 font-bold leading-relaxed">
+                          {log.message}
+                        </p>
                         <div className="flex items-center space-x-3 text-primary/40 pt-2">
                           <User size={14} className="text-primary/20" />
-                          <p className="text-[10px] font-bold uppercase truncate">{log.user_name} • {log.user_id}</p>
+                          <p className="text-[10px] font-bold uppercase truncate">
+                            {log.user_name} • {log.user_id}
+                          </p>
                         </div>
                       </div>
-                      <ChevronRight size={16} className="text-primary/10 mt-1" />
+                      <ChevronRight
+                        size={16}
+                        className="text-primary/10 mt-1"
+                      />
                     </div>
                   </motion.div>
                 ))}
@@ -320,55 +373,87 @@ export default function AuditLogsPage() {
               >
                 <div className="p-8 border-b border-primary/5 flex items-center justify-between">
                   <div className="flex items-center space-x-4">
-                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${
-                      selectedLog.level === "high" ? "bg-red-500/10 border-red-500/20 text-red-500" :
-                      selectedLog.level === "medium" ? "bg-amber-500/10 border-amber-500/20 text-amber-500" :
-                      "bg-blue-500/10 border-blue-500/20 text-blue-500"
-                    }`}>
+                    <div
+                      className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${
+                        selectedLog.level === "high"
+                          ? "bg-red-500/10 border-red-500/20 text-red-500"
+                          : selectedLog.level === "medium"
+                            ? "bg-amber-500/10 border-amber-500/20 text-amber-500"
+                            : "bg-blue-500/10 border-blue-500/20 text-blue-500"
+                      }`}
+                    >
                       <Activity size={24} />
                     </div>
                     <div>
-                      <h3 className="text-lg font-black text-primary uppercase tracking-tight">Transaction Details</h3>
-                      <p className="text-[10px] font-bold text-primary/40 uppercase tracking-widest">{selectedLog.$id}</p>
+                      <h3 className="text-lg font-black text-primary uppercase tracking-tight">
+                        Transaction Details
+                      </h3>
+                      <p className="text-[10px] font-bold text-primary/40 uppercase tracking-widest">
+                        {selectedLog.$id}
+                      </p>
                     </div>
                   </div>
-                  <button 
+                  <button
                     onClick={() => setSelectedLog(null)}
                     className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center text-primary/40 hover:bg-primary/10 transition-colors"
                   >
                     <ArrowLeft size={20} />
                   </button>
                 </div>
-                
+
                 <div className="p-8 space-y-8 max-h-[70vh] overflow-y-auto no-scrollbar">
                   <div className="grid grid-cols-2 gap-8">
                     <div className="space-y-1">
-                      <p className="text-[10px] font-black text-primary/20 uppercase tracking-[0.2em]">Timestamp (IST)</p>
-                      <p className="text-sm font-bold text-primary">{formatToISTFull(selectedLog.$createdAt || selectedLog.timestamp)}</p>
+                      <p className="text-[10px] font-black text-primary/20 uppercase tracking-[0.2em]">
+                        Timestamp (IST)
+                      </p>
+                      <p className="text-sm font-bold text-primary">
+                        {formatToISTFull(
+                          selectedLog.$createdAt || selectedLog.timestamp,
+                        )}
+                      </p>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-[10px] font-black text-primary/20 uppercase tracking-[0.2em]">Event Type</p>
-                      <p className="text-sm font-black text-secondary uppercase">{selectedLog.action}</p>
+                      <p className="text-[10px] font-black text-primary/20 uppercase tracking-[0.2em]">
+                        Event Type
+                      </p>
+                      <p className="text-sm font-black text-secondary uppercase">
+                        {selectedLog.action}
+                      </p>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-[10px] font-black text-primary/20 uppercase tracking-[0.2em]">Origin User</p>
-                      <p className="text-sm font-bold text-primary">{selectedLog.user_name}</p>
-                      <p className="text-[10px] font-bold text-primary/40 tracking-widest">{selectedLog.user_id}</p>
+                      <p className="text-[10px] font-black text-primary/20 uppercase tracking-[0.2em]">
+                        Origin User
+                      </p>
+                      <p className="text-sm font-bold text-primary">
+                        {selectedLog.user_name}
+                      </p>
+                      <p className="text-[10px] font-bold text-primary/40 tracking-widest">
+                        {selectedLog.user_id}
+                      </p>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-[10px] font-black text-primary/20 uppercase tracking-[0.2em]">Log Severity</p>
-                      <span className={`inline-block px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${
-                        selectedLog.level === "high" ? "bg-red-500/10 text-red-500 border-red-500/20" :
-                        selectedLog.level === "medium" ? "bg-amber-500/10 text-amber-500 border-amber-500/20" :
-                        "bg-blue-500/10 text-blue-500 border-blue-500/20"
-                      }`}>
+                      <p className="text-[10px] font-black text-primary/20 uppercase tracking-[0.2em]">
+                        Log Severity
+                      </p>
+                      <span
+                        className={`inline-block px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${
+                          selectedLog.level === "high"
+                            ? "bg-red-500/10 text-red-500 border-red-500/20"
+                            : selectedLog.level === "medium"
+                              ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                              : "bg-blue-500/10 text-blue-500 border-blue-500/20"
+                        }`}
+                      >
                         {selectedLog.level}
                       </span>
                     </div>
                   </div>
 
                   <div className="space-y-3">
-                    <p className="text-[10px] font-black text-primary/20 uppercase tracking-[0.2em]">Activity Message</p>
+                    <p className="text-[10px] font-black text-primary/20 uppercase tracking-[0.2em]">
+                      Activity Message
+                    </p>
                     <div className="p-6 bg-primary/[0.03] rounded-3xl border border-primary/5">
                       <p className="text-sm font-bold text-primary/80 leading-relaxed uppercase tracking-tight">
                         {selectedLog.message}
@@ -378,7 +463,9 @@ export default function AuditLogsPage() {
 
                   {selectedLog.metadata && (
                     <div className="space-y-3">
-                      <p className="text-[10px] font-black text-primary/20 uppercase tracking-[0.2em]">Extended Metadata</p>
+                      <p className="text-[10px] font-black text-primary/20 uppercase tracking-[0.2em]">
+                        Extended Metadata
+                      </p>
                       <div className="p-6 bg-primary/[0.02] rounded-3xl border border-primary/5 overflow-hidden">
                         <pre className="text-xs text-primary/40 font-mono whitespace-pre-wrap leading-relaxed break-all">
                           {typeof selectedLog.metadata === "string"
