@@ -2,9 +2,9 @@ import { MetadataRoute } from 'next';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'NITPY Hostel System',
-    short_name: 'NITPY Hostel',
-    description: 'Advanced biometric hostel management system',
+    name: 'NITPY Student Portal',
+    short_name: 'NITPY Portal',
+    description: 'Advanced biometric student management portal',
     start_url: '/',
     display: 'standalone',
     background_color: '#003366',

@@ -14,8 +14,8 @@ import { OfflineSyncManager } from "@/components/OfflineSyncManager";
 import { Suspense } from "react";
 
 export const metadata: Metadata = {
-  title: "NITPY Hostel System",
-  description: "Advanced biometric hostel management system",
+  title: "NITPY Student Portal",
+  description: "Advanced biometric student management portal",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",

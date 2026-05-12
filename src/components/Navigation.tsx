@@ -46,7 +46,7 @@ export const Navigation: React.FC = () => {
                     </div>
                     <div className="flex flex-col justify-center">
                         <span className="font-black tracking-tighter text-primary text-base sm:text-3xl leading-none uppercase">NITPY</span>
-                        <span className="text-[7px] sm:text-[9px] font-black text-primary/40 uppercase tracking-[0.2em] sm:tracking-[0.4em] leading-none mt-1.5 sm:mt-2">Hostel Management System</span>
+                        <span className="text-[7px] sm:text-[9px] font-black text-primary/40 uppercase tracking-[0.2em] sm:tracking-[0.4em] leading-none mt-1.5 sm:mt-2">Student Portal</span>
                     </div>
                 </button>
 

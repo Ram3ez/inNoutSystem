@@ -1,6 +1,6 @@
-# NITPY Hostel System — Modern Web Portal
+# NITPY Student Portal — Modern Web Portal
 
-This repository contains the Next.js frontend and Appwrite integration for the NIT Puducherry Hostel Management System. It features a high-performance biometric pipeline, offline-first data synchronization, and a premium institutional design language.
+This repository contains the Next.js frontend and Appwrite integration for the NIT Puducherry Student Portal. It features a high-performance biometric pipeline, offline-first data synchronization, and a premium institutional design language.
 
 ## 🚀 Key Features
 - **Biometric Face Recognition**: Multithreaded extraction using Web Workers and ONNX Runtime.

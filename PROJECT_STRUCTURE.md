@@ -4,7 +4,7 @@ This document provides an overview of the project structure, the purpose of each
 
 ## Overview
 
-This is a **Next.js 16+** application using the **App Router** architecture. It serves as a hostel management system with advanced biometric (face recognition) capabilities.
+This is a **Next.js 16+** application using the **App Router** architecture. It serves as a Student Portal with advanced biometric (face recognition) capabilities.
 
 ### Tech Stack
 

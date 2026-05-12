@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
 
     if (type === "extension") {
       await transporter.sendMail({
-        from: `"Hostel Management System" <${process.env.SMTP_USER}>`,
+        from: `"Student Portal" <${process.env.SMTP_USER}>`,
         to: advisorEmail,
         subject: `Leave Extension Notification - ${studentName} (${studentRollNo})`,
         text:
@@ -118,7 +118,7 @@ export async function POST(req: NextRequest) {
           `- Phone: ${studentPhone || "N/A"}\n` +
           `- New Planned Return Date: ${newInDate}\n\n` +
           `Best regards,\n` +
-          `Hostel Management System`,
+          `Student Portal`,
         html: `
   <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #F8FAFC; padding: 40px 20px; color: #0F172A; text-align: center;">
     <div style="max-width: 580px; margin: 0 auto; background-color: #FFFFFF; border-radius: 16px; border: 1px solid #E2E8F0; overflow: hidden; text-align: left; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
@@ -129,7 +129,7 @@ export async function POST(req: NextRequest) {
           Leave Extension
         </h1>
         <p style="color: rgba(255, 255, 255, 0.7); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; margin: 6px 0 0 0;">
-          Hostel Management System
+          Student Portal
         </p>
       </div>
   
@@ -177,7 +177,7 @@ export async function POST(req: NextRequest) {
         <!-- Signature -->
         <p style="font-size: 14px; line-height: 22px; color: #475569; margin: 0;">
           Best regards,<br>
-          Hostel Management System
+          Student Portal
         </p>
       </div>
   
@@ -200,7 +200,7 @@ export async function POST(req: NextRequest) {
 
     // Send the email directly
     await transporter.sendMail({
-      from: `"Hostel Management System" <${process.env.SMTP_USER}>`,
+      from: `"Student Portal" <${process.env.SMTP_USER}>`,
       to: parentEmail,
       subject: `Leave Notification for your ward ${studentName}`,
       text:
@@ -217,7 +217,7 @@ export async function POST(req: NextRequest) {
         `Please feel free to contact the advisor if you have any issues or concerns.\n\n` +
         `Best regards,\n` +
         `${advisorName}\n` +
-        `Hostel Management System`,
+        `Student Portal`,
       html: `
 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #F8FAFC; padding: 40px 20px; color: #0F172A; text-align: center;">
   <div style="max-width: 580px; margin: 0 auto; background-color: #FFFFFF; border-radius: 16px; border: 1px solid #E2E8F0; overflow: hidden; text-align: left; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
@@ -228,7 +228,7 @@ export async function POST(req: NextRequest) {
         Leave Notification
       </h1>
       <p style="color: rgba(255, 255, 255, 0.7); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; margin: 6px 0 0 0;">
-        Hostel Management System
+        Student Portal
       </p>
     </div>
 
@@ -288,7 +288,7 @@ export async function POST(req: NextRequest) {
       <p style="font-size: 14px; line-height: 22px; color: #475569; margin: 0;">
         Best regards,<br>
         <strong style="color: #0F172A;">${advisorName || "Faculty Advisor"}</strong><br>
-        Hostel Management System
+        Student Portal
       </p>
     </div>
 
