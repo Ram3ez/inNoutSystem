@@ -68,7 +68,7 @@ export default function AuditLogsPage() {
   const fetchLogs = async () => {
     setIsLoading(true);
     try {
-      const queries = [Query.orderDesc("timestamp"), Query.limit(limit)];
+      const queries = [Query.orderDesc("$createdAt"), Query.limit(limit)];
 
       // Note: We filter by level server-side for performance
       if (levelFilter !== "all") {
@@ -92,10 +92,10 @@ export default function AuditLogsPage() {
   // Client-side filtering for search query (action, message, user)
   const filteredLogs = logs.filter(
     (log) =>
-      log.action?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.message?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.user_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.user_id?.toLowerCase().includes(searchQuery.toLowerCase()),
+      (log.action || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (log.message || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (log.user_name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (log.user_id || "").toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   if (authLoading || (user && !isAdmin)) {
@@ -226,7 +226,7 @@ export default function AuditLogsPage() {
                         <td className="px-6 py-6">
                           <div className="flex items-center space-x-2 text-primary/60">
                             <Clock size={14} className="text-secondary/50" />
-                            <span className="text-[10px] font-bold">{formatToISTFull(log.timestamp)}</span>
+                            <span className="text-[10px] font-bold">{formatToISTFull(log.$createdAt || log.timestamp)}</span>
                           </div>
                         </td>
                         <td className="px-6 py-6">
@@ -236,8 +236,8 @@ export default function AuditLogsPage() {
                             "bg-blue-500/10 text-blue-500 border-blue-500/20"
                           }`}>{log.level}</span>
                         </td>
-                        <td className="px-6 py-6">
-                          <span className="px-3 py-1.5 bg-primary/5 rounded-lg text-[9px] font-black text-primary/70 uppercase tracking-widest border border-primary/5">{log.action}</span>
+                        <td className="px-6 py-6 overflow-hidden">
+                          <span className="block truncate px-3 py-1.5 bg-primary/5 rounded-lg text-[9px] font-black text-primary/70 uppercase tracking-widest border border-primary/5" title={log.action}>{log.action}</span>
                         </td>
                         <td className="px-6 py-6">
                           <div className="flex items-center space-x-3">
@@ -276,7 +276,7 @@ export default function AuditLogsPage() {
                       }`}>{log.level}</span>
                       <div className="flex items-center space-x-2 text-primary/30">
                         <Clock size={12} />
-                        <span className="text-[9px] font-bold">{formatToISTFull(log.timestamp)}</span>
+                        <span className="text-[9px] font-bold">{formatToISTFull(log.$createdAt || log.timestamp)}</span>
                       </div>
                     </div>
                     <div className="flex items-center justify-between items-start gap-4">
@@ -340,7 +340,7 @@ export default function AuditLogsPage() {
                   <div className="grid grid-cols-2 gap-8">
                     <div className="space-y-1">
                       <p className="text-[10px] font-black text-primary/20 uppercase tracking-[0.2em]">Timestamp (IST)</p>
-                      <p className="text-sm font-bold text-primary">{formatToISTFull(selectedLog.timestamp)}</p>
+                      <p className="text-sm font-bold text-primary">{formatToISTFull(selectedLog.$createdAt || selectedLog.timestamp)}</p>
                     </div>
                     <div className="space-y-1">
                       <p className="text-[10px] font-black text-primary/20 uppercase tracking-[0.2em]">Event Type</p>

@@ -313,6 +313,13 @@ function CaptureContent() {
             .catch(() => {});
         }
 
+        logTransaction({
+          action: "OFFLINE_CAPTURE",
+          message: `Student ${rollNumber} captured while offline. Pending cloud sync.`,
+          userId: rollNumber,
+          level: "low"
+        });
+
         setResultDialog({
           title: "Offline Capture",
           message: `${rollNumber}\n\nSAVED LOCALLY (OFFLINE)\nWILL SYNC WHEN ONLINE`,

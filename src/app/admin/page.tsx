@@ -270,7 +270,7 @@ export default function AdminPortal() {
       action: "CALENDAR_HOLIDAY_SET",
       message: `Admin set holiday ${holidayName} on ${selectedHolidayDate}.`,
       metadata: { holidayName, holidayDate: selectedHolidayDate, holidayType },
-      level: "high",
+      level: "medium",
     });
 
     fetchHolidays();
@@ -290,7 +290,7 @@ export default function AdminPortal() {
         action: "CALENDAR_HOLIDAY_DELETE",
         message: `Admin deleted holiday for date ${dateStr}.`,
         metadata: { holidayDate: dateStr },
-        level: "high",
+        level: "medium",
       });
 
       fetchHolidays();

@@ -1,5 +1,7 @@
 "use client";
 
+import { isSystemOnline, addToLogQueue } from "./offlineQueue";
+
 /**
  * Audit Logger Utility
  * Provides a standardized way to log database transactions and critical actions.
@@ -17,6 +19,7 @@ export interface LogData {
 
 /**
  * Sends a transaction log to the server for permanent storage in Appwrite.
+ * If the system is offline, it queues the log locally.
  * 
  * @param data - The log entry details
  */
@@ -62,14 +65,22 @@ export const logTransaction = async (data: LogData) => {
       }
     }
 
+    const payload = {
+      ...data,
+      userId: userId || "SYSTEM",
+      userName: userName || "SYSTEM",
+    };
+
+    if (!isSystemOnline()) {
+      console.log("[🛡️ AUDIT] System offline. Queuing log locally:", data.action);
+      addToLogQueue(payload);
+      return;
+    }
+
     await fetch("/api/log", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...data,
-        userId: userId || "SYSTEM",
-        userName: userName || "SYSTEM",
-      }),
+      body: JSON.stringify(payload),
     });
   } catch (err) {
     console.warn("[🛡️ AUDIT] Failed to record transaction log:", err);
