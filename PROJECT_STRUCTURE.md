@@ -154,6 +154,17 @@ Database collection IDs and environmental IDs are centrally managed in `src/lib/
 
 ---
 
+## 🚀 CI/CD Pipeline
+
+The project uses a fully automated deployment pipeline:
+
+1.  **Code Push**: Developer pushes to the `main` branch.
+2.  **GitHub Action**: Triggered by the push, it builds a Docker image (injecting `NEXT_PUBLIC_` variables from secrets) and pushes it to **GHCR**.
+3.  **Production Sync**: The production server runs **Watchtower**, which polls GHCR every 5 minutes.
+4.  **Auto-Deploy**: Watchtower detects the new image, pulls it, and restarts the `nextjs-prod` container seamlessly.
+
+---
+
 ## Maintenance Notes
 
 - **Updating Models**: Replace files in `public/models/` and update paths in the respective engine files in `src/lib/`.

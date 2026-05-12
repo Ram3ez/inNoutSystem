@@ -1,12 +1,12 @@
 # Server Maintenance & Deployment Guide
 
-This guide provides step-by-step instructions for managing the Appwrite backend (Docker) and the Next.js frontend (PM2) on the production server.
+This guide provides step-by-step instructions for managing the Appwrite backend (Docker) and the Next.js frontend on the production server.
 
 ---
 
 ## 🏗 Appwrite Backend (Docker)
 
-The Appwrite instance runs inside Docker containers. The `appwrite` folder on the server contains the configuration and data.
+The Appwrite instance runs inside its own Docker containers.
 
 ### 🛡 Backup & Restore
 
@@ -14,78 +14,95 @@ The Appwrite instance runs inside Docker containers. The `appwrite` folder on th
 > Always maintain a copy of your `.env` and `docker-compose.yml` files. These contain critical server configurations and encryption keys. Losing these may result in permanent data loss. **Note**: These files are automatically copied to the `backup` folder when running `backup.sh`.
 
 #### **Creating a Backup**
-1. Ensure `backup.sh` (from the `scripts/` folder) is placed inside the `appwrite` folder on the server.
-2. Execute the script:
-   ```bash
-   ./backup.sh
-   ```
-   This will generate a `backup` folder.
-3. Compress the backup for off-site storage:
-   ```bash
-   tar -cvzf backup.tar.gz ./backup/
-   ```
 
-#### **Restoring from Backup**
-1. Extract the backup archive:
-   ```bash
-   tar -xvzf backup.tar.gz
-   ```
-2. Ensure `restore.sh` (from the `scripts/` folder) is placed inside the `appwrite` folder (**not** inside the extracted `backup` folder).
-3. Run the restore script:
-   ```bash
-   ./restore.sh
-   ```
-4. Restart the Appwrite containers:
-   ```bash
-   docker compose up -d
-   ```
-
-### 🔄 Lifecycle Commands
-*   **Start/Restart**: `docker compose up -d`
-*   **Stop**: `docker compose down`
+1. Ensure `backup.sh` is placed inside the `appwrite` folder.
+2. Execute the script: `./backup.sh`
+3. Compress the resulting `backup` folder: `tar -cvzf backup.tar.gz ./backup/`
 
 ---
 
-## 🚀 Next.js Frontend (PM2)
+## 🚀 Primary Deployment: Docker Compose (Recommended)
 
-The Next.js application is deployed as a standalone server managed by PM2 for high availability.
+The frontend is deployed using a modern containerized approach with automatic updates via Watchtower.
 
-### 🏁 Initial Setup
-To start the server for the first time (the command is also saved in `scripts/pmScript`):
+### 🏁 Initial Server Setup (One-Time)
+
+To pull the private image from the GitHub Container Registry (GHCR), you must authorize your server using a **GitHub Personal Access Token (PAT)**.
+
+1. **Generate a PAT (Classic)** on GitHub with `read:packages` scope.
+2. **Login to GHCR** on your production server:
+   ```bash
+   docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+   ```
+3. **Configure Docker Config**: Ensure your `~/.docker/config.json` is accessible (Watchtower needs this to check for updates).
+
+### 🛠 Deployment with Docker Compose
+
+Create a `docker-compose.yml` file in your production directory:
+
+```yaml
+services:
+  nextjs:
+    image: ghcr.io/ram3ez/hostelsystemweb:latest
+    container_name: nextjs-prod
+    restart: always
+    environment:
+      - HOSTNAME=0.0.0.0
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.production
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    restart: always
+    environment:
+      - DOCKER_API_VERSION=1.40
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /home/student/.docker/config.json:/config.json:ro
+    command: --interval 300 --cleanup --label-enable
+```
+
+### 🔄 Automated Updates (Watchtower)
+
+- **Triggering a Deploy**: Simply push your changes to the `main` branch. GitHub Actions will build the image and push it to GHCR. Watchtower will detect the change and restart the container automatically.
+- **Manual Force Pull**:
+  ```bash
+  docker compose pull && docker compose up -d
+  ```
+
+---
+
+## 💾 Legacy Deployment: PM2 (Fallback)
+
+Use these steps if the Docker/containerized deployment is unavailable.
+
+### 🏁 PM2 Initial Setup
+
 ```bash
 PORT=3000 pm2 start .next/standalone/server.js --name "hostelSystem"
 pm2 save
 ```
 
-### 🛠 Post-Build Deployment Workflow
-Every time you make code changes and rebuild the application, follow this sequence:
+### 🛠 Manual Update Workflow
 
-1. **Build the project**:
-   ```bash
-   npm run build
-   ```
-2. **Sync Assets**:
-   Run the `moveScript.sh` (located in the `scripts/` folder) to copy the `public` and `static` folders to the standalone directory:
-   ```bash
-   ./scripts/moveScript.sh
-   ```
-3. **Reload the Server**:
-   ```bash
-   pm2 reload hostelSystem
-   ```
-
-### 📋 PM2 Management
-*   **Status**: `pm2 status`
-*   **Restart**: `pm2 restart hostelSystem`
+1. **Build the project**: `npm run build`
+2. **Sync Assets**: `./scripts/moveScript.sh` (copies public/static to standalone)
+3. **Reload Server**: `pm2 reload hostelSystem`
 
 ---
 
-## 📂 Logs & Persistence
+## 📂 Logs & Environment
 
-Audit logs are stored in the **repository root** (outside the `.next` directory). This ensures that running `npm run build` does not delete your historical log data.
-
-*   **Audit Log Path**: `./logs/audit.log`
-*   **Console Logs**: Viewable via `pm2 logs hostelSystem`
+- **Secrets**: All server-side secrets (`APPWRITE_API_KEY`, `INTERNAL_APPWRITE_ENDPOINT`) must be placed in the `.env.production` file on the server.
+- **Logs**:
+  - Docker Logs: `docker logs -f nextjs-prod`
+  - PM2 Logs: `pm2 logs hostelSystem`
+  - Update Logs: `docker logs -f watchtower`
 
 ---
 
