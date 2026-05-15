@@ -332,125 +332,21 @@ function CaptureContent() {
       let dbMessage = "";
 
       if (actionType === "Leave") {
-        const { rows: leavesForChecks } = await tablesDB.listRows({
+        const { rows: leaves } = await tablesDB.listRows({
           databaseId: DB_ID,
           tableId: COLLECTIONS.LEAVE,
-          queries: [Query.equal("roll_no", rollNumber)],
-        });
-
-        const latestLeaveForCheck = leavesForChecks.sort(
-          (a: any, b: any) =>
-            new Date(b.$createdAt).getTime() - new Date(a.$createdAt).getTime(),
-        )[0];
-
-        if (latestLeaveForCheck && !latestLeaveForCheck.exit_date_time) {
-          const { rows: outingsForChecks } = await tablesDB.listRows({
-            databaseId: DB_ID,
-            tableId: COLLECTIONS.OUTING,
-            queries: [Query.equal("roll_no", rollNumber)],
-          });
-          const activeOuting = outingsForChecks.find(
-            (doc: any) => !doc.in_time,
-          );
-
-          if (activeOuting) {
-            setResultDialog({
-              title: "Departure Denied",
-              message: `${rollNumber}\n\n⚠️ GRAVE ERROR: CURRENTLY OUT ON AN OUTING.\nCANNOT GO ON LEAVE UNTIL YOU RETURN.`,
-              type: "error",
-            });
-            setIsProcessing(false);
-            return;
-          }
-        }
-      } else {
-        const { rows: outingsForChecks } = await tablesDB.listRows({
-          databaseId: DB_ID,
-          tableId: COLLECTIONS.OUTING,
-          queries: [Query.equal("roll_no", rollNumber)],
-        });
-        const activeOuting = outingsForChecks.find((doc: any) => !doc.in_time);
-
-        if (!activeOuting) {
-          const { rows: leavesForChecks } = await tablesDB.listRows({
-            databaseId: DB_ID,
-            tableId: COLLECTIONS.LEAVE,
-            queries: [Query.equal("roll_no", rollNumber)],
-          });
-          const activeLeave = leavesForChecks.find(
-            (doc: any) => doc.exit_date_time && !doc.in_date_time,
-          );
-
-          if (activeLeave) {
-            setResultDialog({
-              title: "Departure Denied",
-              message: `${rollNumber}\n\n⚠️ GRAVE ERROR: CURRENTLY ON AN ACTIVE LEAVE.\nCANNOT GO FOR AN OUTING.`,
-              type: "error",
-            });
-            setIsProcessing(false);
-            return;
-          }
-        }
-      }
-
-      if (actionType === "Leave") {
-        const COLL_LEAVE = COLLECTIONS.LEAVE;
-        const { rows: documents } = await tablesDB.listRows({
-          databaseId: DB_ID,
-          tableId: COLL_LEAVE,
           queries: [
             Query.equal("roll_no", rollNumber),
             Query.orderDesc("$createdAt"),
-            Query.limit(1),
           ],
         });
 
-        const latestLeave = documents[0];
+        const activeLeave = leaves.find(
+          (doc: any) => doc.exit_date_time && !doc.in_date_time,
+        );
 
-        if (!latestLeave) {
-          setResultDialog({
-            title: "Leave Denied",
-            message: `${rollNumber}\n\nNO LEAVE REQUEST FOUND`,
-            type: "error",
-          });
-          setIsProcessing(false);
-          return;
-        }
-
-        if (latestLeave.exit_date_time && latestLeave.in_date_time) {
-          setResultDialog({
-            title: "Leave Denied",
-            message: `${rollNumber}\n\nLATEST LEAVE ALREADY COMPLETED.\nPLEASE APPLY FOR NEW LEAVE.`,
-            type: "error",
-          });
-          setIsProcessing(false);
-          return;
-        }
-
-        const isCaretakerApproved = latestLeave.caretaker_approval === true;
-        const isFacultyApproved = latestLeave.faculty_approval === true;
-        const requiresFaculty = latestLeave.requires_faculty === true;
-
-        const isFullyApproved = requiresFaculty
-          ? isCaretakerApproved && isFacultyApproved
-          : isCaretakerApproved;
-
-        if (!isFullyApproved) {
-          let msg = `${rollNumber}\n\nLEAVE NOT FULLY APPROVED.`;
-          if (!isCaretakerApproved) msg += "\nPending Caretaker Approval.";
-          else if (requiresFaculty && !isFacultyApproved)
-            msg += "\nPending Faculty Approval.";
-
-          setResultDialog({
-            title: "Leave Denied",
-            message: msg,
-            type: "error",
-          });
-          setIsProcessing(false);
-          return;
-        }
-
-        if (latestLeave.exit_date_time && !latestLeave.in_date_time) {
+        if (activeLeave) {
+          // --- LEAVE RETURN ---
           const {
             $id,
             $tableId,
@@ -464,11 +360,12 @@ function CaptureContent() {
             parent_phone,
             parent_email,
             ...archiveData
-          } = latestLeave as any;
+          } = activeLeave as any;
 
           archiveData.in_date_time = currentTime;
-          archiveData.mail_sent = latestLeave.mail_sent;
+          archiveData.mail_sent = activeLeave.mail_sent;
           const COLL_LEAVE_ARCHIVE = COLLECTIONS.LEAVE_ARCHIVE;
+
           await tablesDB.createRow({
             databaseId: DB_ID,
             tableId: COLL_LEAVE_ARCHIVE,
@@ -477,8 +374,8 @@ function CaptureContent() {
           });
           await tablesDB.deleteRow({
             databaseId: DB_ID,
-            tableId: COLL_LEAVE,
-            rowId: latestLeave.$id,
+            tableId: COLLECTIONS.LEAVE,
+            rowId: activeLeave.$id,
           });
           await tablesDB.updateRow({
             databaseId: DB_ID,
@@ -488,65 +385,133 @@ function CaptureContent() {
           });
           dbMessage = "LEAVE RETURN SUCCESSFUL & ARCHIVED";
 
-          const scoreStr = lastMatchData?.rollNo === rollNumber ? ` (${(lastMatchData.score * 100).toFixed(1)}%)` : "";
+          const scoreStr =
+            lastMatchData?.rollNo === rollNumber
+              ? ` (${(lastMatchData.score * 100).toFixed(1)}%)`
+              : "";
           await logTransaction({
             action: "LEAVE_RETURN",
             message: `Student ${rollNumber} returned from leave${scoreStr}.`,
             userId: rollNumber,
-            metadata: { leaveId: latestLeave.$id },
+            metadata: { leaveId: activeLeave.$id },
           });
-        } else if (!latestLeave.exit_date_time) {
+        } else {
+          // --- LEAVE DEPARTURE ---
+          // 1. Check if they are on an active outing
+          const { rows: outings } = await tablesDB.listRows({
+            databaseId: DB_ID,
+            tableId: COLL_OUTING,
+            queries: [Query.equal("roll_no", rollNumber)],
+          });
+          const activeOuting = outings.find((doc: any) => !doc.in_time);
+
+          if (activeOuting) {
+            setResultDialog({
+              title: "Departure Denied",
+              message: `${rollNumber}\n\n⚠️ GRAVE ERROR: CURRENTLY OUT ON AN OUTING.\nCANNOT GO ON LEAVE UNTIL YOU RETURN.`,
+              type: "error",
+            });
+            setIsProcessing(false);
+            return;
+          }
+
+          // 2. Find a valid approved leave for today
+          const now = new Date();
           const today = new Date();
-          const nowTime = new Date();
           today.setHours(0, 0, 0, 0);
-          const proposed = new Date(latestLeave.proposed_exit_date);
-          proposed.setHours(0, 0, 0, 0);
 
-          if (today < proposed) {
+          const validLeave = leaves.find((l: any) => {
+            // Must not be a return (already handled) and must not be fully completed
+            if (l.exit_date_time) return false;
+
+            const isCaretakerApproved = l.caretaker_approval === true;
+            const isFacultyApproved = l.faculty_approval === true;
+            const requiresFaculty = l.requires_faculty === true;
+            const isFullyApproved = requiresFaculty
+              ? isCaretakerApproved && isFacultyApproved
+              : isCaretakerApproved;
+
+            if (!isFullyApproved) return false;
+
+            const proposedExit = new Date(l.proposed_exit_date);
+            proposedExit.setHours(0, 0, 0, 0);
+            const proposedIn = new Date(l.proposed_in_date);
+
+            // Logic: Can leave if today is >= proposedExit AND now is <= proposedIn
+            return today >= proposedExit && now <= proposedIn;
+          });
+
+          if (validLeave) {
+            await tablesDB.updateRow({
+              databaseId: DB_ID,
+              tableId: COLLECTIONS.LEAVE,
+              rowId: validLeave.$id,
+              data: { exit_date_time: currentTime },
+            });
+            await tablesDB.updateRow({
+              databaseId: DB_ID,
+              tableId: COLL_STUDENTS,
+              rowId: rollNumber,
+              data: { is_on_leave: true },
+            });
+            dbMessage = "LEAVE DEPARTURE SUCCESSFUL";
+
+            const scoreStr =
+              lastMatchData?.rollNo === rollNumber
+                ? ` (${(lastMatchData.score * 100).toFixed(1)}%)`
+                : "";
+            await logTransaction({
+              action: "LEAVE_EXIT",
+              message: `Student ${rollNumber} departed on leave${scoreStr}.`,
+              userId: rollNumber,
+              metadata: { leaveId: validLeave.$id },
+            });
+          } else {
+            // Provide more specific error feedback
+            const upcomingLeave = leaves.find(
+              (l) => !l.exit_date_time && (l.caretaker_approval || l.faculty_approval),
+            );
+            let errorMsg = "NO VALID LEAVE REQUEST FOUND";
+
+            if (upcomingLeave) {
+              const isCaretakerApproved =
+                upcomingLeave.caretaker_approval === true;
+              const isFacultyApproved = upcomingLeave.faculty_approval === true;
+              const requiresFaculty = upcomingLeave.requires_faculty === true;
+              const isFullyApproved = requiresFaculty
+                ? isCaretakerApproved && isFacultyApproved
+                : isCaretakerApproved;
+
+              if (!isFullyApproved) {
+                errorMsg = "LEAVE NOT FULLY APPROVED.";
+                if (!isCaretakerApproved) errorMsg += "\nPending Caretaker Approval.";
+                else if (requiresFaculty && !isFacultyApproved)
+                  errorMsg += "\nPending Faculty Approval.";
+              } else {
+                const proposedExit = new Date(upcomingLeave.proposed_exit_date);
+                proposedExit.setHours(0, 0, 0, 0);
+                const proposedIn = new Date(upcomingLeave.proposed_in_date);
+
+                if (today < proposedExit) {
+                  errorMsg = `TOO EARLY FOR DEPARTURE.\nPROPOSED DATE: ${new Date(upcomingLeave.proposed_exit_date).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" })}`;
+                } else if (now > proposedIn) {
+                  errorMsg = `CANNOT DEPART AFTER PROPOSED RETURN DATE.\nPROPOSED RETURN: ${new Date(upcomingLeave.proposed_in_date).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" })}`;
+                }
+              }
+            }
+
             setResultDialog({
-              title: "Departure Denied",
-              message: `${rollNumber}\n\nTOO EARLY FOR DEPARTURE.\nPROPOSED DATE: ${new Date(latestLeave.proposed_exit_date).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" })}\nCURRENT DATE: ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" })}`,
+              title: "Leave Denied",
+              message: `${rollNumber}\n\n${errorMsg}`,
               type: "error",
             });
             setIsProcessing(false);
             return;
           }
-
-          const proposedReturn = new Date(latestLeave.proposed_in_date);
-          if (nowTime > proposedReturn) {
-            setResultDialog({
-              title: "Departure Denied",
-              message: `${rollNumber}\n\nCANNOT DEPART AFTER PROPOSED RETURN DATE.\nPROPOSED RETURN: ${new Date(latestLeave.proposed_in_date).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" })}`,
-              type: "error",
-            });
-            setIsProcessing(false);
-            return;
-          }
-
-          await tablesDB.updateRow({
-            databaseId: DB_ID,
-            tableId: COLL_LEAVE,
-            rowId: latestLeave.$id,
-            data: { exit_date_time: currentTime },
-          });
-          await tablesDB.updateRow({
-            databaseId: DB_ID,
-            tableId: COLL_STUDENTS,
-            rowId: rollNumber,
-            data: { is_on_leave: true },
-          });
-          dbMessage = "LEAVE DEPARTURE SUCCESSFUL";
-
-          const scoreStr = lastMatchData?.rollNo === rollNumber ? ` (${(lastMatchData.score * 100).toFixed(1)}%)` : "";
-          await logTransaction({
-            action: "LEAVE_EXIT",
-            message: `Student ${rollNumber} departed on leave${scoreStr}.`,
-            userId: rollNumber,
-            metadata: { leaveId: latestLeave.$id },
-          });
         }
       } else {
-        const { rows: documents } = await tablesDB.listRows({
+        // --- OUTING LOGIC ---
+        const { rows: outings } = await tablesDB.listRows({
           databaseId: DB_ID,
           tableId: COLL_OUTING,
           queries: [
@@ -556,9 +521,10 @@ function CaptureContent() {
           ],
         });
 
-        const openOuting = documents.find((doc) => !doc.in_time);
+        const openOuting = outings.find((doc) => !doc.in_time);
 
         if (openOuting) {
+          // CHECK-IN
           await tablesDB.createRow({
             databaseId: DB_ID,
             tableId: COLL_ARCHIVE,
@@ -583,7 +549,10 @@ function CaptureContent() {
 
           dbMessage = "CHECK-IN SUCCESSFUL & ARCHIVED";
 
-          const scoreStr = lastMatchData?.rollNo === rollNumber ? ` (${(lastMatchData.score * 100).toFixed(1)}%)` : "";
+          const scoreStr =
+            lastMatchData?.rollNo === rollNumber
+              ? ` (${(lastMatchData.score * 100).toFixed(1)}%)`
+              : "";
           await logTransaction({
             action: "OUTING_ENTRY",
             message: `Student ${rollNumber} checked in from outing${scoreStr}.`,
@@ -591,7 +560,28 @@ function CaptureContent() {
             metadata: { outingId: openOuting.$id },
           });
         } else {
-          // Fetch student to retrieve gender
+          // CHECK-OUT
+          // 1. Check if they are on leave
+          const { rows: leaves } = await tablesDB.listRows({
+            databaseId: DB_ID,
+            tableId: COLLECTIONS.LEAVE,
+            queries: [Query.equal("roll_no", rollNumber)],
+          });
+          const activeLeave = leaves.find(
+            (doc: any) => doc.exit_date_time && !doc.in_date_time,
+          );
+
+          if (activeLeave) {
+            setResultDialog({
+              title: "Departure Denied",
+              message: `${rollNumber}\n\n⚠️ GRAVE ERROR: CURRENTLY ON AN ACTIVE LEAVE.\nCANNOT GO FOR AN OUTING.`,
+              type: "error",
+            });
+            setIsProcessing(false);
+            return;
+          }
+
+          // 2. Fetch student to retrieve gender and check restrictions
           const student = await tablesDB
             .getRow({
               databaseId: DB_ID,
@@ -600,15 +590,11 @@ function CaptureContent() {
             })
             .catch(() => null);
 
-          const gender = student?.gender
-            ? student.gender.toUpperCase()
-            : "MALE";
+          const gender = student?.gender ? student.gender.toUpperCase() : "MALE";
           const nowInIST = new Date(
             new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }),
           );
-          const hours = nowInIST.getHours();
-          const minutes = nowInIST.getMinutes();
-          const totalMinutes = hours * 60 + minutes;
+          const totalMinutes = nowInIST.getHours() * 60 + nowInIST.getMinutes();
 
           let isDisabled = false;
           let restrictedMsg = "";
@@ -655,7 +641,10 @@ function CaptureContent() {
 
           dbMessage = "CHECK-OUT SUCCESSFUL";
 
-          const scoreStr = lastMatchData?.rollNo === rollNumber ? ` (${(lastMatchData.score * 100).toFixed(1)}%)` : "";
+          const scoreStr =
+            lastMatchData?.rollNo === rollNumber
+              ? ` (${(lastMatchData.score * 100).toFixed(1)}%)`
+              : "";
           await logTransaction({
             action: "OUTING_EXIT",
             message: `Student ${rollNumber} checked out for outing${scoreStr}.`,

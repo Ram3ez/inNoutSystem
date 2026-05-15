@@ -8,6 +8,8 @@
   --surface: #FFFFFF;
   --error: #EF4444;
   --success: #10B981;
+  color-scheme: light;
+  --calendar-filter: none;
 }
 
 .dark {
@@ -18,6 +20,8 @@
   --surface: #0A0A0A; /* Even deeper black for cards */
   --error: #FF453A;
   --success: #32D74B; /* Vibrant iOS-style green for approve */
+  color-scheme: dark;
+  --calendar-filter: invert(1);
 }
 
 @theme inline {
@@ -83,9 +87,10 @@ input:-webkit-autofill:active {
   }
 }
 
-/* Invert the dark/invisible browser calendar picker icon for input[type="datetime-local"] */
+/* Native support for browser controls in dark/light mode */
+input[type="date"]::-webkit-calendar-picker-indicator,
 input[type="datetime-local"]::-webkit-calendar-picker-indicator {
-  filter: invert(1) brightness(1.8);
+  filter: var(--calendar-filter, none);
   cursor: pointer;
 }
 

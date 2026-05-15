@@ -1352,7 +1352,7 @@ export default function AdminPortal() {
                     Hostel Caretakers
                   </h2>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
                   {caretakerAssignments.map((assignment) => {
                     const emails = assignment.email
                       ? assignment.email
@@ -1363,126 +1363,125 @@ export default function AdminPortal() {
                     return (
                       <div
                         key={assignment.$id}
-                        className="bg-surface border border-primary/5 p-6 rounded-[2.5rem] space-y-6 shadow-xl shadow-primary/5"
+                        className="bg-surface border border-primary/5 p-4 sm:p-6 rounded-[2rem] shadow-xl shadow-primary/5 flex flex-col lg:flex-row lg:items-center gap-6 hover:border-secondary/20 transition-all"
                       >
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <p className="text-[10px] font-black text-secondary uppercase tracking-[0.2em] mb-1">
-                              {assignment.gender} • {assignment.year} YEAR
-                            </p>
-                            <h3 className="text-xs font-bold text-primary/40 uppercase">
-                              Assigned Caretakers
-                            </h3>
-                          </div>
-                          <div className="w-10 h-10 bg-secondary/10 rounded-full flex items-center justify-center text-secondary border border-secondary/10">
-                            <ShieldCheck size={18} />
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2">
-                          {emails.map((email: string, idx: number) => (
-                            <div
-                              key={idx}
-                              className="bg-primary/5 border border-primary/10 pl-3 pr-2 py-1.5 rounded-xl flex items-center gap-2 group transition-all hover:border-secondary/30"
-                            >
-                              <span className="text-[10px] font-bold text-primary/80">
-                                {email}
-                              </span>
-                              <button
-                                onClick={() => {
-                                  const newEmails = emails.filter(
-                                    (_: any, i: number) => i !== idx,
-                                  );
-                                  handleUpdateStaff(
-                                    COLLECTIONS.CARETAKER,
-                                    assignment.$id,
-                                    newEmails.join(", "),
-                                  );
-                                }}
-                                className="p-1 text-primary/20 hover:text-secondary hover:bg-secondary/10 rounded-lg transition-all"
-                              >
-                                <UserX size={12} />
-                              </button>
+                        <div className="flex flex-col lg:flex-row lg:items-center gap-6 flex-1">
+                          <div className="flex items-center gap-4 shrink-0 lg:w-64">
+                            <div className="w-12 h-12 bg-secondary/10 rounded-2xl flex items-center justify-center text-secondary border border-secondary/10">
+                              <ShieldCheck size={20} />
                             </div>
-                          ))}
-                          {emails.length === 0 && (
-                            <p className="text-[10px] text-primary/20 font-bold uppercase tracking-widest py-2 italic">
-                              No staff assigned
-                            </p>
-                          )}
-                        </div>
+                            <div>
+                              <p className="text-[10px] font-black text-secondary uppercase tracking-[0.2em] mb-0.5">
+                                {assignment.gender} • {assignment.year} YEAR
+                              </p>
+                              <h3 className="text-xs font-bold text-primary/40 uppercase tracking-wider">
+                                Assigned Caretakers
+                              </h3>
+                            </div>
+                          </div>
 
-                        <div className="relative">
-                          <button
-                            onClick={() =>
-                              setOpenDropdownId(
-                                openDropdownId === assignment.$id
-                                  ? null
-                                  : assignment.$id,
-                              )
-                            }
-                            className="w-full bg-primary/5 border border-primary/10 rounded-2xl h-12 px-4 flex items-center justify-between group hover:border-secondary/30 transition-all"
-                          >
-                            <span className="text-[10px] font-black uppercase text-primary/60 group-hover:text-primary transition-colors">
-                              + Assign Caretaker...
-                            </span>
-                            <ChevronDown
-                              size={14}
-                              className={`text-primary/20 transition-transform duration-300 ${openDropdownId === assignment.$id ? "rotate-180" : ""}`}
-                            />
-                          </button>
-
-                          <AnimatePresence>
-                            {openDropdownId === assignment.$id && (
-                              <>
-                                <div
-                                  className="fixed inset-0 z-40"
-                                  onClick={() => setOpenDropdownId(null)}
-                                />
-                                <motion.div
-                                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                  className="absolute z-50 left-0 right-0 mt-2 bg-surface/90 backdrop-blur-2xl border border-primary/10 rounded-2xl overflow-hidden shadow-2xl max-h-60 overflow-y-auto no-scrollbar"
+                          <div className="flex-1 flex flex-wrap items-center gap-2">
+                            {emails.map((email: string, idx: number) => (
+                              <div
+                                key={idx}
+                                className="bg-primary/5 border border-primary/10 pl-3 pr-2 py-1.5 rounded-xl flex items-center gap-2 group transition-all hover:border-secondary/30"
+                              >
+                                <span className="text-[10px] font-bold text-primary/80">
+                                  {email}
+                                </span>
+                                <button
+                                  onClick={() => {
+                                    const newEmails = emails.filter(
+                                      (_: any, i: number) => i !== idx,
+                                    );
+                                    handleUpdateStaff(
+                                      COLLECTIONS.CARETAKER,
+                                      assignment.$id,
+                                      newEmails.join(", "),
+                                    );
+                                  }}
+                                  className="p-1 text-primary/20 hover:text-secondary hover:bg-secondary/10 rounded-lg transition-all"
                                 >
-                                  {caretakerMembers.length === 0 ? (
-                                    <div className="px-6 py-4 text-[10px] font-bold text-primary/20 uppercase tracking-widest text-center italic">
-                                      No caretakers in team
-                                    </div>
-                                  ) : (
-                                    caretakerMembers.map((m) => (
-                                      <button
-                                        key={m.$id}
-                                        onClick={() => {
-                                          if (!emails.includes(m.userEmail)) {
-                                            handleUpdateStaff(
-                                              COLLECTIONS.CARETAKER,
-                                              assignment.$id,
-                                              [...emails, m.userEmail].join(
-                                                ", ",
-                                              ),
-                                            );
-                                          }
-                                          setOpenDropdownId(null);
-                                        }}
-                                        className="w-full px-6 py-4 flex flex-col items-start hover:bg-secondary/10 transition-all border-b border-primary/5 last:border-0 text-left"
-                                      >
-                                        <span className="text-[10px] font-black text-primary uppercase tracking-tight">
-                                          {m.userName ||
-                                            m.userEmail.split("@")[0]}
-                                        </span>
-                                        <span className="text-[9px] font-bold text-primary/40 uppercase tracking-widest">
-                                          {m.userEmail}
-                                        </span>
-                                      </button>
-                                    ))
-                                  )}
-                                </motion.div>
-                              </>
+                                  <UserX size={12} />
+                                </button>
+                              </div>
+                            ))}
+                            {emails.length === 0 && (
+                              <p className="text-[10px] text-primary/20 font-bold uppercase tracking-widest py-2 italic mr-4">
+                                No staff assigned
+                              </p>
                             )}
-                          </AnimatePresence>
+                          </div>
                         </div>
-                      </div>
+
+                        <div className="relative shrink-0">
+                            <button
+                              onClick={() =>
+                                setOpenDropdownId(
+                                  openDropdownId === assignment.$id
+                                    ? null
+                                    : assignment.$id,
+                                )
+                              }
+                              className="bg-primary text-background border border-primary rounded-xl h-10 px-4 flex items-center gap-2 group hover:brightness-110 transition-all shadow-lg shadow-primary/10"
+                            >
+                              <Plus size={14} />
+                              <span className="text-[10px] font-black uppercase tracking-widest">
+                                Assign
+                              </span>
+                            </button>
+
+                            <AnimatePresence>
+                              {openDropdownId === assignment.$id && (
+                                <>
+                                  <div
+                                    className="fixed inset-0 z-40"
+                                    onClick={() => setOpenDropdownId(null)}
+                                  />
+                                  <motion.div
+                                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                    className="absolute z-50 right-0 top-full mt-2 w-64 bg-surface/90 backdrop-blur-2xl border border-primary/10 rounded-2xl overflow-hidden shadow-2xl max-h-60 overflow-y-auto no-scrollbar"
+                                  >
+                                    {caretakerMembers.length === 0 ? (
+                                      <div className="px-6 py-4 text-[10px] font-bold text-primary/20 uppercase tracking-widest text-center italic">
+                                        No caretakers in team
+                                      </div>
+                                    ) : (
+                                      caretakerMembers.map((m) => (
+                                        <button
+                                          key={m.$id}
+                                          onClick={() => {
+                                            if (!emails.includes(m.userEmail)) {
+                                              handleUpdateStaff(
+                                                COLLECTIONS.CARETAKER,
+                                                assignment.$id,
+                                                [...emails, m.userEmail].join(
+                                                  ", ",
+                                                ),
+                                              );
+                                            }
+                                            setOpenDropdownId(null);
+                                          }}
+                                          className="w-full px-6 py-4 flex flex-col items-start hover:bg-secondary/10 transition-all border-b border-primary/5 last:border-0 text-left"
+                                        >
+                                          <span className="text-[10px] font-black text-primary uppercase tracking-tight">
+                                            {m.userName ||
+                                              m.userEmail.split("@")[0]}
+                                          </span>
+                                          <span className="text-[9px] font-bold text-primary/40 uppercase tracking-widest">
+                                            {m.userEmail}
+                                          </span>
+                                        </button>
+                                      ))
+                                    )}
+                                  </motion.div>
+                                </>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                        </div>
                     );
                   })}
                 </div>
@@ -1496,132 +1495,119 @@ export default function AdminPortal() {
                     Faculty Advisors
                   </h2>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
                   {facultyAssignments.map((assignment) => {
-                    const emails = assignment.email
-                      ? assignment.email
-                          .split(",")
-                          .map((e: string) => e.trim())
-                          .filter(Boolean)
-                      : [];
                     return (
                       <div
                         key={assignment.$id}
-                        className="bg-surface border border-primary/5 p-6 rounded-[2.5rem] space-y-6 shadow-xl shadow-primary/5"
+                        className="bg-surface border border-primary/5 p-4 sm:p-6 rounded-[2rem] shadow-xl shadow-primary/5 flex flex-col lg:flex-row lg:items-center gap-6 hover:border-secondary/20 transition-all"
                       >
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <p className="text-[10px] font-black text-secondary uppercase tracking-[0.2em] mb-1">
-                              {assignment.department} • {assignment.year} YEAR
-                            </p>
-                            <h3 className="text-xs font-bold text-primary/40 uppercase">
-                              Assigned Advisor
-                            </h3>
-                          </div>
-                          <div className="w-10 h-10 bg-secondary/10 rounded-full flex items-center justify-center text-secondary border border-secondary/10">
-                            <UserCheck size={18} />
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2">
-                          {emails.map((email: string, idx: number) => (
-                            <div
-                              key={idx}
-                              className="bg-primary/5 border border-primary/10 pl-3 pr-2 py-1.5 rounded-xl flex items-center gap-2 group transition-all hover:border-secondary/30"
-                            >
-                              <span className="text-[10px] font-bold text-primary/80">
-                                {email}
-                              </span>
-                              <button
-                                onClick={() => {
-                                  handleUpdateStaff(
-                                    COLLECTIONS.FACULTY,
-                                    assignment.$id,
-                                    "",
-                                  );
-                                }}
-                                className="p-1 text-primary/20 hover:text-secondary hover:bg-secondary/10 rounded-lg transition-all"
-                              >
-                                <UserX size={12} />
-                              </button>
+                        <div className="flex flex-col lg:flex-row lg:items-center gap-6 flex-1">
+                          <div className="flex items-center gap-4 shrink-0 lg:w-64">
+                            <div className="w-12 h-12 bg-secondary/10 rounded-2xl flex items-center justify-center text-secondary border border-secondary/10">
+                              <UserCheck size={20} />
                             </div>
-                          ))}
-                          {emails.length === 0 && (
-                            <p className="text-[10px] text-primary/20 font-bold uppercase tracking-widest py-2 italic">
-                              No advisor assigned
-                            </p>
-                          )}
-                        </div>
+                            <div>
+                              <p className="text-[10px] font-black text-secondary uppercase tracking-[0.2em] mb-0.5">
+                                {assignment.department} • {assignment.year} YEAR
+                              </p>
+                              <h3 className="text-xs font-bold text-primary/40 uppercase tracking-wider">
+                                Assigned Advisor
+                              </h3>
+                            </div>
+                          </div>
 
-                        <div className="relative">
-                          <button
-                            onClick={() =>
-                              setOpenDropdownId(
-                                openDropdownId === assignment.$id
-                                  ? null
-                                  : assignment.$id,
-                              )
-                            }
-                            className="w-full bg-primary/5 border border-primary/10 rounded-2xl h-12 px-4 flex items-center justify-between group hover:border-secondary/30 transition-all"
-                          >
-                            <span className="text-[10px] font-black uppercase text-primary/60 group-hover:text-primary transition-colors">
-                              {emails.length > 0
-                                ? "Change Advisor..."
-                                : "+ Assign Advisor..."}
-                            </span>
-                            <ChevronDown
-                              size={14}
-                              className={`text-primary/20 transition-transform duration-300 ${openDropdownId === assignment.$id ? "rotate-180" : ""}`}
-                            />
-                          </button>
-
-                          <AnimatePresence>
-                            {openDropdownId === assignment.$id && (
-                              <>
-                                <div
-                                  className="fixed inset-0 z-40"
-                                  onClick={() => setOpenDropdownId(null)}
-                                />
-                                <motion.div
-                                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                  className="absolute z-50 left-0 right-0 mt-2 bg-surface/90 backdrop-blur-2xl border border-primary/10 rounded-2xl overflow-hidden shadow-2xl max-h-60 overflow-y-auto no-scrollbar"
+                          <div className="flex-1 flex flex-wrap items-center gap-2">
+                            {assignment.email ? (
+                              <div className="bg-primary/5 border border-primary/10 pl-3 pr-2 py-1.5 rounded-xl flex items-center gap-2 group transition-all hover:border-secondary/30">
+                                <span className="text-[10px] font-bold text-primary/80">
+                                  {assignment.email}
+                                </span>
+                                <button
+                                  onClick={() => {
+                                    handleUpdateStaff(
+                                      COLLECTIONS.FACULTY,
+                                      assignment.$id,
+                                      "",
+                                    );
+                                  }}
+                                  className="p-1 text-primary/20 hover:text-secondary hover:bg-secondary/10 rounded-lg transition-all"
                                 >
-                                  {facultyMembers.length === 0 ? (
-                                    <div className="px-6 py-4 text-[10px] font-bold text-primary/20 uppercase tracking-widest text-center italic">
-                                      No faculty in team
-                                    </div>
-                                  ) : (
-                                    facultyMembers.map((m) => (
-                                      <button
-                                        key={m.$id}
-                                        onClick={() => {
-                                          handleUpdateStaff(
-                                            COLLECTIONS.FACULTY,
-                                            assignment.$id,
-                                            m.userEmail,
-                                          );
-                                          setOpenDropdownId(null);
-                                        }}
-                                        className="w-full px-6 py-4 flex flex-col items-start hover:bg-secondary/10 transition-all border-b border-primary/5 last:border-0 text-left"
-                                      >
-                                        <span className="text-[10px] font-black text-primary uppercase tracking-tight">
-                                          {m.userName ||
-                                            m.userEmail.split("@")[0]}
-                                        </span>
-                                        <span className="text-[9px] font-bold text-primary/40 uppercase tracking-widest">
-                                          {m.userEmail}
-                                        </span>
-                                      </button>
-                                    ))
-                                  )}
-                                </motion.div>
-                              </>
+                                  <UserX size={12} />
+                                </button>
+                              </div>
+                            ) : (
+                              <p className="text-[10px] text-primary/20 font-bold uppercase tracking-widest py-2 italic mr-4">
+                                No advisor assigned
+                              </p>
                             )}
-                          </AnimatePresence>
+                          </div>
                         </div>
-                      </div>
+
+                        <div className="relative shrink-0">
+                            <button
+                              onClick={() =>
+                                setOpenDropdownId(
+                                  openDropdownId === assignment.$id
+                                    ? null
+                                    : assignment.$id,
+                                )
+                              }
+                              className="bg-primary text-background border border-primary rounded-xl h-10 px-4 flex items-center gap-2 group hover:brightness-110 transition-all shadow-lg shadow-primary/10"
+                            >
+                              <Plus size={14} />
+                              <span className="text-[10px] font-black uppercase tracking-widest">
+                                {assignment.email ? "Change" : "Assign"}
+                              </span>
+                            </button>
+
+                            <AnimatePresence>
+                              {openDropdownId === assignment.$id && (
+                                <>
+                                  <div
+                                    className="fixed inset-0 z-40"
+                                    onClick={() => setOpenDropdownId(null)}
+                                  />
+                                  <motion.div
+                                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                    className="absolute z-50 right-0 top-full mt-2 w-64 bg-surface/90 backdrop-blur-2xl border border-primary/10 rounded-2xl overflow-hidden shadow-2xl max-h-60 overflow-y-auto no-scrollbar"
+                                  >
+                                    {facultyMembers.length === 0 ? (
+                                      <div className="px-6 py-4 text-[10px] font-bold text-primary/20 uppercase tracking-widest text-center italic">
+                                        No faculty in team
+                                      </div>
+                                    ) : (
+                                      facultyMembers.map((m) => (
+                                        <button
+                                          key={m.$id}
+                                          onClick={() => {
+                                            handleUpdateStaff(
+                                              COLLECTIONS.FACULTY,
+                                              assignment.$id,
+                                              m.userEmail,
+                                            );
+                                            setOpenDropdownId(null);
+                                          }}
+                                          className="w-full px-6 py-4 flex flex-col items-start hover:bg-secondary/10 transition-all border-b border-primary/5 last:border-0 text-left"
+                                        >
+                                          <span className="text-[10px] font-black text-primary uppercase tracking-tight">
+                                            {m.userName ||
+                                              m.userEmail.split("@")[0]}
+                                          </span>
+                                          <span className="text-[9px] font-bold text-primary/40 uppercase tracking-widest">
+                                            {m.userEmail}
+                                          </span>
+                                        </button>
+                                      ))
+                                    )}
+                                  </motion.div>
+                                </>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                        </div>
                     );
                   })}
                 </div>
@@ -1635,7 +1621,7 @@ export default function AdminPortal() {
               exit={{ opacity: 0 }}
               className="space-y-6"
             >
-              <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 bg-surface border border-primary/5 p-6 rounded-[2.5rem] shadow-xl shadow-primary/5">
+              <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-surface border border-primary/5 p-4 sm:p-6 rounded-[2rem] sm:rounded-[2.5rem] shadow-xl shadow-primary/5">
                 <div className="flex bg-primary/5 p-1 rounded-2xl border border-primary/5 w-full sm:w-auto self-start">
                   <button
                     onClick={() => {
@@ -1657,8 +1643,8 @@ export default function AdminPortal() {
                   </button>
                 </div>
 
-                <div className="flex items-center gap-1.5 justify-center xl:justify-start bg-primary/5 p-1.5 rounded-2xl border border-primary/5 shrink-0">
-                  <span className="text-[7px] font-black text-primary/30 uppercase tracking-[0.2em] px-2">
+                <div className="flex flex-wrap items-center gap-1.5 justify-center xl:justify-start bg-primary/5 p-1.5 rounded-2xl border border-primary/5">
+                  <span className="text-[7px] font-black text-primary/30 uppercase tracking-[0.2em] px-2 shrink-0">
                     Export
                   </span>
                   {(["day", "week", "month"] as const).map((d) => (
@@ -1691,7 +1677,7 @@ export default function AdminPortal() {
                   ))}
                 </div>
 
-                <div className="flex flex-col sm:flex-row gap-4 w-full xl:w-auto">
+                <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 w-full xl:w-auto">
                   <div className="relative group w-full sm:w-56">
                     <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-primary/20 group-focus-within:text-secondary transition-colors">
                       <Search size={16} />
@@ -1888,7 +1874,7 @@ export default function AdminPortal() {
               exit={{ opacity: 0 }}
               className="space-y-6"
             >
-              <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 bg-surface border border-primary/5 p-6 rounded-[2.5rem] shadow-xl shadow-primary/5">
+              <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-surface border border-primary/5 p-4 sm:p-6 rounded-[2rem] sm:rounded-[2.5rem] shadow-xl shadow-primary/5">
                 <div className="flex bg-primary/5 p-1 rounded-2xl border border-primary/5 w-full sm:w-auto self-start">
                   <button
                     onClick={() => {
@@ -1910,8 +1896,8 @@ export default function AdminPortal() {
                   </button>
                 </div>
 
-                <div className="flex items-center gap-1.5 justify-center xl:justify-start bg-primary/5 p-1.5 rounded-2xl border border-primary/5 shrink-0">
-                  <span className="text-[7px] font-black text-primary/30 uppercase tracking-[0.2em] px-2">
+                <div className="flex flex-wrap items-center gap-1.5 justify-center xl:justify-start bg-primary/5 p-1.5 rounded-2xl border border-primary/5">
+                  <span className="text-[7px] font-black text-primary/30 uppercase tracking-[0.2em] px-2 shrink-0">
                     Export
                   </span>
                   {(["day", "week", "month"] as const).map((d) => (
@@ -1944,7 +1930,7 @@ export default function AdminPortal() {
                   ))}
                 </div>
 
-                <div className="flex flex-col sm:flex-row gap-4 w-full xl:w-auto">
+                <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 w-full xl:w-auto">
                   <div className="relative group w-full sm:w-56">
                     <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-primary/20 group-focus-within:text-secondary transition-colors">
                       <Search size={16} />
@@ -2800,7 +2786,6 @@ export default function AdminPortal() {
                           }))
                         }
                         className="w-full bg-primary/5 border border-primary/10 rounded-2xl h-14 pl-12 pr-4 text-primary text-sm font-bold focus:outline-none focus:border-secondary/50 transition-all uppercase"
-                        style={{ colorScheme: "dark" }}
                       />
                     </div>
                     {exportConfig.duration === "week" && (
@@ -2910,7 +2895,6 @@ export default function AdminPortal() {
                           }))
                         }
                         className="w-full bg-primary/5 border border-primary/10 rounded-2xl h-14 pl-12 pr-4 text-primary text-sm font-bold focus:outline-none focus:border-red-500/50 transition-all uppercase"
-                        style={{ colorScheme: "dark" }}
                       />
                     </div>
                     <p className="text-[9px] font-bold text-primary/30 uppercase tracking-wider mt-2 ml-2 italic">
