@@ -8,7 +8,7 @@
  */
 
 import React from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Footprints,
   Home,
@@ -18,6 +18,9 @@ import {
   AlertCircle,
   Activity,
   UserCheck,
+  QrCode,
+  User,
+  X,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { GradientBackground } from "@/components/GradientBackground";
@@ -26,8 +29,10 @@ import { LoadingIndicator } from "@/components/LoadingIndicator";
 import { useLoading } from "@/context/LoadingContext";
 import { useRouter } from "next/navigation";
 
-import { fetchAllRows, Query } from "@/lib/appwrite";
-import { formatToIST } from "@/lib/constants";
+import { fetchAllRows, Query, storage, tablesDB } from "@/lib/appwrite";
+import { formatToIST, COLLECTIONS, DB_ID } from "@/lib/constants";
+import { generateTOTP, generateBase32Secret, encryptSecret, decryptSecret } from "@/lib/totp";
+import QRCode from "qrcode";
 
 export default function Dashboard() {
   const {
@@ -48,7 +53,118 @@ export default function Dashboard() {
   const [liveOutings, setLiveOutings] = React.useState<any[]>([]);
   const [isOutingsLoading, setIsOutingsLoading] = React.useState(false);
 
-  const DB_ID = "69cb970a000853f23489";
+  const [isIdModalOpen, setIsIdModalOpen] = React.useState(false);
+  const [totpToken, setTotpToken] = React.useState("");
+  const [secondsRemaining, setSecondsRemaining] = React.useState(30);
+  const [qrUrl, setQrUrl] = React.useState("");
+
+  // TOTP & QR Code Loop + Screen Wake Lock
+  React.useEffect(() => {
+    if (!isIdModalOpen || !studentData) return;
+
+    let active = true;
+    let interval: NodeJS.Timeout;
+
+    const initSecretAndToken = async () => {
+      let secret = studentData.totp_secret;
+
+      if (!secret) {
+        try {
+          console.log("Generating new TOTP secret for student...");
+          const rawSecret = generateBase32Secret(16);
+          const encryptedSecret = encryptSecret(rawSecret);
+          
+          await tablesDB.updateRow({
+            databaseId: DB_ID,
+            tableId: COLLECTIONS.STUDENTS,
+            rowId: studentData.$id,
+            data: { totp_secret: encryptedSecret }
+          });
+
+          // Update local state / context
+          studentData.totp_secret = encryptedSecret;
+          secret = encryptedSecret;
+        } catch (err) {
+          console.error("Failed to generate or save TOTP secret", err);
+          return;
+        }
+      }
+
+      const decryptedSecret = decryptSecret(secret);
+
+      const updateToken = async () => {
+        if (!decryptedSecret || !active) return;
+        try {
+          const token = await generateTOTP(decryptedSecret);
+          if (!active) return;
+          setTotpToken(token);
+
+          // Generate QR code
+          const text = `${studentData.$id}:${token}`;
+          const url = await QRCode.toDataURL(text, {
+            margin: 1,
+            width: 256,
+            color: {
+              dark: "#000000",
+              light: "#FFFFFF"
+            }
+          });
+          if (!active) return;
+          setQrUrl(url);
+        } catch (err) {
+          console.error("Failed to generate TOTP/QR", err);
+        }
+      };
+
+      // Initial update
+      await updateToken();
+
+      // Start ticker
+      interval = setInterval(async () => {
+        const epoch = Math.floor(Date.now() / 1000);
+        const remaining = 30 - (epoch % 30);
+        setSecondsRemaining(remaining);
+
+        if (remaining === 30 || remaining === 0) {
+          await updateToken();
+        }
+      }, 1000);
+    };
+
+    initSecretAndToken();
+
+    // Screen Wake Lock API
+    let wakeLock: WakeLockSentinel | null = null;
+    const requestWakeLock = async () => {
+      try {
+        if ("wakeLock" in navigator) {
+          wakeLock = await navigator.wakeLock.request("screen");
+        }
+      } catch (err) {
+        console.warn("Wake lock failed", err);
+      }
+    };
+
+    requestWakeLock();
+
+    const handleVisibility = async () => {
+      if (wakeLock === null && document.visibilityState === "visible") {
+        await requestWakeLock();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      active = false;
+      if (interval) clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      if (wakeLock) {
+        wakeLock.release().catch(err => console.error("Release lock failed", err));
+      }
+    };
+  }, [isIdModalOpen, studentData]);
+
   const COLL_OUTING = "outing";
 
   React.useEffect(() => {
@@ -269,6 +385,26 @@ export default function Dashboard() {
                   router.push("/live-status");
                 }}
               />
+              <ActionCard
+                title="Outing (QR)"
+                subtitle="Scan QR for Entry/Exit"
+                icon={<QrCode className="text-secondary" size={32} />}
+                delay={0.22}
+                onClick={() => {
+                  startLoading();
+                  router.push("/scan-qr?type=Outing");
+                }}
+              />
+              <ActionCard
+                title="Leave (QR)"
+                subtitle="Scan QR for Leave Entry/Exit"
+                icon={<QrCode className="text-secondary" size={32} />}
+                delay={0.25}
+                onClick={() => {
+                  startLoading();
+                  router.push("/scan-qr?type=Leave");
+                }}
+              />
             </>
           )}
           {!isAdmin && !isKiosk && !isFaculty && !isCaretaker && isStudent && (
@@ -317,6 +453,13 @@ export default function Dashboard() {
                   startLoading();
                   router.push("/register-face");
                 }}
+              />
+              <ActionCard
+                title="Show ID Card"
+                subtitle="Digital ID & TOTP QR Code"
+                icon={<QrCode className="text-primary/20" size={32} />}
+                delay={0.35}
+                onClick={() => setIsIdModalOpen(true)}
               />
             </>
           )}
@@ -459,6 +602,146 @@ export default function Dashboard() {
             )}
         </motion.section>
       </main>
+
+      <AnimatePresence>
+        {isIdModalOpen && studentData && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xl"
+            onClick={() => setIsIdModalOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="w-full max-w-sm overflow-hidden bg-surface/90 border border-primary/10 rounded-[2.5rem] shadow-2xl relative flex flex-col p-6 text-center select-none"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Top Bar with Close Button */}
+              <div className="flex justify-between items-center mb-6">
+                <span className="text-secondary font-black text-[10px] uppercase tracking-[0.2em] bg-secondary/10 px-3 py-1 rounded-full border border-secondary/20">
+                  Digital Student ID
+                </span>
+                <button
+                  onClick={() => setIsIdModalOpen(false)}
+                  className="p-2 hover:bg-primary/5 active:scale-95 rounded-full transition-all text-primary/60 hover:text-primary"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Student Photo Section */}
+              <div className="flex flex-col items-center mb-6">
+                <div className="relative w-32 h-32 rounded-[2rem] overflow-hidden border-2 border-secondary/30 bg-primary/5 flex items-center justify-center shadow-lg">
+                  {studentData.photo ? (
+                    <img
+                      src={storage.getFilePreview("student_photos", studentData.photo).toString()}
+                      alt={studentData.name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    // Beautiful custom avatar fallback based on gender
+                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-tr from-secondary/15 to-primary/5 text-secondary">
+                      <User size={64} className="opacity-80" />
+                    </div>
+                  )}
+                </div>
+                <h2 className="text-2xl font-bold text-primary uppercase mt-4 tracking-tight leading-tight">
+                  {studentData.name}
+                </h2>
+                <p className="text-secondary font-mono text-sm font-semibold tracking-wider mt-1">
+                  {studentData.$id}
+                </p>
+              </div>
+
+              {/* Details Badges */}
+              <div className="grid grid-cols-3 gap-2 mb-6">
+                <div className="bg-primary/5 border border-primary/5 rounded-2xl p-2.5 flex flex-col items-center">
+                  <span className="text-[9px] font-bold text-primary/40 uppercase tracking-wider mb-0.5">Course</span>
+                  <span className="text-xs font-black text-primary/80 uppercase">
+                    {studentData.course === "b.tech" ? "B.Tech" : studentData.course === "m.tech" ? "M.Tech" : studentData.course === "bsc" ? "B.Sc" : studentData.course === "msc" ? "M.Sc" : studentData.course}
+                  </span>
+                </div>
+                <div className="bg-primary/5 border border-primary/5 rounded-2xl p-2.5 flex flex-col items-center">
+                  <span className="text-[9px] font-bold text-primary/40 uppercase tracking-wider mb-0.5">Year</span>
+                  <span className="text-xs font-black text-primary/80 uppercase">{studentData.year} Year</span>
+                </div>
+                <div className="bg-primary/5 border border-primary/5 rounded-2xl p-2.5 flex flex-col items-center">
+                  <span className="text-[9px] font-bold text-primary/40 uppercase tracking-wider mb-0.5">Dept</span>
+                  <span className="text-xs font-black text-primary/80 uppercase">{studentData.department}</span>
+                </div>
+              </div>
+
+              {/* QR Code Container (Must be white for reliable scanner reading) */}
+              <div className="bg-white p-5 rounded-[2rem] shadow-inner border border-primary/5 flex items-center justify-center mx-auto mb-6 relative group overflow-hidden">
+                {qrUrl ? (
+                  <img
+                    src={qrUrl}
+                    alt="Scan Me"
+                    className="w-48 h-48 select-none"
+                    draggable={false}
+                  />
+                ) : (
+                  <div className="w-48 h-48 flex items-center justify-center text-primary/20">
+                    <LoadingIndicator size="sm" />
+                  </div>
+                )}
+              </div>
+
+              {/* Animated Countdown Circle & TOTP Token */}
+              <div className="flex flex-col items-center space-y-4 mb-4">
+                {totpToken && (
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs font-bold text-primary/40 uppercase tracking-widest">Code:</span>
+                    <span className="text-lg font-mono font-black text-secondary tracking-widest bg-secondary/10 px-3 py-1 rounded-xl">
+                      {totpToken.slice(0, 3)} {totpToken.slice(3)}
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex items-center space-x-3 text-primary/60">
+                  {/* Countdown Circle */}
+                  <div className="relative w-8 h-8 flex items-center justify-center">
+                    <svg className="w-full h-full transform -rotate-90">
+                      <circle
+                        cx="16"
+                        cy="16"
+                        r="12"
+                        className="stroke-primary/10"
+                        strokeWidth="3"
+                        fill="transparent"
+                      />
+                      <circle
+                        cx="16"
+                        cy="16"
+                        r="12"
+                        className="stroke-secondary transition-all duration-1000 ease-linear"
+                        strokeWidth="3"
+                        fill="transparent"
+                        strokeDasharray={2 * Math.PI * 12}
+                        strokeDashoffset={2 * Math.PI * 12 * (1 - secondsRemaining / 30)}
+                      />
+                    </svg>
+                    <span className="absolute text-[10px] font-bold font-mono text-primary/80">
+                      {secondsRemaining}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-primary/40">
+                    QR Refreshes in {secondsRemaining}s
+                  </span>
+                </div>
+              </div>
+
+              {/* Brightness / Warning Overlay Hint */}
+              <p className="text-[9px] font-black text-secondary/80 uppercase tracking-widest border border-secondary/20 bg-secondary/5 rounded-xl py-2 px-4 inline-block mx-auto max-w-[280px]">
+                ⚠️ MAXIMIZE BRIGHTNESS FOR QUICK SCANNING
+              </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </GradientBackground>
   );
 }
