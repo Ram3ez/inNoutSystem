@@ -30,6 +30,18 @@ let memoryCacheEdge: Record<string, Float32Array[]> = {};
 let isLoaded = false;
 let isLoading = false;
 
+// Memory Student Metadata Cache
+let memoryStudentMetadata: Record<
+  string,
+  {
+    name: string;
+    totp_secret?: string;
+    gender: string;
+    photo?: string;
+    outing_blocked_until?: string;
+  }
+> = {};
+
 /** Accessor for GhostFaceNet descriptors */
 export function getMemoryCacheGhost() {
   return memoryCacheGhost;
@@ -256,10 +268,51 @@ export async function performIncrementalSync() {
         "last_sync_time_edge",
         "embeddings_edge",
       ),
+      syncStudentMetadata(),
     ]);
   } finally {
     syncInProgress = false;
   }
+}
+
+export async function syncStudentMetadata() {
+  try {
+    const students = await fetchAllRows<any>(DB_ID, COLLECTIONS.STUDENTS);
+    const metadataDict: typeof memoryStudentMetadata = {};
+    for (const s of students) {
+      metadataDict[s.$id.toUpperCase()] = {
+        name: s.name,
+        totp_secret: s.totp_secret,
+        gender: s.gender,
+        photo: s.photo,
+        outing_blocked_until: s.outing_blocked_until,
+      };
+    }
+    memoryStudentMetadata = metadataDict;
+    const { setCache } = await import("./idb");
+    await setCache("student_metadata", metadataDict);
+    console.log(`[🔄 SYNC] Synced ${students.length} student metadata records.`);
+  } catch (err) {
+    console.error("[⚠️ SYNC ERROR] Failed to sync student metadata:", err);
+  }
+}
+
+export async function getStudentMetadata(rollNo: string) {
+  const roll = rollNo.toUpperCase();
+  if (memoryStudentMetadata[roll]) {
+    return memoryStudentMetadata[roll];
+  }
+  try {
+    const { getCache } = await import("./idb");
+    const disk = await getCache<typeof memoryStudentMetadata>("student_metadata");
+    if (disk && disk[roll]) {
+      memoryStudentMetadata = disk;
+      return disk[roll];
+    }
+  } catch (err) {
+    console.warn("[💾 CACHE] Failed to get student metadata from IndexedDB", err);
+  }
+  return null;
 }
 
 /**
@@ -384,6 +437,78 @@ function initSyncListeners() {
     "embeddings_edge",
     "last_sync_time_edge",
   );
+
+  // Realtime subscription for student details changes
+  const setupStudentRealtime = () => {
+    const channel = `databases.${DB_ID}.tables.${COLLECTIONS.STUDENTS}.rows`;
+    const { getCache, setCache } = require("./idb");
+    realtime.subscribe(channel, (response: any) => {
+      const events = response.events;
+      const doc = response.payload as any;
+      const docId = (doc.$id || doc.id).toUpperCase();
+
+      if (
+        events.some(
+          (e: string) => e.includes(".create") || e.includes(".update")
+        )
+      ) {
+        const item = {
+          name: doc.name,
+          totp_secret: doc.totp_secret,
+          gender: doc.gender,
+          photo: doc.photo,
+          outing_blocked_until: doc.outing_blocked_until,
+        };
+        memoryStudentMetadata[docId] = item;
+        getCache("student_metadata").then((disk: any) => {
+          const d = disk || {};
+          d[docId] = item;
+          setCache("student_metadata", d);
+        });
+      } else if (events.some((e: string) => e.includes(".delete"))) {
+        delete memoryStudentMetadata[docId];
+        getCache("student_metadata").then((disk: any) => {
+          if (disk) {
+            delete disk[docId];
+            setCache("student_metadata", disk);
+          }
+        });
+      }
+    });
+  };
+  setupStudentRealtime();
+}
+
+let isMetadataLoaded = false;
+let metadataLoadingPromise: Promise<void> | null = null;
+
+/**
+ * Entry point for loading and caching ONLY student metadata.
+ * Extremely lightweight - does not warm up facial workers or download AI models.
+ */
+export async function loadStudentMetadataOnly() {
+  if (isMetadataLoaded) return;
+  if (metadataLoadingPromise) return metadataLoadingPromise;
+
+  metadataLoadingPromise = (async () => {
+    try {
+      const { getCache } = await import("./idb");
+      initSyncListeners();
+
+      const disk = (await getCache<typeof memoryStudentMetadata>("student_metadata")) || {};
+      memoryStudentMetadata = disk;
+
+      // Sync and cache catch-up
+      await syncStudentMetadata();
+      isMetadataLoaded = true;
+    } catch (err) {
+      console.error("[❌ METADATA CACHE] Init failed", err);
+    } finally {
+      metadataLoadingPromise = null;
+    }
+  })();
+
+  return metadataLoadingPromise;
 }
 
 /**
@@ -421,9 +546,16 @@ export async function loadFaceCache() {
         }
       };
 
+      // Load student metadata from IndexedDB
+      const loadStudentMetadataFromDisk = async () => {
+        const disk = (await getCache<typeof memoryStudentMetadata>("student_metadata")) || {};
+        memoryStudentMetadata = disk;
+      };
+
       await Promise.all([
         loadFromDisk("embeddings_ghost", memoryCacheGhost),
         loadFromDisk("embeddings_edge", memoryCacheEdge),
+        loadStudentMetadataFromDisk(),
       ]);
 
       // Seed worker and WAIT for it to be ready
@@ -608,6 +740,7 @@ export async function purgeAndFullSync(onProgress?: (msg: string) => void) {
     // Clear memory
     Object.keys(memoryCacheGhost).forEach((k) => delete memoryCacheGhost[k]);
     Object.keys(memoryCacheEdge).forEach((k) => delete memoryCacheEdge[k]);
+    Object.keys(memoryStudentMetadata).forEach((k) => delete memoryStudentMetadata[k]);
 
     // Clear Workers
     searchWorker?.postMessage({ type: "CLEAR" });
@@ -660,6 +793,7 @@ export async function purgeAndFullSync(onProgress?: (msg: string) => void) {
       "embeddings_edge",
       "last_sync_time_edge",
     );
+    await syncStudentMetadata();
 
     if (onProgress) onProgress("Sync Complete! System Optimized.");
   } catch (err) {

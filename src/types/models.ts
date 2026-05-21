@@ -47,6 +47,10 @@ export interface Student extends Models.Document {
     parent_verification_status?: 'unverified' | 'verified' | 'pending_approval' | 'rejected';
     /** ISO date string representing the date until which the student is administratively blocked from taking outings. */
     outing_blocked_until?: string; 
+    /** Unique 32-character TOTP secret key for QR code generation. */
+    totp_secret?: string;
+    /** Appwrite Storage File ID for the student's photo. */
+    photo?: string;
 }
 
 /**
