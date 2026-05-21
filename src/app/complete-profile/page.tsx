@@ -7,9 +7,11 @@ import {
   User as UserIcon,
   ArrowRight,
   CheckCircle2,
+  AlertCircle,
+  Edit3,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { databases, tablesDB } from "@/lib/appwrite";
+import { databases, tablesDB, storage, ID } from "@/lib/appwrite";
 import { useRouter } from "next/navigation";
 import { GradientBackground } from "@/components/GradientBackground";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
@@ -31,7 +33,41 @@ export default function CompleteProfilePage() {
   const [parentName, setParentName] = useState("");
   const [parentPhone, setParentPhone] = useState("");
   const [parentEmail, setParentEmail] = useState("");
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
   const router = useRouter();
+
+  useEffect(() => {
+    return () => {
+      if (photoPreview) {
+        URL.revokeObjectURL(photoPreview);
+      }
+    };
+  }, [photoPreview]);
+
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!["image/jpeg", "image/png", "image/jpg"].includes(file.type)) {
+      setPhotoError("Please select a JPG, JPEG, or PNG image.");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setPhotoError("Image size must be under 5MB.");
+      return;
+    }
+
+    setPhotoError(null);
+    setPhotoFile(file);
+    
+    if (photoPreview) {
+      URL.revokeObjectURL(photoPreview);
+    }
+    setPhotoPreview(URL.createObjectURL(file));
+  };
 
   const profileId = user?.email.split("@")[0].toUpperCase() || "";
   const isStudent = /^[A-Z]{2}[0-9]{2}[A-Z][0-9]{4}$/.test(profileId);
@@ -123,6 +159,10 @@ export default function CompleteProfilePage() {
     }
 
     if (isStudent) {
+      if (!photoFile) {
+        setError("Profile photo is required to complete registration");
+        return;
+      }
       if (!gender) {
         setError("Please select your gender");
         return;
@@ -155,23 +195,22 @@ export default function CompleteProfilePage() {
 
     try {
       if (isStudent) {
-        /*
-        await databases.createDocument({
-          databaseId: DB_ID,
-          collectionId: COLLECTIONS.STUDENTS,
-          documentId: profileId,
-          data: {
-            name: name,
-            phone_no: parseInt(phone),
-            gender: gender,
-            department: department,
-            year: year,
-            course: course,
-            is_out: false,
-            faceRegistered: false,
-          }
-        });
-        */
+        // Upload photo first
+        let uploadedPhotoId = "";
+        try {
+          const uploadResult = await storage.createFile(
+            "student_photos",
+            ID.unique(),
+            photoFile!
+          );
+          uploadedPhotoId = uploadResult.$id;
+        } catch (uploadErr: any) {
+          console.error("Photo upload failed:", uploadErr);
+          setError(uploadErr.message || "Failed to upload profile photo. Please try again.");
+          setIsSubmitting(false);
+          return;
+        }
+
         await tablesDB.createRow({
           databaseId: DB_ID,
           tableId: COLLECTIONS.STUDENTS,
@@ -184,6 +223,7 @@ export default function CompleteProfilePage() {
             year: year,
             course: course,
             is_out: false,
+            photo: uploadedPhotoId,
             pending_parent_name: parentName.trim(),
             pending_parent_phone: parentPhone ? parseInt(parentPhone) : null,
             pending_parent_email: parentEmail.trim().toLowerCase(),
@@ -265,6 +305,50 @@ export default function CompleteProfilePage() {
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-6">
+                  {isStudent && (
+                    <div className="flex flex-col items-center justify-center border-b border-primary/5 pb-8 mb-4">
+                      <label className="text-[10px] font-black text-primary/40 uppercase tracking-widest mb-4">
+                        Profile Photo
+                      </label>
+                      <div className="relative group w-32 h-32 rounded-[2rem] overflow-hidden border-2 border-secondary/30 bg-primary/5 flex items-center justify-center shadow-lg transition-all">
+                        {photoPreview ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={photoPreview}
+                            alt="Profile Preview"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-gradient-to-tr from-secondary/15 to-primary/5 text-secondary">
+                            <UserIcon size={48} className="opacity-80" />
+                          </div>
+                        )}
+                        
+                        <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center cursor-pointer transition-all duration-200 text-white text-[9px] font-black uppercase tracking-wider gap-1.5 z-10">
+                          <Edit3 size={18} />
+                          <span>{photoPreview ? "Change Photo" : "Upload Photo"}</span>
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/jpg"
+                            onChange={handlePhotoChange}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                      
+                      {photoError && (
+                        <div className="mt-4 p-3 bg-error/10 border border-error/20 rounded-2xl flex items-center gap-2 text-error text-[10px] font-bold uppercase tracking-wide">
+                          <AlertCircle size={14} />
+                          <span>{photoError}</span>
+                        </div>
+                      )}
+                      
+                      <p className="text-[9px] text-primary/40 font-bold uppercase tracking-wider mt-3 text-center">
+                        JPG, JPEG or PNG. Max size 5MB. *Required
+                      </p>
+                    </div>
+                  )}
+
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-primary/40 uppercase tracking-widest ml-4">
                       Full Name

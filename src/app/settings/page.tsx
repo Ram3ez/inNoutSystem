@@ -16,7 +16,7 @@ import {
   Edit3,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { tablesDB } from "@/lib/appwrite";
+import { tablesDB, storage, ID } from "@/lib/appwrite";
 import { GradientBackground } from "@/components/GradientBackground";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
 import { useLoading } from "@/context/LoadingContext";
@@ -39,6 +39,123 @@ export default function SettingsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (studentData?.photo) {
+      setPhotoPreview(storage.getFilePreview("student_photos", studentData.photo).toString());
+    }
+  }, [studentData]);
+
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (studentData?.photo) {
+      setPhotoError("Profile photo is locked and cannot be updated.");
+      return;
+    }
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!["image/jpeg", "image/png", "image/jpg"].includes(file.type)) {
+      setPhotoError("Please upload a JPG, JPEG, or PNG image.");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setPhotoError("Image size must be under 5MB.");
+      return;
+    }
+
+    setPhotoError(null);
+    setIsUploadingPhoto(true);
+
+    try {
+      // 1. Upload new photo to Appwrite Storage
+      const uploadResult = await storage.createFile(
+        "student_photos",
+        ID.unique(),
+        file
+      );
+      const newPhotoId = uploadResult.$id;
+
+      // 2. Update Student document photo ID in Databases
+      await tablesDB.updateRow({
+        databaseId: DB_ID,
+        tableId: COLLECTIONS.STUDENTS,
+        rowId: studentData!.$id,
+        data: {
+          photo: newPhotoId,
+        },
+      });
+
+      // 3. Delete old file from storage if it exists
+      if (studentData?.photo) {
+        try {
+          await storage.deleteFile("student_photos", studentData.photo);
+        } catch (delErr) {
+          console.warn("Failed to delete old photo:", delErr);
+        }
+      }
+
+      // 4. Update the local storage cache using Base64 encoding
+      const CACHE_KEY_STUDENT = "nitpy_auth_studentData";
+      const cachedRaw = localStorage.getItem(CACHE_KEY_STUDENT);
+      if (cachedRaw) {
+        try {
+          let decoded = null;
+          if (cachedRaw.trim().startsWith("{")) {
+            decoded = JSON.parse(cachedRaw);
+          } else {
+            const binString = atob(cachedRaw);
+            const bytes = new Uint8Array(binString.length);
+            for (let i = 0; i < binString.length; i++) {
+              bytes[i] = binString.charCodeAt(i);
+            }
+            const json = new TextDecoder().decode(bytes);
+            decoded = JSON.parse(json);
+          }
+
+          if (decoded) {
+            decoded.photo = newPhotoId;
+            const jsonStr = JSON.stringify(decoded);
+            const bytesEnc = new TextEncoder().encode(jsonStr);
+            let binStringEnc = "";
+            for (let i = 0; i < bytesEnc.byteLength; i++) {
+              binStringEnc += String.fromCharCode(bytesEnc[i]);
+            }
+            const encoded = btoa(binStringEnc);
+            localStorage.setItem(CACHE_KEY_STUDENT, encoded);
+          }
+        } catch (cacheErr) {
+          console.error("Failed to update student cache:", cacheErr);
+          const fallbackStudent = { ...studentData, photo: newPhotoId };
+          localStorage.setItem(CACHE_KEY_STUDENT, JSON.stringify(fallbackStudent));
+        }
+      }
+
+      // 5. Update local preview URL
+      const newPreviewUrl = storage.getFilePreview("student_photos", newPhotoId).toString();
+      setPhotoPreview(newPreviewUrl);
+
+      // 6. Log transaction
+      await logTransaction({
+        action: "PHOTO_UPDATE",
+        message: `Student ${studentData!.$id} updated profile photo.`,
+        userId: studentData!.$id,
+        level: "low",
+      });
+
+      // Reload window to sync other components
+      window.location.reload();
+    } catch (err: any) {
+      console.error("Failed to upload photo:", err);
+      setPhotoError(err.message || "Failed to upload photo.");
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
 
   useEffect(() => {
     if (authLoading) return;
@@ -168,6 +285,61 @@ export default function SettingsPage() {
           animate={{ opacity: 1, y: 0 }}
           className="space-y-8 bg-surface border border-primary/5 p-6 sm:p-10 lg:p-14 rounded-[2rem] sm:rounded-[3rem] shadow-2xl relative overflow-hidden"
         >
+          {/* Profile Photo Section */}
+          <div className="flex flex-col items-center justify-center border-b border-primary/5 pb-8 mb-4">
+            <h2 className="text-sm font-black text-primary uppercase tracking-wider mb-4">
+              Profile Photo
+            </h2>
+            <div className="relative group w-32 h-32 rounded-[2rem] overflow-hidden border-2 border-secondary/30 bg-primary/5 flex items-center justify-center shadow-lg transition-all">
+              {photoPreview ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={photoPreview}
+                  alt="Profile"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-gradient-to-tr from-secondary/15 to-primary/5 text-secondary">
+                  <UserIcon size={48} className="opacity-80" />
+                </div>
+              )}
+              {isUploadingPhoto && (
+                <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-10">
+                  <LoadingIndicator size="sm" />
+                </div>
+              )}
+              
+              {!isUploadingPhoto && !studentData?.photo && (
+                <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center cursor-pointer transition-all duration-200 text-white text-[9px] font-black uppercase tracking-wider gap-1.5 z-10">
+                  <Edit3 size={18} />
+                  <span>Register Photo</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/jpg"
+                    onChange={handlePhotoChange}
+                    className="hidden"
+                  />
+                </label>
+              )}
+            </div>
+            
+            {photoError && (
+              <div className="mt-4 p-3 bg-error/10 border border-error/20 rounded-2xl flex items-center gap-2 text-error text-[10px] font-bold uppercase tracking-wide">
+                <AlertCircle size={14} />
+                <span>{photoError}</span>
+              </div>
+            )}
+            
+            {studentData?.photo ? (
+              <p className="text-[9px] text-secondary font-black uppercase tracking-wider mt-3 text-center bg-secondary/10 border border-secondary/20 px-3 py-1 rounded-full">
+                🔒 PROFILE PHOTO REGISTERED & LOCKED
+              </p>
+            ) : (
+              <p className="text-[9px] text-primary/40 font-bold uppercase tracking-wider mt-3 text-center">
+                JPG, JPEG or PNG. Max size 5MB.
+              </p>
+            )}
+          </div>
           {/* Top Status Alert Block */}
           {status === "unverified" && (
             <div className="p-4 bg-primary/5 border border-primary/10 rounded-2xl flex items-center gap-3 text-primary/80">

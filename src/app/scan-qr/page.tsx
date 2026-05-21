@@ -24,6 +24,45 @@ import {
 } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 
+const checkAndMarkTokenAsScanned = (tokenKey: string): boolean => {
+  try {
+    const now = Date.now();
+    const raw = localStorage.getItem("nitpy_scanned_tokens");
+    let list: { key: string; ts: number }[] = [];
+    if (raw) {
+      list = JSON.parse(raw);
+    }
+    // Filter out entries older than 120 seconds (120000ms)
+    list = list.filter((item) => now - item.ts <= 120000);
+
+    const alreadyScanned = list.some((item) => item.key === tokenKey);
+    if (alreadyScanned) {
+      localStorage.setItem("nitpy_scanned_tokens", JSON.stringify(list));
+      return false;
+    }
+
+    list.push({ key: tokenKey, ts: now });
+    localStorage.setItem("nitpy_scanned_tokens", JSON.stringify(list));
+    return true;
+  } catch (err) {
+    console.error("LocalStorage scanned tokens check error:", err);
+    return true; // Fallback to allowing in case of storage failure
+  }
+};
+
+const clearExpiredScannedTokens = (): void => {
+  try {
+    const now = Date.now();
+    const raw = localStorage.getItem("nitpy_scanned_tokens");
+    if (!raw) return;
+    let list: { key: string; ts: number }[] = JSON.parse(raw);
+    const cleaned = list.filter((item) => now - item.ts <= 120000);
+    localStorage.setItem("nitpy_scanned_tokens", JSON.stringify(cleaned));
+  } catch (err) {
+    console.error("LocalStorage expired scanned tokens cleanup error:", err);
+  }
+};
+
 function ScanQrContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -46,6 +85,15 @@ function ScanQrContent() {
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
   const isProcessingRef = useRef(false);
   const isPausedRef = useRef(false);
+
+  // Periodic cleanup of expired scanned tokens from localStorage
+  useEffect(() => {
+    clearExpiredScannedTokens();
+    const interval = setInterval(() => {
+      clearExpiredScannedTokens();
+    }, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Load and cache student metadata on mount
   useEffect(() => {
@@ -203,6 +251,14 @@ function ScanQrContent() {
       const isTokenValid = await verifyTOTP(rawSecret, token, 1);
       if (!isTokenValid) {
         showError("Invalid or expired identification code.\nAsk student to refresh their ID.");
+        return;
+      }
+
+      // Step 2b: Prevent replay / duplicate scans
+      const tokenKey = `${cleanRollNo}:${token}`;
+      const isUnused = checkAndMarkTokenAsScanned(tokenKey);
+      if (!isUnused) {
+        showError("This QR code has already been scanned.\nPlease wait for a new code to generate.");
         return;
       }
 
