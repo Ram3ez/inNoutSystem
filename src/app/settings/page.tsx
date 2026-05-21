@@ -22,7 +22,7 @@ import { LoadingIndicator } from "@/components/LoadingIndicator";
 import { useLoading } from "@/context/LoadingContext";
 import { Navigation } from "@/components/Navigation";
 import { useRouter } from "next/navigation";
-import { DB_ID, COLLECTIONS } from "@/lib/constants";
+import { DB_ID, COLLECTIONS, BUCKETS } from "@/lib/constants";
 import { logTransaction } from "@/lib/auditLogger";
 import Link from "next/link";
 
@@ -46,7 +46,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (studentData?.photo) {
-      setPhotoPreview(storage.getFilePreview("student_photos", studentData.photo).toString());
+      setPhotoPreview(storage.getFilePreview({ bucketId: BUCKETS.STUDENT_PHOTOS, fileId: studentData.photo }).toString());
     }
   }, [studentData]);
 
@@ -73,11 +73,11 @@ export default function SettingsPage() {
 
     try {
       // 1. Upload new photo to Appwrite Storage
-      const uploadResult = await storage.createFile(
-        "student_photos",
-        ID.unique(),
-        file
-      );
+      const uploadResult = await storage.createFile({
+        bucketId: BUCKETS.STUDENT_PHOTOS,
+        fileId: ID.unique(),
+        file: file
+      });
       const newPhotoId = uploadResult.$id;
 
       // 2. Update Student document photo ID in Databases
@@ -93,7 +93,7 @@ export default function SettingsPage() {
       // 3. Delete old file from storage if it exists
       if (studentData?.photo) {
         try {
-          await storage.deleteFile("student_photos", studentData.photo);
+          await storage.deleteFile(BUCKETS.STUDENT_PHOTOS, studentData.photo);
         } catch (delErr) {
           console.warn("Failed to delete old photo:", delErr);
         }
@@ -136,7 +136,7 @@ export default function SettingsPage() {
       }
 
       // 5. Update local preview URL
-      const newPreviewUrl = storage.getFilePreview("student_photos", newPhotoId).toString();
+      const newPreviewUrl = storage.getFilePreview(BUCKETS.STUDENT_PHOTOS, newPhotoId).toString();
       setPhotoPreview(newPreviewUrl);
 
       // 6. Log transaction
@@ -308,7 +308,7 @@ export default function SettingsPage() {
                   <LoadingIndicator size="sm" />
                 </div>
               )}
-              
+
               {!isUploadingPhoto && !studentData?.photo && (
                 <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center cursor-pointer transition-all duration-200 text-white text-[9px] font-black uppercase tracking-wider gap-1.5 z-10">
                   <Edit3 size={18} />
@@ -322,14 +322,14 @@ export default function SettingsPage() {
                 </label>
               )}
             </div>
-            
+
             {photoError && (
               <div className="mt-4 p-3 bg-error/10 border border-error/20 rounded-2xl flex items-center gap-2 text-error text-[10px] font-bold uppercase tracking-wide">
                 <AlertCircle size={14} />
                 <span>{photoError}</span>
               </div>
             )}
-            
+
             {studentData?.photo ? (
               <p className="text-[9px] text-secondary font-black uppercase tracking-wider mt-3 text-center bg-secondary/10 border border-secondary/20 px-3 py-1 rounded-full">
                 🔒 PROFILE PHOTO REGISTERED & LOCKED

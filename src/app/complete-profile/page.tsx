@@ -16,7 +16,7 @@ import { useRouter } from "next/navigation";
 import { GradientBackground } from "@/components/GradientBackground";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
 import { Navigation } from "@/components/Navigation";
-import { DB_ID, COLLECTIONS } from "@/lib/constants";
+import { DB_ID, COLLECTIONS, BUCKETS } from "@/lib/constants";
 
 export default function CompleteProfilePage() {
   const { user, isLoading: authLoading, isRegistrationRequired } = useAuth();
@@ -199,7 +199,7 @@ export default function CompleteProfilePage() {
         let uploadedPhotoId = "";
         try {
           const uploadResult = await storage.createFile(
-            "student_photos",
+            BUCKETS.STUDENT_PHOTOS,
             ID.unique(),
             photoFile!
           );

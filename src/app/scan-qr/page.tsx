@@ -5,7 +5,7 @@ import { BasePage } from "@/components/BasePage";
 import { useAuth } from "@/context/AuthContext";
 import { tablesDB, ID } from "@/lib/appwrite";
 import { Query } from "appwrite";
-import { DB_ID, COLLECTIONS } from "@/lib/constants";
+import { DB_ID, COLLECTIONS, BUCKETS } from "@/lib/constants";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getStudentMetadata, loadStudentMetadataOnly } from "@/lib/faceCache";
 import { verifyTOTP, decryptSecret } from "@/lib/totp";
@@ -738,7 +738,7 @@ function ScanQrContent() {
                   {scannedStudentPhoto && (
                     <div className="relative w-28 h-28 rounded-[1.5rem] overflow-hidden border-2 border-green-500/20 bg-primary/5 mx-auto shadow-md">
                       <img
-                        src={storage.getFilePreview("student_photos", scannedStudentPhoto).toString()}
+                        src={storage.getFilePreview(BUCKETS.STUDENT_PHOTOS, scannedStudentPhoto).toString()}
                         alt="Verified Student"
                         className="w-full h-full object-cover"
                       />

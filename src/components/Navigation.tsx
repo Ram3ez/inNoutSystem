@@ -16,7 +16,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { tablesDB, storage } from '@/lib/appwrite';
 import { generateTOTP, generateBase32Secret, encryptSecret, decryptSecret } from "@/lib/totp";
 import QRCode from "qrcode";
-import { DB_ID, COLLECTIONS } from "@/lib/constants";
+import { DB_ID, COLLECTIONS, BUCKETS } from "@/lib/constants";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
 
 export const Navigation: React.FC = () => {
@@ -245,7 +245,7 @@ export const Navigation: React.FC = () => {
                                     {studentData.photo ? (
                                         // eslint-disable-next-line @next/next/no-img-element
                                         <img
-                                            src={storage.getFilePreview("student_photos", studentData.photo).toString()}
+                                            src={storage.getFilePreview({ bucketId: BUCKETS.STUDENT_PHOTOS, fileId: studentData.photo }).toString()}
                                             alt={studentData.name}
                                             className="w-full h-full object-cover"
                                         />

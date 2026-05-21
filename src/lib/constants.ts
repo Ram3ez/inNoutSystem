@@ -41,6 +41,14 @@ export const COLLECTIONS = {
 } as const;
 
 /**
+ * Appwrite Storage Bucket IDs
+ * Used for file upload and preview operations.
+ */
+export const BUCKETS = {
+  STUDENT_PHOTOS: "student_id",
+} as const;
+
+/**
  * Appwrite Team IDs
  * Used for role-based access control (RBAC).
  */
