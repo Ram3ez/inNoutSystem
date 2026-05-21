@@ -198,10 +198,13 @@ export default function CompleteProfilePage() {
         // Upload photo first
         let uploadedPhotoId = "";
         try {
+          const extension = photoFile!.name.split('.').pop() || 'jpg';
+          const renamedFile = new File([photoFile!], `${profileId}.${extension}`, { type: photoFile!.type });
+
           const uploadResult = await storage.createFile(
             BUCKETS.STUDENT_PHOTOS,
             ID.unique(),
-            photoFile!
+            renamedFile
           );
           uploadedPhotoId = uploadResult.$id;
         } catch (uploadErr: any) {

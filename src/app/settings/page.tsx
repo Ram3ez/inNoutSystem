@@ -72,11 +72,15 @@ export default function SettingsPage() {
     setIsUploadingPhoto(true);
 
     try {
-      // 1. Upload new photo to Appwrite Storage
+      // 1. Rename file to rollnumber.extension and upload to Appwrite Storage
+      const rollNo = studentData!.$id.toUpperCase();
+      const extension = file.name.split('.').pop() || 'jpg';
+      const renamedFile = new File([file], `${rollNo}.${extension}`, { type: file.type });
+
       const uploadResult = await storage.createFile({
         bucketId: BUCKETS.STUDENT_PHOTOS,
         fileId: ID.unique(),
-        file: file
+        file: renamedFile
       });
       const newPhotoId = uploadResult.$id;
 

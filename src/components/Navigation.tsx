@@ -312,33 +312,7 @@ export const Navigation: React.FC = () => {
                                     </div>
                                 )}
 
-                                <div className="flex items-center space-x-2.5 text-primary/60">
-                                    {/* Countdown Circle */}
-                                    <div className="relative w-6 h-6 flex items-center justify-center">
-                                        <svg className="w-full h-full transform -rotate-90">
-                                            <circle
-                                                cx="12"
-                                                cy="12"
-                                                r="9"
-                                                className="stroke-primary/10"
-                                                strokeWidth="2.5"
-                                                fill="transparent"
-                                            />
-                                            <circle
-                                                cx="12"
-                                                cy="12"
-                                                r="9"
-                                                className="stroke-secondary transition-all duration-1000 ease-linear"
-                                                strokeWidth="2.5"
-                                                fill="transparent"
-                                                strokeDasharray={2 * Math.PI * 9}
-                                                strokeDashoffset={2 * Math.PI * 9 * (1 - secondsRemaining / 30)}
-                                            />
-                                        </svg>
-                                        <span className="absolute text-[8px] sm:text-[9px] font-bold font-mono text-primary/80">
-                                            {secondsRemaining}
-                                        </span>
-                                    </div>
+                                <div className="flex items-center text-primary/60">
                                     <span className="text-[8px] sm:text-[9px] font-bold uppercase tracking-wider text-primary/40">
                                         Refreshes in {secondsRemaining}s
                                     </span>

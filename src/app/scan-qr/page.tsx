@@ -21,6 +21,7 @@ import {
   RefreshCw,
   Zap,
   ZapOff,
+  User,
 } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 
@@ -81,6 +82,14 @@ function ScanQrContent() {
     message: string;
     type: "success" | "error";
   } | null>(null);
+
+  const [pendingVerification, setPendingVerification] = useState<{
+    student: any;
+    rollNo: string;
+    token: string;
+  } | null>(null);
+  const [selectedAction, setSelectedAction] = useState<"in" | "out">("out");
+  const [isSubmittingVerification, setIsSubmittingVerification] = useState(false);
 
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
   const isProcessingRef = useRef(false);
@@ -207,86 +216,35 @@ function ScanQrContent() {
     }, 4000);
   };
 
-  const handleScanSuccess = async (decodedText: string) => {
-    if (isProcessingRef.current) return;
-    isProcessingRef.current = true;
-    setStatusText("Verifying token...");
+  const handleVerifyConfirm = async () => {
+    if (!pendingVerification || isSubmittingVerification) return;
+    setIsSubmittingVerification(true);
 
-    // Pause scanning while verifying
-    try {
-      if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
-        await html5QrCodeRef.current.pause(true);
-        isPausedRef.current = true;
-      }
-    } catch (err) {
-      console.warn("Failed to pause scanner feed:", err);
-    }
-
-    const parts = decodedText.split(":");
-    if (parts.length !== 2) {
-      showError("Invalid QR Code structure. Re-generate ID on student device.");
-      return;
-    }
-
-    const [rollNo, token] = parts;
+    const { student, rollNo, token } = pendingVerification;
     const cleanRollNo = rollNo.trim().toUpperCase();
 
     try {
-      // Step 1: Retrieve student secret and details from local metadata cache
-      const student = await getStudentMetadata(cleanRollNo);
-      if (!student) {
-        showError(`Student detail for ${cleanRollNo} not found in Kiosk database.\nPlease connect Kiosk online to sync cache.`);
-        return;
-      }
-
-      setScannedStudentPhoto(student.photo || null);
-
-      // Step 2: Verify TOTP secret with drift tolerance
-      if (!student.totp_secret) {
-        showError("Student has not activated TOTP.\nAsk them to open 'Show ID' on their dashboard once.");
-        return;
-      }
-
-      const rawSecret = decryptSecret(student.totp_secret);
-      const isTokenValid = await verifyTOTP(rawSecret, token, 1);
-      if (!isTokenValid) {
-        showError("Invalid or expired identification code.\nAsk student to refresh their ID.");
-        return;
-      }
-
       // Step 2b: Prevent replay / duplicate scans
       const tokenKey = `${cleanRollNo}:${token}`;
       const isUnused = checkAndMarkTokenAsScanned(tokenKey);
       if (!isUnused) {
         showError("This QR code has already been scanned.\nPlease wait for a new code to generate.");
+        setPendingVerification(null);
+        setIsSubmittingVerification(false);
         return;
       }
 
-      // Step 3: Check admin blocks
-      if (
-        student.outing_blocked_until &&
-        new Date() < new Date(student.outing_blocked_until)
-      ) {
-        const until = new Date(student.outing_blocked_until).toLocaleDateString("en-IN", {
-          timeZone: "Asia/Kolkata",
-          day: "2-digit",
-          month: "2-digit",
-          year: "numeric",
-        });
-        showError(`OUTING PRIVILEGES BLOCKED UNTIL: ${until}`);
-        return;
-      }
-
-      // Step 4: Perform transactional mutations
       if (!isSystemOnline()) {
         addToOfflineQueue(cleanRollNo);
         await logTransaction({
           action: "OFFLINE_CAPTURE",
-          message: `Student ${cleanRollNo} verified offline via QR (${actionType}).`,
+          message: `Student ${cleanRollNo} verified offline via QR (${actionType} - ${selectedAction === "in" ? "Check-In" : "Check-Out"}).`,
           userId: cleanRollNo,
           level: "low",
         });
         showSuccess(`Offline Verification Success!\nSaved locally for ${cleanRollNo}.`, student.name);
+        setPendingVerification(null);
+        setIsSubmittingVerification(false);
         return;
       }
 
@@ -294,60 +252,66 @@ function ScanQrContent() {
       let dbMessage = "";
 
       if (actionType === "Leave") {
-        // --- LEAVE TRANSACTIONS ---
-        const { rows: leaves } = await tablesDB.listRows({
-          databaseId: DB_ID,
-          tableId: COLLECTIONS.LEAVE,
-          queries: [Query.equal("roll_no", cleanRollNo), Query.orderDesc("$createdAt")],
-        });
-
-        const activeLeave = leaves.find((doc: any) => doc.exit_date_time && !doc.in_date_time);
-
-        if (activeLeave) {
+        if (selectedAction === "in") {
           // --- LEAVE RETURN ---
-          const {
-            $id,
-            $tableId,
-            $databaseId,
-            $createdAt,
-            $updatedAt,
-            $permissions,
-            student_name,
-            student_phone,
-            parent_name,
-            parent_phone,
-            parent_email,
-            ...archiveData
-          } = activeLeave as any;
-
-          archiveData.in_date_time = currentTime;
-          archiveData.mail_sent = activeLeave.mail_sent;
-
-          await tablesDB.createRow({
-            databaseId: DB_ID,
-            tableId: COLLECTIONS.LEAVE_ARCHIVE,
-            rowId: ID.unique(),
-            data: archiveData,
-          });
-          await tablesDB.deleteRow({
+          const { rows: leaves } = await tablesDB.listRows({
             databaseId: DB_ID,
             tableId: COLLECTIONS.LEAVE,
-            rowId: activeLeave.$id,
-          });
-          await tablesDB.updateRow({
-            databaseId: DB_ID,
-            tableId: COLLECTIONS.STUDENTS,
-            rowId: cleanRollNo,
-            data: { is_on_leave: false },
+            queries: [Query.equal("roll_no", cleanRollNo), Query.orderDesc("$createdAt")],
           });
 
-          dbMessage = "LEAVE RETURN REGISTERED";
-          await logTransaction({
-            action: "LEAVE_RETURN",
-            message: `Student ${cleanRollNo} returned from leave (Verified via QR).`,
-            userId: cleanRollNo,
-            metadata: { leaveId: activeLeave.$id },
-          });
+          const activeLeave = leaves.find((doc: any) => doc.exit_date_time && !doc.in_date_time);
+
+          if (activeLeave) {
+            const {
+              $id,
+              $tableId,
+              $databaseId,
+              $createdAt,
+              $updatedAt,
+              $permissions,
+              student_name,
+              student_phone,
+              parent_name,
+              parent_phone,
+              parent_email,
+              ...archiveData
+            } = activeLeave as any;
+
+            archiveData.in_date_time = currentTime;
+            archiveData.mail_sent = activeLeave.mail_sent;
+
+            await tablesDB.createRow({
+              databaseId: DB_ID,
+              tableId: COLLECTIONS.LEAVE_ARCHIVE,
+              rowId: ID.unique(),
+              data: archiveData,
+            });
+            await tablesDB.deleteRow({
+              databaseId: DB_ID,
+              tableId: COLLECTIONS.LEAVE,
+              rowId: activeLeave.$id,
+            });
+            await tablesDB.updateRow({
+              databaseId: DB_ID,
+              tableId: COLLECTIONS.STUDENTS,
+              rowId: cleanRollNo,
+              data: { is_on_leave: false },
+            });
+
+            dbMessage = "LEAVE RETURN REGISTERED";
+            await logTransaction({
+              action: "LEAVE_RETURN",
+              message: `Student ${cleanRollNo} returned from leave (Verified via QR).`,
+              userId: cleanRollNo,
+              metadata: { leaveId: activeLeave.$id },
+            });
+          } else {
+            showError("No active leave departure record found for checking in.");
+            setPendingVerification(null);
+            setIsSubmittingVerification(false);
+            return;
+          }
         } else {
           // --- LEAVE DEPARTURE ---
           const { rows: outings } = await tablesDB.listRows({
@@ -359,8 +323,16 @@ function ScanQrContent() {
 
           if (activeOuting) {
             showError("Departure Denied:\nCurrently checked-out on an outing.");
+            setPendingVerification(null);
+            setIsSubmittingVerification(false);
             return;
           }
+
+          const { rows: leaves } = await tablesDB.listRows({
+            databaseId: DB_ID,
+            tableId: COLLECTIONS.LEAVE,
+            queries: [Query.equal("roll_no", cleanRollNo), Query.orderDesc("$createdAt")],
+          });
 
           const now = new Date();
           const today = new Date();
@@ -438,54 +410,63 @@ function ScanQrContent() {
               }
             }
             showError(errorMsg);
+            setPendingVerification(null);
+            setIsSubmittingVerification(false);
             return;
           }
         }
       } else {
         // --- OUTING TRANSACTIONS ---
-        const { rows: outings } = await tablesDB.listRows({
-          databaseId: DB_ID,
-          tableId: COLLECTIONS.OUTING,
-          queries: [
-            Query.equal("roll_no", cleanRollNo),
-            Query.orderDesc("out_time"),
-            Query.limit(1),
-          ],
-        });
-
-        const openOuting = outings.find((doc) => !doc.in_time);
-
-        if (openOuting) {
+        if (selectedAction === "in") {
           // --- OUTING CHECK-IN ---
-          await tablesDB.createRow({
-            databaseId: DB_ID,
-            tableId: COLLECTIONS.OUTING_ARCHIVE,
-            rowId: ID.unique(),
-            data: {
-              roll_no: cleanRollNo,
-              out_time: openOuting.out_time,
-              in_time: currentTime,
-            },
-          });
-          await tablesDB.deleteRow({
+          const { rows: outings } = await tablesDB.listRows({
             databaseId: DB_ID,
             tableId: COLLECTIONS.OUTING,
-            rowId: openOuting.$id,
-          });
-          await tablesDB.updateRow({
-            databaseId: DB_ID,
-            tableId: COLLECTIONS.STUDENTS,
-            rowId: cleanRollNo,
-            data: { is_out: false },
+            queries: [
+              Query.equal("roll_no", cleanRollNo),
+              Query.orderDesc("out_time"),
+              Query.limit(1),
+            ],
           });
 
-          dbMessage = "OUTING CHECK-IN SUCCESSFUL";
-          await logTransaction({
-            action: "OUTING_ENTRY",
-            message: `Student ${cleanRollNo} checked in from outing (Verified via QR).`,
-            userId: cleanRollNo,
-            metadata: { outingId: openOuting.$id },
-          });
+          const openOuting = outings.find((doc) => !doc.in_time);
+
+          if (openOuting) {
+            await tablesDB.createRow({
+              databaseId: DB_ID,
+              tableId: COLLECTIONS.OUTING_ARCHIVE,
+              rowId: ID.unique(),
+              data: {
+                roll_no: cleanRollNo,
+                out_time: openOuting.out_time,
+                in_time: currentTime,
+              },
+            });
+            await tablesDB.deleteRow({
+              databaseId: DB_ID,
+              tableId: COLLECTIONS.OUTING,
+              rowId: openOuting.$id,
+            });
+            await tablesDB.updateRow({
+              databaseId: DB_ID,
+              tableId: COLLECTIONS.STUDENTS,
+              rowId: cleanRollNo,
+              data: { is_out: false },
+            });
+
+            dbMessage = "OUTING CHECK-IN SUCCESSFUL";
+            await logTransaction({
+              action: "OUTING_ENTRY",
+              message: `Student ${cleanRollNo} checked in from outing (Verified via QR).`,
+              userId: cleanRollNo,
+              metadata: { outingId: openOuting.$id },
+            });
+          } else {
+            showError("No open outing found. Student is not checked out.");
+            setPendingVerification(null);
+            setIsSubmittingVerification(false);
+            return;
+          }
         } else {
           // --- OUTING CHECK-OUT ---
           const { rows: leaves } = await tablesDB.listRows({
@@ -497,6 +478,26 @@ function ScanQrContent() {
 
           if (activeLeave) {
             showError("Departure Denied:\nCurrently checked-out on active leave.");
+            setPendingVerification(null);
+            setIsSubmittingVerification(false);
+            return;
+          }
+
+          const { rows: outings } = await tablesDB.listRows({
+            databaseId: DB_ID,
+            tableId: COLLECTIONS.OUTING,
+            queries: [
+              Query.equal("roll_no", cleanRollNo),
+              Query.orderDesc("out_time"),
+              Query.limit(1),
+            ],
+          });
+          const openOuting = outings.find((doc) => !doc.in_time);
+
+          if (openOuting) {
+            showError("Departure Denied:\nAlready checked-out on an outing.");
+            setPendingVerification(null);
+            setIsSubmittingVerification(false);
             return;
           }
 
@@ -523,6 +524,8 @@ function ScanQrContent() {
 
           if (isDisabled) {
             showError(restrictedMsg);
+            setPendingVerification(null);
+            setIsSubmittingVerification(false);
             return;
           }
 
@@ -552,6 +555,137 @@ function ScanQrContent() {
       }
 
       showSuccess(dbMessage, student.name);
+    } catch (err: any) {
+      console.error("QR validation failure during commit:", err);
+      showError(err.message || "Failed to submit verification check.");
+    } finally {
+      setPendingVerification(null);
+      setIsSubmittingVerification(false);
+    }
+  };
+
+  const handleCancelVerification = () => {
+    setPendingVerification(null);
+    resumeScanning();
+  };
+
+  const handleScanSuccess = async (decodedText: string) => {
+    if (isProcessingRef.current) return;
+    isProcessingRef.current = true;
+    setStatusText("Verifying token...");
+
+    // Pause scanning while verifying
+    try {
+      if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
+        await html5QrCodeRef.current.pause(true);
+        isPausedRef.current = true;
+      }
+    } catch (err) {
+      console.warn("Failed to pause scanner feed:", err);
+    }
+
+    const parts = decodedText.split(":");
+    if (parts.length !== 2) {
+      showError("Invalid QR Code structure. Re-generate ID on student device.");
+      return;
+    }
+
+    const [rollNo, token] = parts;
+    const cleanRollNo = rollNo.trim().toUpperCase();
+
+    try {
+      // Step 1: Retrieve student secret and details from local metadata cache
+      const student = await getStudentMetadata(cleanRollNo);
+      if (!student) {
+        showError(`Student detail for ${cleanRollNo} not found in Kiosk database.\nPlease connect Kiosk online to sync cache.`);
+        return;
+      }
+
+      setScannedStudentPhoto(student.photo || null);
+
+      // Step 2: Verify TOTP secret with drift tolerance
+      if (!student.totp_secret) {
+        showError("Student has not activated TOTP.\nAsk them to open 'Show ID' on their dashboard once.");
+        return;
+      }
+
+      const rawSecret = decryptSecret(student.totp_secret);
+      const isTokenValid = await verifyTOTP(rawSecret, token, 1);
+      if (!isTokenValid) {
+        showError("Invalid or expired identification code.\nAsk student to refresh their ID.");
+        return;
+      }
+
+      // Step 2b: Check replay / duplicate scans (do not mark as scanned yet)
+      const tokenKey = `${cleanRollNo}:${token}`;
+      const raw = localStorage.getItem("nitpy_scanned_tokens");
+      let list: { key: string; ts: number }[] = [];
+      if (raw) {
+        list = JSON.parse(raw);
+      }
+      const alreadyScanned = list.some((item) => item.key === tokenKey);
+      if (alreadyScanned) {
+        showError("This QR code has already been scanned.\nPlease wait for a new code to generate.");
+        return;
+      }
+
+      // Step 3: Check admin blocks
+      if (
+        student.outing_blocked_until &&
+        new Date() < new Date(student.outing_blocked_until)
+      ) {
+        const until = new Date(student.outing_blocked_until).toLocaleDateString("en-IN", {
+          timeZone: "Asia/Kolkata",
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+        });
+        showError(`OUTING PRIVILEGES BLOCKED UNTIL: ${until}`);
+        return;
+      }
+
+      // Determine default action dynamically
+      let defaultAction: "in" | "out" = "out";
+      if (isSystemOnline()) {
+        try {
+          if (actionType === "Leave") {
+            const { rows: leaves } = await tablesDB.listRows({
+              databaseId: DB_ID,
+              tableId: COLLECTIONS.LEAVE,
+              queries: [Query.equal("roll_no", cleanRollNo), Query.orderDesc("$createdAt")],
+            });
+            const activeLeave = leaves.find((doc: any) => doc.exit_date_time && !doc.in_date_time);
+            if (activeLeave) {
+              defaultAction = "in";
+            }
+          } else {
+            const { rows: outings } = await tablesDB.listRows({
+              databaseId: DB_ID,
+              tableId: COLLECTIONS.OUTING,
+              queries: [
+                Query.equal("roll_no", cleanRollNo),
+                Query.orderDesc("out_time"),
+                Query.limit(1),
+              ],
+            });
+            const openOuting = outings.find((doc) => !doc.in_time);
+            if (openOuting) {
+              defaultAction = "in";
+            }
+          }
+        } catch (err) {
+          console.error("Failed to pre-fetch default action:", err);
+        }
+      }
+
+      // Verification passed. Present confirmation dialog to operator.
+      playAudio("success");
+      setSelectedAction(defaultAction);
+      setPendingVerification({
+        student,
+        rollNo: cleanRollNo,
+        token,
+      });
     } catch (err: any) {
       console.error("QR validation failure:", err);
       showError(err.message || "Failed to submit verification check.");
@@ -711,6 +845,103 @@ function ScanQrContent() {
 
       {/* Confirmation & result Modal dialogs */}
       <AnimatePresence>
+        {pendingVerification && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/80 backdrop-blur-xl"
+              onClick={handleCancelVerification}
+            />
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="relative bg-surface border border-primary/10 w-full max-w-sm rounded-[2.5rem] p-8 text-center overflow-hidden shadow-2xl z-10 space-y-6"
+            >
+              {/* Header */}
+              <div>
+                <h3 className="text-[10px] font-black text-secondary uppercase tracking-widest">Verify Student Identity</h3>
+              </div>
+
+              {/* Student Photo */}
+              <div className="relative w-28 h-28 rounded-[1.5rem] overflow-hidden border-2 border-secondary/20 bg-primary/5 mx-auto shadow-md">
+                {pendingVerification.student.photo ? (
+                  <img
+                    src={storage.getFilePreview(BUCKETS.STUDENT_PHOTOS, pendingVerification.student.photo).toString()}
+                    alt={pendingVerification.student.name}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-primary/40 bg-primary/5">
+                    <User size={40} className="opacity-80 text-secondary" />
+                  </div>
+                )}
+              </div>
+
+              {/* Student Info */}
+              <div className="space-y-1">
+                <h2 className="text-2xl font-black text-primary uppercase tracking-tight leading-none">
+                  {pendingVerification.student.name}
+                </h2>
+                <p className="text-secondary text-xs font-bold uppercase tracking-wider font-mono">
+                  {pendingVerification.rollNo}
+                </p>
+              </div>
+
+              {/* Action Toggle Selector */}
+              <div className="bg-primary/5 p-1 rounded-2xl border border-primary/10 flex">
+                <button
+                  type="button"
+                  onClick={() => setSelectedAction("in")}
+                  className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${
+                    selectedAction === "in"
+                      ? "bg-surface text-green-500 shadow-md border border-primary/5 font-bold"
+                      : "text-primary/40 hover:text-primary/60"
+                  }`}
+                >
+                  Check In
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedAction("out")}
+                  className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${
+                    selectedAction === "out"
+                      ? "bg-surface text-secondary shadow-md border border-primary/5 font-bold"
+                      : "text-primary/40 hover:text-primary/60"
+                  }`}
+                >
+                  Check Out
+                </button>
+              </div>
+
+              {/* Buttons */}
+              <div className="space-y-2 pt-2">
+                <button
+                  onClick={handleVerifyConfirm}
+                  disabled={isSubmittingVerification}
+                  className="w-full h-12 bg-primary text-surface hover:opacity-90 active:scale-95 rounded-2xl font-bold uppercase tracking-widest text-[10px] transition-all flex items-center justify-center space-x-2"
+                >
+                  {isSubmittingVerification ? (
+                    <RefreshCw className="animate-spin" size={16} />
+                  ) : (
+                    <span>Verify</span>
+                  )}
+                </button>
+
+                <button
+                  onClick={handleCancelVerification}
+                  disabled={isSubmittingVerification}
+                  className="w-full h-12 border border-primary/10 hover:bg-primary/5 text-primary/60 rounded-2xl font-bold uppercase tracking-widest text-[10px] transition-all"
+                >
+                  Cancel
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
         {resultDialog && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div
